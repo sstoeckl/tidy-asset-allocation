@@ -65,11 +65,16 @@ FENCE_CLOSE = re.compile(r"^```\s*$")
 def chunks(lines):
     """Yield dicts: label, eval, caption, code (list of lines), heading (the
     last markdown heading seen before the chunk)."""
-    out, i, heading = [], 0, ""
+    out, i, heading, div_depth = [], 0, "", 0
     while i < len(lines):
         m = FENCE_OPEN.match(lines[i])
+        # a `## Title` inside a ::: callout is the callout's title, not a section
+        if re.match(r"^:::+\s*\{", lines[i]) or re.match(r"^:::+\s*[a-z]", lines[i]):
+            div_depth += 1
+        elif re.match(r"^:::+\s*$", lines[i]):
+            div_depth = max(0, div_depth - 1)
         h = re.match(r"^(#{1,6})\s+(.*?)\s*(\{.*\})?\s*$", lines[i])
-        if h and not m:
+        if h and not m and div_depth == 0:
             heading = h.group(2)
         if not m:
             i += 1
@@ -115,8 +120,13 @@ def comment_block(text, prefix="# "):
     return "\n".join(prefix + l if l else prefix.rstrip() for l in text.split("\n"))
 
 
-def render_chunk(ch):
+def render_chunk(ch, section=None):
+    """A chunk under its read_chunk() header. A section heading goes inside the
+    chunk, after the header: a comment placed before it would be read as the
+    tail of the previous chunk, because a block runs to the next header."""
     lines = ["## ---- %s ----" % ch["label"]]
+    if section:
+        lines.append("# ===== %s =====" % section)
     if ch["caption"]:
         cap = textwrap.fill(ch["caption"], WIDTH - 2)
         lines.append(comment_block(cap))
@@ -151,6 +161,8 @@ def strip_markdown(s):
                           "eq": "equation"}[m.group(1)]
                + " “%s” of chapter %d" % (m.group(3).replace("-", " "), int(m.group(2))), s)
     s = re.sub(r"\[?@([A-Za-z]\w+\d{4}\w*)\]?", r"\1", s)
+    # an inline R expression is a number the book computes; the script cannot
+    s = re.sub(r"`r [^`]+`", "(the number the book gives)", s)
     s = s.replace("`", "")
     s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)
     s = re.sub(r"\*(.+?)\*", r"\1", s)
@@ -215,16 +227,18 @@ def main():
         body = header("Chapter %d: %s" % (num, title), "The R code of the chapter, in the order it runs there.", page)
         last_heading = None
         for ch in chs:
-            if ch["heading"] != last_heading and ch["heading"]:
-                body += "# ===== %s =====\n\n" % ch["heading"]
-                last_heading = ch["heading"]
-            body += render_chunk(ch)
+            section = ch["heading"] if (ch["heading"] != last_heading and ch["heading"]) else None
+            last_heading = ch["heading"]
+            body += render_chunk(ch, section)
         write(os.path.join(CODE, slug + ".R"), body.rstrip("\n") + "\n")
 
         # the exercises
         exs = exercises(lines)
+        has_sol = os.path.exists(os.path.join(ROOT, "chapters", "solutions", slug + ".qmd"))
         ex = header("Chapter %d: %s" % (num, title) + " — exercises",
-                    "The chapter's exercises, each with room to work. Solutions: %s-solutions.R and appendix G of the book." % slug, page)
+                    "The chapter's exercises, each with room to work. Solutions: %s" % (
+                        "%s-solutions.R and appendix G of the book." % slug if has_sol
+                        else "not yet written; they will appear in appendix G of the book."), page)
         for ch in setup_chunks(chs):
             ex += render_chunk(ch)
         for k, text in enumerate(exs, 1):
@@ -242,10 +256,9 @@ def main():
                          "The code of the worked solutions; the discussion is in appendix G of the book.", page)
             last_heading = None
             for ch in chunks(slines):
-                if ch["heading"] != last_heading and ch["heading"]:
-                    sol += "# ===== %s =====\n\n" % ch["heading"]
-                    last_heading = ch["heading"]
-                sol += render_chunk(ch)
+                section = ch["heading"] if (ch["heading"] != last_heading and ch["heading"]) else None
+                last_heading = ch["heading"]
+                sol += render_chunk(ch, section)
             write(os.path.join(CODE, slug + "-solutions.R"), sol.rstrip("\n") + "\n")
         index.append((num, slug, title, len(chs), len(exs), has_sol))
 

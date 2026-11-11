@@ -20,9 +20,8 @@ eq  <- ins[, colnames(ins) %in% sim_assets$asset_id[sim_assets$asset_class == "e
 
 c(classes = ncol(cls), equities = ncol(eq), months = nrow(cls))
 
-# ===== Diagnosing it before the solver does =====
-
 ## ---- diagnose ----
+# ===== Diagnosing it before the solver does =====
 covariance_health <- function(X) {
   S  <- stats::cov(zoo::coredata(X))
   ev <- eigen(S, symmetric = TRUE, only.values = TRUE)$values
@@ -55,18 +54,16 @@ dplyr::bind_rows(rank_report(cls, "16 classes"),
                  rank_report(eq,  "123 equities")) |>
   dplyr::select(universe, T, N, rank, min_eigen, condition)
 
-# ===== Why this book has not needed the chapter until now =====
-
 ## ---- windows-invertible ----
+# ===== Why this book has not needed the chapter until now =====
 bad <- sum(vapply(seq.int(61L, nrow(cls)), function(i) {
   qr(stats::cov(zoo::coredata(cls[(i - 60L):(i - 1L), ])))$rank < ncol(cls)
 }, logical(1)))
 
 c(rolling_windows = nrow(cls) - 60L, rank_deficient = bad)
 
-# ===== Route two: impose a structure =====
-
 ## ---- factor-covariance ----
+# ===== Route two: impose a structure =====
 factor_covariance <- function(X, k = 3L) {
   x  <- zoo::coredata(X)
   pc <- prcomp(x)
@@ -88,18 +85,16 @@ sapply(c(60L, 120L, 180L), function(W) {
            error = function(e) conditionMessage(e))
 })
 
-# ===== Route three: shrink the matrix =====
-
 ## ---- shrunk ----
+# ===== Route three: shrink the matrix =====
 S_shr <- corpcor::cov.shrink(zoo::coredata(eq[1:120, ]), verbose = FALSE)
 c(lambda = attr(S_shr, "lambda"),
   rank = qr(S_shr)$rank,
   min_eigen = min(eigen(as.matrix(S_shr), symmetric = TRUE,
                         only.values = TRUE)$values))
 
-# ===== Getting any of this into the optimizer =====
-
 ## ---- moment-methods ----
+# ===== Getting any of this into the optimizer =====
 eval(formals(set.portfolio.moments)$method)
 
 ## ---- momentfun-takes-a-function ----
@@ -121,9 +116,8 @@ opt <- optimize.portfolio(eq[1:120, ], spec, optimize_method = "ROI",
 w <- extractWeights(opt)
 c(holdings = sum(w > 1e-6), sum = sum(w), max_weight = max(w))
 
-# ===== Route four in full: robust estimation =====
-
 ## ---- robust-family ----
+# ===== Route four in full: robust estimation =====
 grep("covRob", ls("package:PortfolioAnalytics"), value = TRUE)
 
 ## ---- robust-demo ----
@@ -138,9 +132,8 @@ sb <- stats::cov(zoo::coredata(cls[1:120, ]))
 c(robust_mean_vol = mean(sqrt(diag(rb$sigma))) * sqrt(12),
   sample_mean_vol = mean(sqrt(diag(sb))) * sqrt(12))
 
-# ===== Scoring the routes out of sample =====
-
 ## ---- equal-weight-control ----
+# ===== Scoring the routes out of sample =====
 FIRST_OOS <- 181L
 oos    <- seq.int(FIRST_OOS, nrow(eq))
 stopifnot(all(sim_riskfree_monthly$date == zoo::index(eq)))   # the bill lines up
@@ -186,9 +179,8 @@ race |>
   dplyr::select(estimator, ann_vol, sharpe, lambda) |>
   knitr::kable(digits = c(0, 4, 3, 3))
 
-# ===== Lower volatility is not a better portfolio =====
-
 ## ---- spectrum ----
+# ===== Lower volatility is not a better portfolio =====
 X   <- zoo::coredata(eq[1:120, ])
 ev  <- function(S) pmax(eigen(as.matrix(S), symmetric = TRUE, only.values = TRUE)$values, 0)
 e_s <- ev(stats::cov(X))
@@ -219,9 +211,8 @@ ggplot2::ggplot(spec_df, ggplot2::aes(i, value, colour = matrix)) +
   ggplot2::theme(legend.position = "top") +
   ggplot2::labs(x = "eigenvalue, largest to smallest", y = "value (log scale)")
 
-# ===== Shrink towards what, when the target moves? =====
-
 ## ---- regimes ----
+# ===== Shrink towards what, when the target moves? =====
 d      <- zoo::index(cls)
 in_ep  <- vapply(sim_episodes$episode, function(e) in_episode(d, e),
                  logical(length(d)))

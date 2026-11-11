@@ -53,17 +53,15 @@ stopifnot(shape$series[which.min(shape$skew)] == "US_credit")   # the prose says
 c(skewness = credit$skew, excess_kurtosis = credit$exkurt,
   weight_at_gamma_5 = w_qu5[["US_credit"]])
 
-# ===== Coskewness and cokurtosis =====
-
 ## ---- parameter-count ----
+# ===== Coskewness and cokurtosis =====
 params <- c(covariance = N * (N + 1) / 2,
             coskewness = N * (N + 1) * (N + 2) / 6,
             cokurtosis = N * (N + 1) * (N + 2) * (N + 3) / 24)
 c(params, observations = n_months)
 
-# ===== The sample tensors and their shape =====
-
 ## ---- spec-moments ----
+# ===== The sample tensors and their shape =====
 var_spec <- base_spec |>
   add.objective(type = "risk", name = "var")
 mes_spec <- base_spec |>
@@ -90,9 +88,8 @@ c(skew_from_tensor = m3_w / sd_ml^3,
   skew_from_series = as.numeric(PerformanceAnalytics::skewness(r_qu5)),
   exkurt_from_tensor = m4_w / sd_ml^4 - 3)
 
-# ===== The structured estimator =====
-
 ## ---- factor-fit ----
+# ===== The structured estimator =====
 fit1 <- statistical.factor.model(Re, k = 1)
 class(fit1); names(fit1)
 
@@ -106,9 +103,8 @@ pc_share <- prcomp(zoo::coredata(Re))$sdev^2
 stopifnot(all(grepl("_equity$", names(sort(abs(beta), decreasing = TRUE))[1:5])))
 round(sort(beta, decreasing = TRUE)[1:5], 3)
 
-# ===== The number of factors must be a literal =====
-
 ## ---- k-trap ----
+# ===== The number of factors must be a literal =====
 n_factors <- 2
 ok  <- set.portfolio.moments(Re, mes_spec, method = "boudt", k = 2)
 bad <- try(set.portfolio.moments(Re, mes_spec, method = "boudt", k = n_factors),
@@ -159,9 +155,8 @@ tibble::tibble(term = names(terms), value = terms,
   kable(align = "lrrc", col.names = c("term", "value", "share of sample moment",
                                       "kept by the structure"))
 
-# ===== The moment interface =====
-
 ## ---- four-moments-fun ----
+# ===== The moment interface =====
 four_moments <- function(R, portfolio, ...) {
   X <- zoo::coredata(R)
   S <- stats::cov(X)
@@ -179,9 +174,8 @@ structured_moments <- function(R, portfolio, ...) {
        mean = colMeans(zoo::coredata(R)), var = S)
 }
 
-# ===== A custom objective: the CRRA investor =====
-
 ## ---- crra-fun ----
+# ===== A custom objective: the CRRA investor =====
 crra_utility <- function(R, weights, mu, sigma, m3, m4, gamma = 5, order = 4) {
   w  <- as.numeric(weights)
   Wb <- 1 + sum(w * as.numeric(mu))               # expected terminal wealth, W0 = 1
@@ -200,9 +194,8 @@ crra_spec <- function(gamma, order = 4) base_spec |>
   add.objective(type = "risk", name = "crra_utility",
                 arguments = list(gamma = gamma, order = order))
 
-# ===== An objective the solver cannot find is skipped, not reported =====
-
 ## ---- hidden-objective ----
+# ===== An objective the solver cannot find is skipped, not reported =====
 set.seed(1602)
 rp <- random_portfolios(mes_spec, permutations = 3000, rp_method = "simplex")
 
@@ -248,9 +241,8 @@ c(candidates = nrow(rp),
   objective_DEoptim = as.numeric(unlist(de5$objective_measures)),
   objective_random  = as.numeric(unlist(rn5$objective_measures)))
 
-# ===== Worked: polishing the metaheuristic answer =====
-
 ## ---- polish ----
+# ===== Worked: polishing the metaheuristic answer =====
 crra_fn <- function(mom, gamma, order = 4) function(w)
   crra_utility(NULL, w, mom$mu, mom$sigma, mom$m3, mom$m4, gamma, order)
 
@@ -287,9 +279,8 @@ tibble::tibble(
   turnover_to_polished = c(turnover(w_de5, w_c5), turnover(w_rn5, w_c5), 0)
 )
 
-# ===== One objective, two estimators of the tensors =====
-
 ## ---- mes-two-estimators ----
+# ===== One objective, two estimators of the tensors =====
 mes_fn <- function(mom) function(w)
   as.numeric(PerformanceAnalytics::ES(NULL, p = 0.95, method = "modified",
                                       portfolio_method = "single", weights = w,
@@ -336,16 +327,14 @@ mes_tbl |>
         col.names = c("minimized with", "US_credit", "US_government",
                       "mES, sample tensors", "mES, structured tensors", "ES, historical"))
 
-# ===== Conditional comoments =====
-
 ## ---- ccc-garch ----
+# ===== Conditional comoments =====
 # Not run in the book; shown for the reader to try.
 # conditional <- CCCgarch.MM(Re)
 # str(conditional, give.attr = FALSE)     # mu, sigma, m3, m4: the same names
 
-# ===== What the Third and Fourth Moments Buy =====
-
 ## ---- fig-11-shape ----
+# ===== What the Third and Fourth Moments Buy =====
 # The sixteen risky series by skewness and excess kurtosis, total returns over
 # the full sample. The equity markets cluster near the Gaussian origin; US and
 # UK credit are in a region of their own.
@@ -363,9 +352,8 @@ ggplot2::ggplot(shape, ggplot2::aes(skew, exkurt, colour = kind)) +
   ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0.06, 0.30))) +
   ggplot2::labs(x = "skewness", y = "excess kurtosis", colour = NULL)
 
-# ===== Three investors and what they hold =====
-
 ## ---- tangency ----
+# ===== Three investors and what they hold =====
 ef_spec <- base_spec |>
   add.objective(type = "return", name = "mean") |>
   add.objective(type = "risk",   name = "StdDev")
@@ -478,9 +466,8 @@ w_long |>
   ggplot2::scale_x_discrete(labels = function(x) gsub(", ", "\n", x)) +
   ggplot2::labs(x = NULL, y = NULL)
 
-# ===== What the tensors are estimated from =====
-
 ## ---- bootstrap ----
+# ===== What the tensors are estimated from =====
 set.seed(1602)
 block_index <- function(n, block = 12L) {
   starts <- sample.int(n - block + 1L, ceiling(n / block), replace = TRUE)
@@ -505,9 +492,8 @@ rbind(portfolio_skewness = c(full_sample = m3_w / sd_ml^3,
       coskewness_element = c(full_sample = triple$sample[1],
                              quantile(boot_coskew, c(0.05, 0.5, 0.95))))
 
-# ===== Dependence the tensors are a shadow of =====
-
 ## ---- tail-dependence ----
+# ===== Dependence the tensors are a shadow of =====
 tail_dependence <- function(a, b, q = 0.10) {
   U   <- copula::pobs(zoo::coredata(Re[, c(a, b)]))     # ranks: the margins are gone
   rho <- as.numeric(stats::cor(Re[, a], Re[, b]))

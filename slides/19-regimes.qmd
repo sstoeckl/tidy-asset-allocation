@@ -1,0 +1,418 @@
+---
+title: "Regime-Dependent Allocation"
+subtitle: "Tidy Asset Allocation in R, Chapter 19"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 19"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/19-regimes.R to the chunks below,
+# so no line of analysis is maintained twice. root.dir takes effect after this
+# chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("19-regimes.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+```{r dated}
+#| include: false
+```
+
+```{r dated-facts}
+#| include: false
+```
+
+```{r turbulence}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** the regime-switching model, the filter that infers its state, and the mixture moments an investor faces one month ahead.
+2. **Distinguish** dating from detecting, and **detect** regimes in real time with a turbulence threshold and a two-state hidden Markov model.
+3. **Implement** a switching allocation with `regime.portfolios()` in `PortfolioAnalytics`, and **read** what the package does with the regime series.
+4. **Evaluate** whether a switching allocation is ahead of a static one out of sample once the regime has to be detected rather than dated.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+What if the right portfolio depends on the state of the world?
+
+::: {.statement}
+Hamilton (1989) gave the question its statistical form, a series whose parameters switch with an unobserved Markov chain. Ang and Bekaert (2002) carried it into portfolio choice: a normal regime and a bear regime of lower means, higher volatilities and higher correlations.
+:::
+
+- The descriptive chapters supplied the reason to ask: the tails of this market arrive as a handful of episodes in which correlations rise and the effective number of bets falls.
+- This is a **tactical** chapter: the allocation is conditioned on a state inferred at the time, and deviates from a policy estimated without one.
+- The data are the sixteen risky class series of the modeled market, `r nrow(Re)` monthly returns each, in excess of the Treasury bill.
+
+<p class="source">Hamilton, J. (1989). A New Approach to the Economic Analysis of Nonstationary Time Series and the Business Cycle. *Econometrica* 57(2), 357–384. Ang, A. and Bekaert, G. (2002). International Asset Allocation with Regime Shifts. *Review of Financial Studies* 15(4), 1137–1187.</p>
+
+## The Regime-Switching Model
+
+Let $s_t \in \{1, \dots, K\}$ be an unobserved state and $\boldsymbol{r}_t$ the vector of excess returns:
+
+$$
+\boldsymbol{r}_t \mid s_t = s \;\sim\; \mathcal{N}(\boldsymbol{\mu}_s, \boldsymbol{\Sigma}_s),
+\qquad
+\Pr(s_{t+1} = j \mid s_t = i) = p_{ij}.
+$$
+
+- The $p_{ij}$ form a transition matrix $\boldsymbol{P}$ whose rows sum to one.
+- A regime lasts $1/(1 - p_{ss})$ periods on average.
+- The chain spends a long-run share $\bar{\pi}_s$ of its time in state $s$, where $\bar{\boldsymbol{\pi}}'\boldsymbol{P} = \bar{\boldsymbol{\pi}}'$.
+
+::: {.notes}
+Turner, Startz and Nelson fitted a two-state version to excess stock returns, with a mean and a variance that both switch. Ang and Timmermann survey what the model has been used for since.
+:::
+
+## The Filter and the Smoother {.smaller}
+
+The state is never observed. Write $\boldsymbol{\xi}_{t|\tau}$ for the vector of $\Pr(s_t = j \mid \boldsymbol{r}_1, \dots, \boldsymbol{r}_\tau)$ and $\boldsymbol{\eta}_t$ for the regime densities $f(\boldsymbol{r}_t \mid s_t = j)$. The filter of Hamilton (1989) alternates two steps:
+
+$$
+\boldsymbol{\xi}_{t+1|t} = \boldsymbol{P}'\boldsymbol{\xi}_{t|t},
+\qquad
+\boldsymbol{\xi}_{t|t}
+= \frac{\boldsymbol{\xi}_{t|t-1} \odot \boldsymbol{\eta}_t}
+       {\boldsymbol{\iota}'\left(\boldsymbol{\xi}_{t|t-1} \odot \boldsymbol{\eta}_t\right)}.
+$$
+
+The denominator is the density of $\boldsymbol{r}_t$ given the past; the sum of its logarithms is the log-likelihood, maximized by EM. EM needs the **smoothed** probabilities, from the backward recursion of Kim (1994):
+
+$$
+\boldsymbol{\xi}_{t|T}
+= \boldsymbol{\xi}_{t|t} \odot
+  \left[\boldsymbol{P}\left(\boldsymbol{\xi}_{t+1|T} \oslash \boldsymbol{\xi}_{t+1|t}\right)\right].
+$$
+
+The difference between $\boldsymbol{\xi}_{t|t}$ and $\boldsymbol{\xi}_{t|T}$ is the subject of this chapter: only the first is available to an investor at $t$.
+
+::: {.notes}
+Given state probabilities, the means, variances and transition frequencies are weighted sample moments; given those, the probabilities are recomputed. That is the whole EM loop.
+:::
+
+## One Month Ahead: a Mixture {.smaller}
+
+An investor at $t$ does not know $s_{t+1}$. With $\boldsymbol{\pi} = \boldsymbol{\xi}_{t+1|t}$ the next return is a mixture of the regime distributions:
+
+$$
+\bar{\boldsymbol{\mu}} = \sum_{s} \pi_s \boldsymbol{\mu}_s,
+\qquad
+\bar{\boldsymbol{\Sigma}} = \sum_{s} \pi_s \boldsymbol{\Sigma}_s
+  + \sum_{s} \pi_s \left(\boldsymbol{\mu}_s - \bar{\boldsymbol{\mu}}\right)
+                   \left(\boldsymbol{\mu}_s - \bar{\boldsymbol{\mu}}\right)'.
+$$
+
+The second sum, the between-regime term, is the risk of not knowing which regime next month belongs to. A mixture of normals is not normal: for a series whose regimes share a mean, the excess kurtosis is
+
+$$
+\bar{K} = 3\left(\frac{\sum_s \pi_s \sigma_s^4}{\left(\sum_s \pi_s \sigma_s^2\right)^2} - 1\right) \;\geq\; 0,
+$$
+
+strictly positive whenever the regime variances differ. Gaussian regimes produce fat tails, and they produce them jointly, because all assets change regime together.
+
+## Two Ways to Use the State
+
+Given $\boldsymbol{\pi}$ there are two rules.
+
+- **Mixture rule.** Treat $\bar{\boldsymbol{\mu}}$ and $\bar{\boldsymbol{\Sigma}}$ as the inputs of chapter 9 and hold the tangency portfolio; the weights move continuously with the probabilities.
+- **Switching rule.** Hold one portfolio built for each regime, and switch when the most probable regime changes:
+
+$$
+\boldsymbol{w}_t = \boldsymbol{w}^{(\hat{s}_{t+1})},
+\qquad
+\hat{s}_{t+1} = \arg\max_s \, \pi_s .
+$$
+
+The two agree when one probability is one. In between, the mixture rule holds a compromise and the switching rule a bet.
+
+::: {.notes}
+The literature on the switching rule is favorable out of sample (Ang and Bekaert 2004; Bulla et al. 2011; Nystrup et al. 2015). All of it conditions on a state estimated from the data, and the estimate is where the difficulty lies.
+:::
+
+## Dating and Detecting
+
+**Dating** assigns each month to a regime with the whole sample in view: peaks and troughs, named episodes, or the smoothed probabilities. **Detecting** assigns month $t$ using only what was known at $t$. Detection lags dating.
+
+A backtest of a regime strategy has three places to leak:
+
+1. Smoothed probabilities at $t$ contain returns after $t$.
+2. Filtered probabilities with full-sample parameters contain them less visibly: the stress regime was learned from the very months the filter then recognizes.
+3. The regime definition, the number of states and the series, is usually settled after looking at the sample.
+
+The first two are coding errors, and we assert them away. The third is a design problem and cannot be asserted away.
+
+## Regimes Dated with Hindsight {.smaller}
+
+`sim_episodes` names four stress episodes; `in_episode()` places each month inside or outside them.
+
+```{r tbl-19-dated}
+```
+
+- Equities lose in all four episodes. Government bonds gain in `r gov_up` of them and lose `r sprintf("%.0f%%", -100 * dv("rates shock", "government"))` a year in the rates shock: the four are not one stress regime observed four times.
+- Average correlation is `r sprintf("%.2f", dv("remaining months", "correlation"))` in the remaining months and between `r sprintf("%.2f", min(dated$correlation[1:4]))` and `r sprintf("%.2f", max(dated$correlation[1:4]))` inside the episodes.
+
+::: {.notes}
+A covariance matrix of sixteen series has `r N * (N + 1) / 2` distinct entries and the liquidity shock has `r dv("liquidity shock", "months")` months, so the table describes and cannot be optimized on.
+:::
+
+## Detecting by Turbulence {.codesmall}
+
+The turbulence index has no parameters beyond a trailing mean and covariance: `uncertaintymeasures::OSturbulence(R, rolling = TRUE, roll.obs = 60)`. A month is flagged when the index exceeds the 75th percentile of its own history, computed on an expanding window that ends the month before.
+
+```{r turbulence-flag}
+#| echo: true
+```
+
+The flag for month $t$ is known at the end of month $t$ and decides the portfolio held in $t + 1$.
+
+::: {.notes}
+The assertion at the bottom reverses everything after the cut and checks that no earlier flag moves. This is the no-look-ahead test, in one line.
+:::
+
+## Detecting by a Two-State Hidden Markov Model {.smaller}
+
+On all sixteen classes the model has `r 2 * N + N * (N + 1) + 2` parameters against `r nrow(Re)` months. We fit it to one summary series, the equal-weighted excess return, where it has six. The filter is a loop, the smoother another, and EM alternates them with weighted moments; no hidden-Markov package is needed.
+
+```{r hmm}
+```
+
+- Annualized means, annualized volatilities and the probabilities of staying, state 2 being the high-volatility state.
+- The two states differ in volatility, `r sprintf("%.1f%%", 100 * sqrt(12) * fit_full$sigma[1])` against `r sprintf("%.1f%%", 100 * sqrt(12) * fit_full$sigma[2])` a year, and hardly in mean.
+- The high-volatility state lasts `r sprintf("%.0f", 1 / (1 - fit_full$P[2, 2]))` months on average and the other `r sprintf("%.0f", 1 / (1 - fit_full$P[1, 1]))`.
+
+::: {.notes}
+The volatility floor in the code is there because the likelihood of a Gaussian mixture is unbounded when one state collapses onto a single observation.
+:::
+
+## Worked: the Mixture Moments of the Summary Series {.smaller}
+
+```{r mixture-scalar}
+```
+
+With $\bar{\boldsymbol{\pi}} = (`r sprintf("%.2f", pi_bar[1])`, `r sprintf("%.2f", pi_bar[2])`)$ and $\sigma_1 = `r sprintf("%.2f", sg[1])`$, $\sigma_2 = `r sprintf("%.2f", sg[2])`$ percent a month:
+
+$$
+\bar{\sigma}^2
+= \underbrace{`r sprintf("%.2f", pi_bar[1])` \times `r sprintf("%.2f", sg[1])`^2
+  + `r sprintf("%.2f", pi_bar[2])` \times `r sprintf("%.2f", sg[2])`^2}_{\text{within}}
+  + \underbrace{`r sprintf("%.4f", between)`}_{\text{between}}
+= `r sprintf("%.2f", within + between)`,
+\qquad
+\bar{K} = `r sprintf("%.2f", kurt)` .
+$$
+
+Two Gaussian regimes account for an excess kurtosis of `r sprintf("%.1f", kurt)` of the `r sprintf("%.1f", sample[["kurtosis"]])` in the sample and for none of its skewness of `r sprintf("%.2f", sample[["skewness"]])`: the between-regime term is `r sprintf("%.3f%%", 100 * between / (within + between))` of the variance. The model has found a volatility regime, not a bear market.
+
+```{r hmm-realtime}
+#| include: false
+```
+
+```{r detection}
+#| include: false
+```
+
+```{r detection-facts}
+#| include: false
+```
+
+## Smoothed Against Filtered {.smaller}
+
+```{r fig-19-probabilities}
+#| fig-alt: "Smoothed and filtered probability of the high-volatility state, with turbulence flags along the bottom and the four dated episodes shaded."
+#| fig-asp: 0.4
+```
+
+- Smoothed: full sample and parameters. Filtered: only data through each month, parameters re-estimated each December on an expanding window.
+- With hindsight the model is clean: the smoothed probability is above one half in `r sprintf("%.0f%%", 100 * dt("credit crisis", "smoothed_share"))` of the credit-crisis months and in `r sprintf("%.0f%%", 100 * false_alarm[["smoothed"]])` of the months outside any episode.
+- In real time it is not: EM stops at its iteration limit in `r at_cap` of `r length(rt$fits)` refits, and the filtered probability is above one half in `r sprintf("%.0f%%", 100 * mean(flag_hmm[before]))` of the months before the credit crisis, against `r sprintf("%.0f%%", 100 * mean(smoothed[before] > 0.5))` for the smoothed one.
+
+::: {.notes}
+Before the first stress regime has occurred, the sample contains no high-volatility regime to learn from, so the second state is fitted to whatever divides a calm sample. A regime cannot be detected by a model that has not yet seen it.
+:::
+
+## Detecting the Four Episodes {.smaller}
+
+```{r tbl-19-detection}
+```
+
+- The filter recognizes the liquidity shock `r dt("liquidity shock", "hmm_lag")` month after it begins and the rates shock after `r dt("rates shock", "hmm_lag")`.
+- The turbulence threshold needs no stress history: it flags the credit crisis in its first month and the other two after `r dt("liquidity shock", "turb_lag")` and `r dt("rates shock", "turb_lag")`.
+- Neither sees the equity bear market as a whole, a slow decline with bonds rising that is unusual in direction and not in size.
+- Outside the episodes the threshold flags `r sprintf("%.0f%%", 100 * false_alarm[["turbulence"]])` of months and the filter `r sprintf("%.0f%%", 100 * false_alarm[["hmm"]])`.
+
+## Two Specifications in `PortfolioAnalytics` {.codesmall}
+
+`combine.portfolios()` turns a list of specifications into one object: a calm portfolio (long-only tangency) and a stress portfolio (long-only minimum variance).
+
+```{r specs}
+#| echo: true
+```
+
+Handed to `optimize.portfolio()` directly, the list is solved specification by specification, one row of weights each.
+
+```{r two-portfolios}
+#| include: false
+```
+
+::: {.notes}
+The backtest needs both portfolios at every month. The calm one is computed as the single quadratic program of chapter 8 because maxSR under ROI is a one-dimensional search; the package run confirms that the two routes agree.
+:::
+
+## Attaching the Regime Series {.codesmall}
+
+The regime object is built from the turbulence flags, coded 1 for calm and 2 for stress, and run over a short stretch that begins with the credit crisis.
+
+```{r regime-run}
+#| echo: true
+```
+
+The assertions say what the package did: at every date it read the regime of that date and solved the matching specification. Switching in the package is row selection.
+
+```{r quirks}
+#| include: false
+```
+
+## What `regime.portfolios()` Does with the Series
+
+::: {.callout-important}
+## The lookup is contemporaneous, and the coding is not checked
+
+The regime is read at the rebalancing date, the last date of the estimation window, and used as a list index: `portfolio.list[[regime]]`.
+:::
+
+- **Timing.** The series must hold at each date what was known on that date. A hand-dated series is used unlagged, and a regime dated with hindsight enters the backtest with nothing to mark it.
+- **Coding.** A series coded 0 and 1 passes the constructor. A stress month, coded 1, receives the calm specification (regime used: `r quirk$coded_01_stress`) without a message; a calm month, coded 0, fails and leaves a row of `NA`.
+- **Dates.** If the rebalancing date is missing from the regime index, the first specification is used and the only trace is a warning (regime used: `r quirk$dates_shifted`).
+- **Values.** A third value, an `NA`, or a regime never visited is refused.
+
+::: {.notes}
+The chapter measures each of these on the stress and calm months of the credit crisis. Its callout lists two more: arguments in the dots reach every specification, and the two extractor functions label the regimes differently.
+:::
+
+```{r strategies}
+#| include: false
+```
+
+```{r accounting}
+#| include: false
+```
+
+## The Strategies and Their Accounting {.smaller}
+
+From the first out-of-sample month, the first month of model year `r model_year(dates[first_oos])`, we run the static policy (the calm portfolio throughout), the stress portfolio throughout, and four alternatives:
+
+1. **Switching, dated.** Stress portfolio in the dated episodes, by the label of the month the return is earned in: the infeasible upper bound.
+2. **Switching, turbulence.** Stress portfolio on the flag of the rebalancing month.
+3. **Switching, filtered HMM.** Stress portfolio when the predicted probability of the high-volatility state exceeds one half.
+4. **Mixture mean-variance.** Tangency portfolio of the mixture moments, with regime moments weighted by the smoothed probabilities of each December's fit.
+
+Weights set at the end of month $t$ earn the returns of $t + 1$, drift, and are traded back at per-class costs; a switch is a trade like any other.
+
+## Cumulative Return
+
+```{r fig-19-cumulative}
+#| fig-alt: "Cumulative gross return of the six strategies from the first out-of-sample month, with the dated episodes shaded."
+#| fig-asp: 0.5
+```
+
+```{r performance-facts}
+#| include: false
+```
+
+## Performance Over the Out-of-Sample Months {.smaller}
+
+```{r tbl-19-performance}
+```
+
+The two static rows are checks first: the static policy's Sharpe ratio of `r sprintf("%.3f", pv("static", "sharpe"))` is the register's `r sprintf("%.3f", reg_sr("max_sharpe"))` for the maximum-Sharpe strategy at this window, and the stress portfolio's `r sprintf("%.3f", pv("stress", "sharpe"))` is its `r sprintf("%.3f", reg_sr("min_variance"))` for minimum variance.
+
+## Reading the Result {.smaller}
+
+- **Dated.** The infeasible switch raises the Sharpe ratio from `r sprintf("%.3f", pv("static", "sharpe"))` to `r sprintf("%.3f", pv("dated", "sharpe"))` and cuts the maximum drawdown from `r sprintf("%.1f%%", 100 * pv("static", "drawdown"))` to `r sprintf("%.1f%%", 100 * pv("dated", "drawdown"))`, in the stress portfolio `r sprintf("%.0f%%", 100 * pv("dated", "stress_share"))` of the months. Its timing is worth `r sprintf("%+.2f", timing("dated"))` against the constant mix with the same share (`r sprintf("%.3f", pv("dated", "same_mix"))`).
+- **Turbulence.** Sharpe ratio `r sprintf("%.3f", pv("turbulence", "sharpe"))`, `r sprintf("%.0f%%", 100 * kept("turbulence"))` of the dated advantage; its timing is `r sprintf("%+.2f", timing("turbulence"))` against its own constant mix, at `r sprintf("%.0f", 1e4 * pv("turbulence", "cost"))` basis points a year in costs.
+- **Filtered HMM.** `r sprintf("%.3f", pv("hmm", "sharpe"))`, below the static policy; in stress in `r sprintf("%.0f%%", 100 * hmm_pre)` of the months before the credit crisis and `r sprintf("%.0f%%", 100 * hmm_post)` from then on. Timing: `r sprintf("%+.2f", timing("hmm"))`.
+- **Mixture.** `r sprintf("%.3f", pv("mixture", "sharpe"))`, `r if (pv("mixture", "sharpe") < pv("static", "sharpe")) "below" else "above"` the static policy: regime covariances from as few as `r sprintf("%.0f", min(vapply(rm_k, function(r) min(r$n_eff), numeric(1))))` effective months.
+- **Inference.** The standard error of the static Sharpe ratio over `r length(oos)` months is `r sprintf("%.2f", se_static)`; paired z statistics are `r sprintf("%+.2f", pv("turbulence", "z"))` (turbulence), `r sprintf("%+.2f", pv("hmm", "z"))` (filtered) and `r sprintf("%+.2f", pv("dated", "z"))` (dated). The stress portfolio held throughout, at `r sprintf("%.3f", pv("stress", "sharpe"))`, is above both detectors.
+
+::: {.notes}
+The same-mix column is what the detected strategies have to be read against: a switch must choose its months better than a fixed blend would. On this market the question of when to hold minimum variance matters less than whether to.
+:::
+
+## Where the Numbers Come From {.smaller}
+
+```{r tbl-19-episodes}
+```
+
+```{r episode-facts}
+#| include: false
+```
+
+- **Credit crisis.** The static policy loses `r sprintf("%.1f%%", -100 * er("static", "credit crisis"))`, the stress portfolio `r sprintf("%.1f%%", -100 * er("stress", "credit crisis"))`; turbulence captures most of the difference (`r sprintf("%+.1f%%", 100 * er("turbulence", "credit crisis"))`), the filtered model almost none (`r sprintf("%+.1f%%", 100 * er("hmm", "credit crisis"))`): by its switch the static policy had already lost `r sprintf("%.1f%%", -100 * lost_first)`.
+- **Rates shock.** The stress portfolio loses `r sprintf("%.1f%%", -100 * er("stress", "rates shock"))` and the investor who knew every date loses the same; the detected strategies lose more, `r sprintf("%.1f%%", -100 * er("turbulence", "rates shock"))` and `r sprintf("%.1f%%", -100 * er("hmm", "rates shock"))`.
+- A stress portfolio is a hedge against the stress that resembles the past.
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** A regime-switching model is the Gaussian mixture plus a filter; the smoother uses the whole sample, and only the filtered probability is available to an investor.
+- **Outcome 1.** One month ahead the investor faces mixture moments with a between-regime term; the two-state model of the equal-weighted return accounts for `r sprintf("%.0f%%", 100 * kurt / sample[["kurtosis"]])` of its excess kurtosis and none of its skewness.
+- **Outcome 2.** Dating and detecting are different operations. Smoothed probabilities and full-sample parameters carry the future into a backtest, and before the first stress regime a two-state model has nothing to detect it with.
+- **Outcome 3.** `regime.portfolios()` is row selection by a regime series. It reads the regime of the rebalancing date itself, uses its value as a list index, and checks neither the coding nor the timing.
+- **Outcome 4.** The infeasible dated switch is well ahead of the static policy; the detected switches keep little or none of it, neither is distinguishable from the static policy by a paired test, and the stress portfolio held throughout is ahead of both. In the rates shock no switch helps.
+
+## Exercises {.smaller}
+
+Work these in `code/19-regimes-exercises.R`; solutions are in appendix G of the book.
+
+1. Recompute the turbulence switch with the 50th and the 90th percentile. Report the share of months in stress, the Sharpe ratio, and the Sharpe ratio of the constant mix with the same share. Which threshold, if any, times its months?
+2. Feed the dated episodes to the switch lagged by one month, so that the portfolio for month $t + 1$ is chosen by the label of month $t$. How much of the dated advantage is lost, and in which episode?
+3. Simulate 100,000 months from a two-state chain with annual volatilities of 6% and 14%, equal means, and probabilities of staying of 0.98 and 0.93. Compare the sample excess kurtosis with the formula, and compute the autocorrelation of the squared returns.
+4. Replace the stress portfolio by one that puts half the budget in the bill (`weight_sum` of 0.5). Does leaving the market help in the rates shock where moving to bonds did not?

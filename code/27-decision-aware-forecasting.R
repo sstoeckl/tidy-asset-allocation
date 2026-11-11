@@ -21,17 +21,15 @@ rf_by_month <- setNames(rf, as.character(dates))
 mu <- colMeans(Re); S <- stats::cov(Re)
 gamma <- 5
 
-# ===== The statistical loss and the decision loss =====
-
 ## ---- metric ----
+# ===== The statistical loss and the decision loss =====
 ev <- eigen(S, symmetric = TRUE)
 unit_cost <- function(u) as.numeric(t(u) %*% solve(S, u))   # 2 gamma times the decision loss of a unit error
 cost_top <- unit_cost(ev$vectors[, 1]); cost_bottom <- unit_cost(ev$vectors[, N])
 c(top = cost_top, bottom = cost_bottom, log10_ratio = log10(cost_bottom / cost_top))
 
-# ===== The corrected mean in a few lines =====
-
 ## ---- correct-mean ----
+# ===== The corrected mean in a few lines =====
 correct_mean <- function(R, target = c("grand", "zero"), c = NULL) {
   target <- match.arg(target)
   X <- zoo::coredata(R); T <- nrow(X); N <- ncol(X)
@@ -81,9 +79,8 @@ intensity |>
   dplyr::transmute(T, num(c_f, 2), num(ratio, 2), num(factor, 2), pct(at_zero, 0)) |>
   kable(align = "rrrrr", col.names = c("T", "c_f", "c_f / (N - 3)", "mean factor", "factor at zero"))
 
-# ===== Four means in the tangency rule =====
-
 ## ---- qp-rules ----
+# ===== Four means in the tangency rule =====
 gmv_qp <- function(S) {
   n <- ncol(S)
   sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
@@ -170,9 +167,8 @@ res_means |>
   kable(align = "lrrrrrr",
         col.names = c("", "Sharpe, 60", "CE, 60", "vol, 60", "Sharpe, 120", "CE, 120", "vol, 120"))
 
-# ===== Granularity on the term-spread tilt =====
-
 ## ---- term-forecast ----
+# ===== Granularity on the term-spread tilt =====
 cv <- sim_curve_weekly |>
   dplyr::filter(series %in% c("US_Level", "US_Slope", "US_IG_Spread", "US_HY_Spread")) |>
   tidyr::pivot_wider(names_from = series, values_from = value) |>
@@ -306,9 +302,8 @@ spread_ce <- diff(range(res_gran$ce[res_gran$cell %in% fc_cells]))
 stopifnot(all(gain_sr > 0), all(gain_ce > 0), spread_sr < 0.02, spread_ce < 2e-3,
           g_c("sign_only", "turnover") > g_c("every_magnitude", "turnover"), all(G_rule >= 3L))
 
-# ===== Tuning the elastic net on the certainty equivalent =====
-
 ## ---- enet-tuning ----
+# ===== Tuning the elastic net on the certainty equivalent =====
 en_vars  <- c("mom", "rev", "term", "ig", "hy", "level", "turb")
 D  <- lapply(colnames(Re), pairs_of); names(D) <- colnames(Re)
 ok <- stats::complete.cases(D[[1]][, en_vars])
@@ -396,9 +391,8 @@ res_train |>
   kable(align = "lrrrrrr",
         col.names = c("", "MSE (x 10^4)", "R²OS", "Sharpe", "CE, gross", "CE, net", "turnover"))
 
-# ===== What Each Answer Buys =====
-
 ## ---- fig-27-scoreboard ----
+# ===== What Each Answer Buys =====
 # Every rule of this chapter and every line of the register, scored on the
 # same months with sixty-month estimation windows, in the register's Sharpe
 # ratio, from one data frame. The dashed line is equal weighting.

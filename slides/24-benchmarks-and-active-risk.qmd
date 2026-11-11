@@ -1,0 +1,452 @@
+---
+title: "Benchmarks and Active Risk"
+subtitle: "Tidy Asset Allocation in R, Chapter 24"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 24"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/24-benchmarks-and-active-risk.R to the
+# chunks below, so no line of analysis is maintained twice. root.dir takes
+# effect after this chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("24-benchmarks-and-active-risk.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** active weights, tracking error and the information ratio, and **compute** the information coefficient a given ratio requires.
+2. **Implement** the measures in `PerformanceAnalytics`, **read** the default information ratio correctly, and **name** what `PortfolioAnalytics` does not carry.
+3. **Explain** why a tracking-error budget alone yields dominated portfolios, and how a bound on total risk repairs them.
+4. **Evaluate** a manager against a benchmark: attribution by sleeve, the benchmark as a bet, and the error bar on the ratio.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+Did the portfolio beat its benchmark, and if it did, was that skill?
+
+::: {.statement}
+Grinold (1989) gave the question its modern form: the value an active manager adds is the product of the quality of each decision and the number of independent decisions taken.
+:::
+
+- A small edge applied often is worth as much as a large edge applied rarely.
+- Grinold and Kahn (2000) built the practice on that law; active weights, tracking error and the information ratio are the vocabulary every real mandate is written in.
+- This chapter is about **evaluation**; its one construction, an allocation anchored to a policy portfolio under a tracking-error budget, is strategic.
+
+<p class="source">Grinold, R. (1989). The Fundamental Law of Active Management. *Journal of Portfolio Management* 15(3), 30–37.</p>
+
+## Active Weights, Tracking Error, Information Ratio
+
+With portfolio $\boldsymbol{w}$ and benchmark $\boldsymbol{b}$, both fully invested, the **active weights** are
+
+$$
+\boldsymbol{x} = \boldsymbol{w} - \boldsymbol{b},
+\qquad
+\boldsymbol{\iota}'\boldsymbol{x} = 0 .
+$$
+
+The active return $r^A_t = \boldsymbol{x}'\boldsymbol{r}_t$ has the moments
+
+$$
+\alpha = \boldsymbol{x}'\boldsymbol{\mu},
+\qquad
+\text{TE} = \sqrt{\boldsymbol{x}'\boldsymbol{\Sigma}\boldsymbol{x}},
+\qquad
+\text{IR} = \frac{\alpha}{\text{TE}} .
+$$
+
+- Every overweight is funded by an underweight: an active portfolio is long-short whatever the mandate says.
+- The information ratio is the Sharpe ratio with the benchmark in place of the bill.
+- The appraisal ratio of Treynor and Black divides the alpha of Jensen by residual volatility: an information ratio against a beta-adjusted benchmark.
+
+```{r months-needed}
+#| include: false
+```
+
+## What a Ratio Requires {.smaller}
+
+For forecasts with correlation $\text{IC}$ to realized returns and $\text{BR}$ independent bets a year (Grinold, 1989), with the transfer coefficient $\text{TC}$ of Clarke et al. (2002),
+
+$$
+\text{IR} \approx \text{IC} \cdot \sqrt{\text{BR}} \cdot \text{TC} .
+$$
+
+- A strategic allocator resetting sixteen class weights once a year has $\text{BR} = 16$: an information ratio of one half needs $\text{IC} = 0.5 / \sqrt{16} = `r sprintf("%.3f", 0.5 / sqrt(16))`$ before any constraint takes its share.
+- A stock picker with a thousand names needs a correlation about thirty times smaller.
+
+An information ratio is a ratio of two sample moments, so it has the standard error of a Sharpe ratio (Lo, 2002):
+
+$$
+\operatorname{se}(\widehat{\text{IR}}) \approx \sqrt{\frac{1 + \tfrac{1}{2}\text{IR}^2}{T}}\quad\text{per period.}
+$$
+
+An information ratio of one half needs `r sprintf("%.0f", months_needed(0.5))` months, about `r sprintf("%.0f", months_needed(0.5) / 12)` years, before its t-statistic reaches two; one quarter needs `r sprintf("%.0f", months_needed(0.25) / 12)` years.
+
+::: {.notes}
+The standard error assumes independent returns, which the chapter's market violates, so the true interval is wider still.
+:::
+
+## Tracking Error as a Constraint
+
+A mandate gives a tracking-error **budget** $\tau$ and asks for as much active return as it buys (Roll, 1992):
+
+$$
+\max_{\boldsymbol{x}} \; \boldsymbol{x}'\boldsymbol{\mu}
+\quad \text{subject to} \quad
+\boldsymbol{x}'\boldsymbol{\Sigma}\boldsymbol{x} \leq \tau^2,
+\quad
+\boldsymbol{\iota}'\boldsymbol{x} = 0 .
+$$
+
+With $A$, $B$, $C$ the constants of Merton (1972), the solution is
+
+$$
+\boldsymbol{x}^{*}(\tau)
+= \tau \, \frac{\boldsymbol{\Sigma}^{-1}(\boldsymbol{\mu} - \lambda\boldsymbol{\iota})}
+               {\sqrt{(\boldsymbol{\mu} - \lambda\boldsymbol{\iota})'
+                      \boldsymbol{\Sigma}^{-1}
+                      (\boldsymbol{\mu} - \lambda\boldsymbol{\iota})}},
+\qquad
+\lambda = \frac{B}{A} .
+$$
+
+- The direction of the tilt does not involve $\boldsymbol{b}$: every manager with the same estimates adds the same long-short portfolio.
+- The total portfolio $\boldsymbol{b} + \boldsymbol{x}^{*}$ is efficient only if the benchmark already was; otherwise it is **dominated**.
+
+## Jorion's Repair
+
+Along the whole family the information ratio is a constant, the maximum attainable under the zero-sum constraint alone:
+
+$$
+\text{IR}^{*} = \frac{\boldsymbol{x}^{*\prime}\boldsymbol{\mu}}{\tau} = \sqrt{C - \frac{B^2}{A}} .
+$$
+
+Jorion (2003) adds a bound on total risk,
+
+$$
+\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w} \leq \sigma_{\max}^2 ,
+$$
+
+which pulls the solution back toward the frontier: the tilt must now lower variance somewhere in order to raise return elsewhere.
+
+- Both constraints are quadratic, the feasible set is convex, and the problem is a second-order cone program.
+- A modern solver handles it in milliseconds (Boyd and Vandenberghe, 2004).
+
+## Where the Active Return Came From {.smaller}
+
+With segment weights $w_s$, $b_s$, segment returns $r_s$ (as held) and $\beta_s$ (at benchmark weights), and total benchmark return $r^b$ (Brinson et al., 1985, 1986):
+
+$$
+r^{p} - r^{b} =
+\underbrace{\sum_s (w_s - b_s)(\beta_s - r^{b})}_{\text{allocation}}
++ \underbrace{\sum_s b_s\,(r_s - \beta_s)}_{\text{selection}}
++ \underbrace{\sum_s (w_s - b_s)(r_s - \beta_s)}_{\text{interaction}} .
+$$
+
+- Allocation rewards overweighting a segment that beat the benchmark as a whole.
+- Selection rewards holding the right things inside a segment at the benchmark's weight.
+- Interaction is what is left: two decisions with no decision of its own behind it.
+- Tracking error measures deviation in risk units; active share, $\tfrac12\sum_i |w_i - b_i|$ (Cremers and Petajisto, 2009), measures it in holdings. A portfolio can have a large active share and a small tracking error at once.
+
+```{r policy}
+#| include: false
+```
+
+```{r register-rank}
+#| include: false
+```
+
+## A Policy Portfolio
+
+Four sleeves of the sixteen risky classes. The sleeve weights are a stated capital-market decision, not an estimate; within a sleeve the members are equally weighted.
+
+```{r tbl-24-policy}
+```
+
+The manager is the long-only minimum-variance portfolio of the mean-variance chapter, re-estimated every month on the trailing sixty months: it finishes `r c("first", "second", "third", "fourth", "fifth")[rank_mv]` in the register of the backtesting chapter. It estimates nothing about means, so it is genuinely active against this benchmark.
+
+## Two Return Series {.codesmall}
+
+```{r active-portfolio}
+#| echo: true
+#| output: false
+```
+
+```{r backfill}
+#| include: false
+```
+
+```{r returns}
+#| include: false
+```
+
+::: {.callout-important}
+## The benchmark comparison starts with a portfolio nobody chose
+
+`Return.portfolio()` back-fills an equally weighted portfolio for the `r win - 1L` months before the first weight vector. We cut both series to the `r nrow(a)` months a weight vector precedes, and assert the accounting by hand: with monthly rebalancing the return is $\boldsymbol{w}_{t-1}'\boldsymbol{r}_t$ and nothing else.
+:::
+
+::: {.notes}
+The returns chunk that does the cutting and the hand check ran in full, hidden; its code is in the chapter. The warning is the trap of the rebalancing chapter met from the other side.
+:::
+
+## The Measures in PerformanceAnalytics {.codesmall}
+
+```{r measures}
+#| echo: true
+#| output: false
+```
+
+- Tracking error `r sprintf("%.1f%%", 100 * te_pa)` a year; active premium `r sprintf("%.2f%%", 100 * ap_pa)`.
+- Information ratio `r sprintf("%.2f", ir_ar)`: the manager earned `r sprintf("%.1f", 100 * abs(mean(a) * 12))` percentage points a year less than the policy.
+
+::: {.callout-note}
+## The default information ratio is not the definition
+
+`ActivePremium()` is a difference of two *compounded* annual returns; the denominator is the volatility of the active series. The default divides a geometric numerator by an arithmetic denominator. Here the two versions differ by `r sprintf("%.3f", abs(ir_pa - ir_ar))`; `geometric = FALSE` gives the definition.
+:::
+
+```{r capture}
+#| include: false
+```
+
+```{r capm}
+#| include: false
+```
+
+```{r sharpe-both}
+#| include: false
+```
+
+```{r active-share}
+#| include: false
+```
+
+## Capture, Beta, and Two Signs {.smaller}
+
+```{r tbl-24-capm}
+```
+
+- The portfolio captures `r sprintf("%.0f%%", 100 * capture[["Up Capture"]])` of the benchmark's return in up months and `r sprintf("%.0f%%", 100 * capture[["Down Capture"]])` in down months; beta is `r sprintf("%.2f", beta_b)`.
+- The alpha of Jensen is `r sprintf("%+.1f%%", 100 * 12 * alpha_b)` a year and the appraisal ratio `r sprintf("%.2f", appr)`, both positive; the information ratio is `r sprintf("%.2f", ir_ar)`, negative.
+- The information ratio asks whether the portfolio earned more than the policy *at the policy's weights*. A Sharpe ratio of `r sprintf("%.2f", both[3, "active"])` against `r sprintf("%.2f", both[3, "policy"])` for the policy is no contradiction: the benchmark is not itself efficient.
+- On average `r sprintf("%.0f%%", 100 * mean(active_share))` of the portfolio sits elsewhere than the policy puts it.
+
+## Active Weights in PortfolioAnalytics {.codesmall}
+
+```{r active-sum}
+#| echo: true
+#| output: false
+```
+
+::: {.callout-warning}
+## What the package cannot express
+
+A tracking-error *budget* is a quadratic constraint, and `ROI` accepts one quadratic term only, in the objective. Jorion's total-risk bound is a second quadratic constraint, which no backend takes. And there is no information-ratio objective, because the ratio is not a quadratic program in the package. A fourth gap: the package does not know $\boldsymbol{b}$, and any group constraint would have to be shifted the same way.
+:::
+
+```{r roll-dual}
+#| include: false
+```
+
+## Roll's Frontier in Dual Form
+
+With a `return` constraint on top, the package minimizes tracking error at a target active return.
+
+```{r deck-dual}
+# Reshape of the chapter's `dual` object for display.
+dual |>
+  dplyr::transmute(`target active return` = sprintf("%.1f%%", 100 * target),
+                   `active return` = sprintf("%.2f%%", 100 * active_return),
+                   `tracking error` = sprintf("%.2f%%", 100 * tracking_error),
+                   `sum of active weights` = sprintf("%.1e", sum_active),
+                   `smallest weight` = sprintf("%.4f", min_weight)) |>
+  kable(align = "rrrrr")
+```
+
+The active weights sum to zero to machine precision and the smallest total weight is zero in every row: the long-only bound binds from the first target onward.
+
+## The Tracking-Error Budget, Built {.codesmall}
+
+```{r te-tilt}
+#| echo: true
+#| output: false
+```
+
+The status is asserted because a solver that returns something other than `optimal` still returns numbers.
+
+```{r primal-dual-check}
+#| include: false
+```
+
+```{r closed-form}
+#| include: false
+```
+
+## Closed Form Against Solver
+
+The primal and the dual are the same problem, and Roll's closed form can be checked against the solver; the check says how far it reaches.
+
+- Below a tracking error of `r sprintf("%.2f%%", 100 * tau_bind)` a year the closed form and the solver agree to six decimals, and both deliver the maximum information ratio, `r sprintf("%.3f", ir_max)`.
+- At that tracking error `r paste0("\x60", binds_first, "\x60")` reaches zero: the direction shorts it hard and the policy holds only `r sprintf("%.0f%%", 100 * b[[binds_first]])` of it.
+- From there the long-only constraint bends the frontier, and the information ratio falls with every increase in the budget.
+
+::: {.notes}
+The closed form ignores the long-only constraint, so it is exact only on the ray from the benchmark until the first weight reaches zero.
+:::
+
+## The Tracking-Error Frontier {.smaller}
+
+```{r tbl-24-te-frontier}
+```
+
+The information ratio falls from `r sprintf("%.3f", te_frontier$IR[1])` to `r sprintf("%.3f", te_frontier$IR[nrow(te_frontier)])` as the constraint bites, and the classes held fall from `r te_frontier$held[1]` to `r te_frontier$held[nrow(te_frontier)]`. At a four percent budget the portfolio sits `r sprintf("%.2f", 100 * te_frontier$gap[te_frontier$tau == 0.04])` percentage points below the mean-variance frontier: dominated by a portfolio the manager was not allowed to hold.
+
+## The Same Budget, Spent Two Ways {.smaller}
+
+```{r jorion}
+#| include: false
+```
+
+```{r tbl-24-jorion}
+```
+
+- The benchmark has a Sharpe ratio of `r sprintf("%.3f", anchored$sharpe[1])` and sits `r sprintf("%.2f", 100 * (anchored$frontier[1] - anchored$ret[1]))` percentage points below the frontier at its own volatility: it is not efficient.
+- Budget alone raises the Sharpe ratio to `r sprintf("%.3f", anchored$sharpe[2])` and the volatility to `r sprintf("%.1f%%", 100 * anchored$vol[2])`.
+- Under Jorion's bound volatility stays at the benchmark's, active return is `r sprintf("%.2f", 100 * anchored$ar[3])` percentage points instead of `r sprintf("%.2f", 100 * anchored$ar[2])`, and the portfolio lands `r sprintf("%.2f", 100 * (anchored$frontier[3] - anchored$ret[3]))` points from the frontier: a lower information ratio, a higher Sharpe ratio.
+
+## The Anchored Allocation
+
+```{r fig-24-te-frontier}
+#| fig-alt: "Long-only mean-variance frontier, the tracking-error frontier starting at the policy benchmark, and two diamonds spending the same four percent budget with and without a bound on total risk."
+#| fig-asp: 0.55
+```
+
+The dashed line is the benchmark's volatility, the bound. Nothing here is out of sample.
+
+::: {.notes}
+The anchor is the policy portfolio, the budget is the mandate's statement of how far the manager may depart, and the total-risk bound keeps the departure from becoming a leverage decision in disguise.
+:::
+
+```{r brinson}
+#| include: false
+```
+
+## Attribution by Sleeve {.smaller}
+
+```{r tbl-24-brinson}
+```
+
+```{r attribution-readout}
+#| include: false
+```
+
+- The total is the annualized mean active return of `r sprintf("%+.2f%%", 100 * mean(a) * 12)`. Allocation cost `r sprintf("%.2f", 100 * abs(sum(attr_tbl$allocation)))` percentage points a year, more than the whole shortfall; selection gave `r sprintf("%.2f", 100 * sum(attr_tbl$selection))` back.
+- The manager held `r sprintf("%.0f%%", 100 * held_by_sleeve[["government"]])` in government bonds against `r sprintf("%.0f%%", 100 * sleeve_policy[["government"]])`, and `r sprintf("%.0f%%", 100 * held_by_sleeve[["equity"]])` in equities against `r sprintf("%.0f%%", 100 * sleeve_policy[["equity"]])`; the `r worst_alloc` line is the larger cost.
+- The interaction term, `r sprintf("%+.2f%%", 100 * sum(attr_tbl$interaction))`, has no decision behind it. Currency return is booked under whichever sleeve the position sits in.
+
+```{r cap-weights}
+#| include: false
+```
+
+```{r two-benchmarks}
+#| include: false
+```
+
+```{r size-bet}
+#| include: false
+```
+
+## The Benchmark Is a Bet {.smaller}
+
+The policy's equity sleeve weights five markets equally; capitalization weighting of the same five series is the other natural choice.
+
+```{r tbl-24-two-benchmarks}
+```
+
+- The two have a tracking error of `r sprintf("%.1f%%", 100 * te_ew_cw)` a year against each other, more than most mandates allow.
+- The equally weighted sleeve is `r sprintf("%.0f", 100 * abs(size_bet[["US"]]))` percentage points underweight the United States and overweight every smaller market by `r sprintf("%.1f", 100 * min(size_bet[names(size_bet) != "US"]))` to `r sprintf("%.1f", 100 * max(size_bet[names(size_bet) != "US"]))` points.
+- A manager measured against it is asked to beat that bet before being asked to beat the market.
+
+```{r beta-instability}
+#| include: false
+```
+
+```{r error-bar}
+#| include: false
+```
+
+## The Error Bar {.smaller}
+
+The market proxy is `r sprintf("%.0f%%", 100 * mean(share[, "US"]))` United States on average, so a beta against it is largely a beta on one market, and that beta moves.
+
+- The sixty-month beta of `JP_equity` travels `r sprintf("%.2f", travel_jp)`; `JP_government` disagrees with the sign of its full-sample beta in `r sprintf("%.0f%%", 100 * flips[["JP_government"]])` of windows and `US_credit` in `r sprintf("%.0f%%", 100 * flips[["US_credit"]])`.
+- The manager's beta to the policy runs from `r sprintf("%.2f", min(beta_pb))` to `r sprintf("%.2f", max(beta_pb))`, so the appraisal ratio of `r sprintf("%.2f", appr)` divides by a number that is not constant.
+- The information ratio needs no beta. Over `r Tn` months it is `r sprintf("%.2f", ir_m * sqrt(12))` with a standard error of `r sprintf("%.2f", se_m * sqrt(12))`; the 95 percent interval runs from `r sprintf("%.2f", ci[1])` to `r sprintf("%+.2f", ci[2])` and contains zero.
+- The interval assumes an independence this market does not meet, so the true interval is wider. The evidence that the manager subtracted skill is not strong enough to state, and the evidence that it added any does not exist.
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** Active weights sum to zero, so every active portfolio is long-short; a sixteen-class allocator needs an information coefficient of `r sprintf("%.3f", 0.5 / sqrt(16))` for an information ratio of one half.
+- **Outcome 3.** A tracking-error budget alone produces dominated portfolios, because the tilt does not depend on the benchmark; a bound on total risk repairs it, landing within `r sprintf("%.2f", 100 * (anchored$frontier[3] - anchored$ret[3]))` percentage points of the frontier at a four percent budget.
+- **Outcome 2.** `PortfolioAnalytics` has an `active` weight-sum type and a return constraint that gives Roll's frontier in dual form; a budget, a second quadratic constraint and an information-ratio objective are a few lines of `CVXR`.
+- **Outcome 2.** `InformationRatio()` divides compounded returns by an arithmetic volatility; `geometric = FALSE` gives the definition. A higher Sharpe ratio and a negative information ratio can describe the same portfolio.
+- **Outcome 4.** The benchmark is a decision: equal and capitalization weighting of the same five markets differ by `r sprintf("%.1f%%", 100 * te_ew_cw)` a year of tracking error.
+- **Outcome 4.** An information ratio of one half needs about `r sprintf("%.0f", months_needed(0.5) / 12)` years of data; after `r Tn` months this manager's interval still contains zero.
+
+## Exercises {.smaller}
+
+Work these in `code/24-benchmarks-and-active-risk-exercises.R`; solutions are in appendix G of the book.
+
+1. Replace the policy with the equally weighted portfolio over all sixteen classes and recompute the tracking error, the information ratio and the attribution table. Which sleeve's allocation effect moves the most, and why does the whole change land in the allocation line?
+2. Trace the total-risk bound at 1.1 times the benchmark's volatility for budgets of two, four and six percent. Where does each portfolio land relative to the frontier, and at which budget does the bound stop binding?
+3. Compute the information ratio of the equally weighted portfolio against the policy over the same months, with its interval. Is it distinguishable from zero, and from the manager's?
+4. Rebuild the policy with a capitalization-weighted equity sleeve and measure the same manager against it. Does the information ratio improve or worsen, and who bears the size bet?

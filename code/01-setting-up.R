@@ -59,9 +59,8 @@ packages |>
   dplyr::select(group, package, version, role) |>
   kable(align = "llll", col.names = c("", "package", "version", "used for"))
 
-# ===== Two functions for everything, and none for data =====
-
 ## ---- namespace ----
+# ===== Two functions for everything, and none for data =====
 exports <- getNamespaceExports("PortfolioAnalytics")
 legacy  <- sort(grep("_v[12]", exports, value = TRUE))
 c(exports = length(exports), legacy = length(legacy))
@@ -71,9 +70,8 @@ legacy
 n_fetch <- sum(grepl("download|getSymbols|fetch|read", exports, ignore.case = TRUE))
 pa_data <- utils::data(package = "PortfolioAnalytics")$results[, "Item"]
 
-# ===== The Tibble–xts Boundary =====
-
 ## ---- long-form ----
+# ===== The Tibble–xts Boundary =====
 sim_class_returns_monthly |> dplyr::slice_head(n = 4)
 
 ## ---- data ----
@@ -92,9 +90,8 @@ tb
 stopifnot(identical(zoo::coredata(as_xts_pm(tb, date, asset, value)),
                     zoo::coredata(R)))
 
-# ===== Three ways the boundary breaks =====
-
 ## ---- ragged-build ----
+# ===== Three ways the boundary breaks =====
 ragged <- sim_class_returns_monthly[-5, ]
 
 R_ragged <- withCallingHandlers(
@@ -158,9 +155,8 @@ tryCatch(
 dup |> dplyr::count(date, class) |> dplyr::filter(n > 1)
 stopifnot(!anyDuplicated(sim_class_returns_monthly[c("date", "class")]))
 
-# ===== How the code in this book is written =====
-
 ## ---- every-chapter ----
+# ===== How the code in this book is written =====
 # Not run in the book; shown for the reader to try.
 # source("_common.R")                                              # seed, options, theme
 # library(tidypm)                                                    # the market, the boundary
@@ -168,9 +164,8 @@ stopifnot(!anyDuplicated(sim_class_returns_monthly[c("date", "class")]))
 # rf <- sim_riskfree_monthly$return                                  # the Treasury bill
 # Re <- R - rf                                                       # excess returns
 
-# ===== The shape of the data =====
-
 ## ---- dimensions ----
+# ===== The shape of the data =====
 p <- xts::periodicity(R)
 c(months = nrow(R), assets = ncol(R),
   from = as.character(start(R)), to = as.character(end(R)), scale = p$scale)

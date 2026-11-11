@@ -18,9 +18,8 @@ Re <- R - rf
 stopifnot(ncol(Re) == 16L, !anyNA(Re))
 N <- ncol(Re); T <- nrow(Re); years <- T / 12
 
-# ===== How Precisely a Mean Can Be Known =====
-
 ## ---- precision ----
+# ===== How Precisely a Mean Can Be Known =====
 mu_s <- colMeans(Re)                 # monthly sample means, the mu of chapter 9
 S    <- stats::cov(Re)               # the sample covariance of chapter 7
 
@@ -60,9 +59,8 @@ precision |>
         col.names = c("", "mean", "volatility", "std. error", "t",
                       "lower", "upper", "years to exclude zero"))
 
-# ===== Sampling more finely helps the variance and not the mean =====
-
 ## ---- frequency ----
+# ===== Sampling more finely helps the variance and not the mean =====
 Rw   <- as_xts_pm(sim_class_returns_weekly, date, class, return)
 # The weekly bill series starts one week before the return panel: align by date.
 rf_w <- sim_riskfree_weekly$return[match(zoo::index(Rw), sim_riskfree_weekly$date)]
@@ -81,18 +79,16 @@ c(months = nrow(Re), weeks = nrow(Rew),
   variance_se_ratio = median(freq$se_var_w / freq$se_var_m),
   sqrt_T_ratio      = sqrt(nrow(Re) / nrow(Rew)))
 
-# ===== A target set on a sample mean =====
-
 ## ---- target ----
+# ===== A target set on a sample mean =====
 target_m <- as.numeric(quantile(mu_s, 0.75))      # the target chapter 9 imposes
 se_med   <- median(precision$se)
 c(target_annual = target_m * 12, median_se = se_med,
   target_lower = target_m * 12 - 1.96 * se_med,
   target_upper = target_m * 12 + 1.96 * se_med)
 
-# ===== Bayes-Stein in a few lines =====
-
 ## ---- bayes-stein ----
+# ===== Bayes-Stein in a few lines =====
 bayes_stein <- function(R) {
   X <- zoo::coredata(R); T <- nrow(X); N <- ncol(X)
   mu   <- colMeans(X)
@@ -138,9 +134,8 @@ mu_long |>
   ggplot2::scale_x_continuous(labels = scales::percent) +
   ggplot2::labs(x = "annualized expected excess return", y = NULL, colour = NULL)
 
-# ===== Equilibrium returns for the five equity classes =====
-
 ## ---- market-weights-equity ----
+# ===== Equilibrium returns for the five equity classes =====
 eq_ids     <- sim_assets$asset_id[sim_assets$asset_class == "equity"]
 region_of  <- setNames(sim_assets$region, sim_assets$asset_id)
 eq_classes <- grep("_equity$", colnames(Re), value = TRUE)
@@ -210,9 +205,8 @@ cmp5 |>
         col.names = c("", "market weight", "beta", "sample mean", "std. error",
                       "equilibrium", "gap, in std. errors"))
 
-# ===== Worked: a class-level equilibrium on a stated proxy =====
-
 ## ---- market-weights-proxy ----
+# ===== Worked: a class-level equilibrium on a stated proxy =====
 # ASSUMPTION, not data: the split of world wealth across the four blocks.
 block <- c(equity = 0.40, government = 0.40, credit = 0.15, commodity = 0.05)
 stopifnot(abs(sum(block) - 1) < 1e-12)
@@ -237,9 +231,8 @@ c(proxy_return = mean(mkt16_e) * 12, proxy_vol = stats::sd(mkt16_e) * sqrt(12),
 
 round(cbind(weight = w_mkt, sample = mu_s * 12, equilibrium = mu_eq * 12)[order(-w_mkt), ], 3)
 
-# ===== The moments as PortfolioAnalytics sees them =====
-
 ## ---- moments-sample ----
+# ===== The moments as PortfolioAnalytics sees them =====
 spec <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "full_investment") |>
   add.constraint(type = "long_only") |>
@@ -265,17 +258,15 @@ stopifnot(all.equal(as.numeric(opt_bs$moment_values$mu), unname(bs$mu)))
 names(opt_bs$moment_values)
 round(extractWeights(opt_bs)[extractWeights(opt_bs) > 0.005], 4)
 
-# ===== On the CRAN release, `maxSR` ignores the mean you supplied =====
-
 ## ---- black-litterman ----
+# ===== On the CRAN release, `maxSR` ignores the mean you supplied =====
 bl <- black.litterman(Re, P = diag(N), Mu = mu_eq, Views = mu_eq)
 str(bl, give.attr = FALSE)
 c(posterior_equals_prior = isTRUE(all.equal(as.numeric(bl$BLMu), unname(mu_eq))),
   variance_ratio = unique(round(diag(bl$BLSigma) / diag(S), 6)))
 
-# ===== `black.litterman()` is the blending formula, not the model =====
-
 ## ---- bl-defaults ----
+# ===== `black.litterman()` is the blending formula, not the model =====
 bl_default <- black.litterman(Re, P = diag(N))                   # Mu and Views left at their defaults
 bl_moments <- set.portfolio.moments(Re, spec, method = "black_litterman")
 c(default_view_shift_pp   = mean(as.numeric(bl_default$BLMu) - mu_s) * 1200,
@@ -318,9 +309,8 @@ gamma_check <- c(at_delta_over_2 = max(abs(qu_weights(delta16 / 2) - w_mkt)),
 stopifnot(gamma_check[["at_delta_over_2"]] < 1e-8)
 gamma_check
 
-# ===== Three tangency portfolios =====
-
 ## ---- tangency ----
+# ===== Three tangency portfolios =====
 mus <- list(sample = mu_s, `Bayes-Stein` = bs$mu, equilibrium = mu_eq)
 
 W3 <- sapply(mus, function(m) {
@@ -335,9 +325,8 @@ stopifnot(identical(rownames(W3), colnames(Re)),
 
 round(W3[rowSums(W3 > 0.005) > 0, ], 4)
 
-# ===== Worked: the long-only tangency portfolio in one quadratic program =====
-
 ## ---- tangency-check ----
+# ===== Worked: the long-only tangency portfolio in one quadratic program =====
 tangency_lo <- function(mu, S) {
   if (max(mu) <= 0) return(setNames(rep(NA_real_, length(mu)), names(mu)))  # no long-only tangency
   N <- length(mu)
@@ -436,9 +425,8 @@ w_long |>
   ggplot2::scale_x_continuous(labels = scales::percent) +
   ggplot2::labs(x = "weight in the long-only tangency portfolio", y = NULL, fill = NULL)
 
-# ===== Which vector moves least =====
-
 ## ---- rolling ----
+# ===== Which vector moves least =====
 win    <- 60L
 starts <- seq_len(T - win + 1L)
 

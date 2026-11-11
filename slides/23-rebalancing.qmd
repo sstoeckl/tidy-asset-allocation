@@ -1,0 +1,325 @@
+---
+title: "Rebalancing and Transaction Costs"
+subtitle: "Tidy Asset Allocation in R, Chapter 23"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 23"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/23-rebalancing.R to the chunks below,
+# so no line of analysis is maintained twice. root.dir takes effect after this
+# chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("23-rebalancing.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **Define** turnover and the proportional cost model, and **compute** the net return of a portfolio with per-class cost rates.
+2. **State** what theory says about how often to trade: the no-trade region and partial adjustment.
+3. **Implement** the drift-and-rebalance accounting in `R`, and **recognize** where `PortfolioAnalytics` and `PerformanceAnalytics` behave differently from what the specification suggests.
+4. **Evaluate** what rebalancing frequency and costs do to rule-based and to optimized portfolios.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 1, 3 and 4.
+:::
+
+## The Question {.smaller}
+
+Every portfolio in the book so far has been rebalanced to its target weights each month at no charge. What does that assumption hide?
+
+::: {.statement}
+Perold (1988) named the gap between the paper portfolio and the real one the **implementation shortfall**, and the gap is worth more to some strategies than to others.
+:::
+
+- We first define turnover and the cost model, then set out what theory says about how often to trade.
+- We then measure the effect on the out-of-sample runs of the backtesting chapter, which were computed with and without costs from the start.
+
+<p class="source">Perold, A. (1988). The Implementation Shortfall: Paper versus Reality. *Journal of Portfolio Management* 14(3), 4–9.</p>
+
+## Turnover {.smaller}
+
+Between the weights the portfolio has drifted into and the weights it is moved to,
+
+$$
+\tau = \tfrac{1}{2}\sum_{i=1}^{N}
+  \left| w_i^{\text{after}} - w_i^{\text{before}} \right| .
+$$
+
+Halved because selling one asset to buy another is a single trade. Summed over a year, a hundred percent means the portfolio was replaced once.
+
+```{r turnover-def}
+#| echo: true
+```
+
+## Net Return and a Package Pitfall {.smaller}
+
+If asset $i$ costs $c_i$ per unit traded one way, the return net of costs is
+
+$$
+r^{\text{net}}_t = r^{\text{gross}}_t
+  - \sum_{i=1}^{N} c_i \left| w_{i,t}^{\text{after}} - w_{i,t}^{\text{before}} \right| .
+$$
+
+::: {.callout-important}
+## `turnover()` in `PortfolioAnalytics` divides by $N$, not by two
+
+On these `r ncol(R)` series it reports `r sprintf("1/%d", ncol(R) / 2)` of the turnover defined above. We use our own function.
+:::
+
+```{r turnover-pa}
+#| echo: true
+```
+
+The check passes silently: the package value times $N/2$ equals ours.
+
+## Linear Costs, and Where They Stop
+
+The net-return formula is linear: no notion of trading a large position more expensively than a small one.
+
+- Defensible at the asset-class scale of this chapter.
+- It fails at the scale of a single security, where market impact grows with size (Kyle, 1985) and execution becomes its own optimization problem (Almgren and Chriss, 2001).
+- Illiquidity is priced in the cross-section (Amihud, 2002), and many published anomalies do not survive their own trading costs (Novy-Marx and Velikov, 2016).
+
+::: {.notes}
+The linear model is a deliberate simplification. We return to its limits at the end of the session.
+:::
+
+## Costs by Asset Class {.smaller}
+
+A government bond is cheap, high-yield credit is not. One average rate charges the cheap sleeves too much and the dear ones too little.
+
+```{r costs}
+#| echo: true
+```
+
+```{r credit-rank}
+#| include: false
+```
+
+One-way rates in decimal: `r sprintf("%.0f", 1e4 * pm_costs_default()[["government"]])` basis points for a government bond against `r sprintf("%.0f", 1e4 * pm_costs_default()[["credit"]])` for credit. The rates are arguments, not constants.
+
+- `US_credit` has the `r c("highest", "second-highest", "third-highest")[sr_rank["US_credit"]]` Sharpe ratio of the sixteen, and credit is the dearest class to trade: the sleeve an optimizer wants most costs most to hold at a moving weight.
+
+## The No-Trade Region
+
+With costs in the objective, the optimal policy is no longer to return to the target every period (Constantinides, 1986; Davis and Norman, 1990).
+
+- While the drifted weights stay **inside** a region around the target, the right action is to do nothing.
+- When they leave it, the right action is to trade back only to its **boundary**, not to the target.
+- Trading is worth its cost only once the portfolio is far enough away.
+
+<p class="source">Constantinides, G. (1986). *Journal of Political Economy* 94(4), 842–862. Davis, M. and Norman, A. (1990). *Mathematics of Operations Research* 15(4), 676–713.</p>
+
+## Partial Adjustment Toward a Moving Aim
+
+For a portfolio whose target itself moves, the optimal trade is a partial adjustment (Gârleanu and Pedersen, 2013):
+
+$$
+\boldsymbol{w}_t = \boldsymbol{w}_{t-1}
+  + \Delta\left(\boldsymbol{w}^{\text{aim}}_t - \boldsymbol{w}_{t-1}\right),
+\qquad \Delta \in (0, 1).
+$$
+
+- The aim portfolio is a cost-weighted average of the current optimum and the optima expected in future.
+- The adjustment rate $\Delta$ falls as costs rise.
+- A strategy whose target moves quickly should trade partially and often; one whose target is stable should let it drift.
+
+::: {.notes}
+This distinction is exactly what the measurements later in the session recover: rules have stable targets, optimizers do not.
+:::
+
+## A Turnover Constraint Is Not One Everywhere
+
+::: {.callout-important}
+## The same constraint means two different things to two solvers
+
+Under `ROI` a turnover constraint is hard: the solver will not return a portfolio trading more than the limit. Under `CVXR` it is a penalty added to the objective, so a sufficiently attractive portfolio buys its way past the limit and the limit bends.
+:::
+
+- Neither behavior is wrong, and they answer different questions.
+- Only one of them is what the word constraint normally means.
+- Exercise 3 measures which one binds.
+
+## Proportional Costs Exist Only Under ROI
+
+::: {.callout-important}
+## `transaction_cost_constraint()` is an `ROI` feature
+
+Requesting proportional costs under `CVXR` applies nothing, and reports nothing.
+:::
+
+- The same specification therefore means different things to the two backends.
+- Check the backend before reading a cost-aware result as cost-aware.
+- Costs belong in the objective rather than in an audit afterwards, which is what `turnover_objective()` and `transaction_cost_constraint()` are for.
+
+::: {.notes}
+The silent no-op is the dangerous part: the optimization runs, the weights look reasonable, and no cost was ever charged.
+:::
+
+## The Accounting That Rewrites the Start of a Backtest {.codesmall}
+
+`Return.portfolio()` turns a weight history into a return series. We give it weights that begin late, as they must in a rolling backtest.
+
+```{r backfill}
+#| echo: true
+```
+
+The call warns, and the warning is the whole story: *"First weights period is after the start of the data series. Setting weights for the preceding periods to equal weight."*
+
+## What the Series Actually Tracks
+
+```{r backfill-evidence}
+#| echo: false
+```
+
+For the first `r sum(zoo::index(pr) <= zoo::index(w)[1])` months, up to and including the month the first weights are dated, the series tracks the equally weighted portfolio (`if_equal`), not the one specified (`if_stated`).
+
+::: {.notes}
+An estimation window always consumes the start of the sample, so this is the normal case, and it silently prepends a strategy nobody chose. tidypm's pm_backtest() does the drift-and-rebalance accounting explicitly.
+:::
+
+## What `verbose = TRUE` Returns {.codesmall}
+
+```{r verbose}
+#| echo: true
+```
+
+`BOP.Weight` and `EOP.Weight` are the weights at the beginning and end of each period, before and after drift. Their difference is the turnover formula, without reconstructing it:
+
+```{r turnover-from-verbose}
+#| echo: true
+```
+
+## Rebalancing Less Often: Rules and Optimizers {.smaller}
+
+```{r frequency}
+#| include: false
+```
+
+```{r tbl-23-frequency}
+```
+
+First three numeric columns: Sharpe ratios; last three: annual turnover. Sixty-month window, gross of costs.
+
+- Equal weighting runs from `r sprintf("%.3f", freq$sharpe_months[freq$strategy == "equal_weight"])` to `r sprintf("%.3f", freq$sharpe_years[freq$strategy == "equal_weight"])` with `r sprintf("%.0f", 100 * freq$ann_turnover_years[freq$strategy == "equal_weight"] / freq$ann_turnover_months[freq$strategy == "equal_weight"])` percent of the turnover.
+- Maximum Sharpe falls from `r sprintf("%.3f", freq$sharpe_months[freq$strategy == "max_sharpe"])` to `r sprintf("%.3f", freq$sharpe_years[freq$strategy == "max_sharpe"])`, minimum CVaR from `r sprintf("%.3f", freq$sharpe_months[freq$strategy == "min_cvar"])` to `r sprintf("%.3f", freq$sharpe_years[freq$strategy == "min_cvar"])`.
+
+## Stable Size, Unstable Sign
+
+- The rules improve when left alone at **every** estimation window of the sweep, by about `r sprintf("%.2f", median(chg$change[chg$strategy %in% rules]))`.
+- The optimizers lose at this window only; at the `r paste(win_gain, collapse = "- and ")`-month windows all three gain, by up to `r sprintf("%.3f", max(opt$change[opt$window %in% win_gain]))`.
+- What is stable across windows is the **size** of the move, up to `r sprintf("%.2f", max(abs(opt$change)))` for the optimizers, not its sign.
+
+A rule-based target does not move, so drift is a small error and trading to it more often buys noise. An optimized weight is an estimate whose target moves as the fitted sample recedes: rebalance often and pay to chase it, rebalance rarely and hold a stale one.
+
+::: {.notes}
+This is the partial-adjustment equation at work. The no-trade region is wide for a volatile target and narrow for a stable one.
+:::
+
+## What Costs Take {.smaller}
+
+```{r bite}
+#| include: false
+```
+
+```{r tbl-23-bite}
+```
+
+Nine configurations of the sweep (three windows, three frequencies). The bite is the Sharpe ratio lost to trading.
+
+- In every one of the nine, the two rules lose less than any of the three optimizers.
+- Maximum Sharpe surrenders about `r sprintf("%.0f", 100 * bite_of("max_sharpe") / bite$gross[bite$strategy == "max_sharpe"])` percent of a median gross Sharpe ratio that is already the lowest of the five, and `r sprintf("%.0f", 100 * max(bite$worst_bite / bite$gross))` percent in its worst configuration.
+
+## Turnover Against the Sharpe Ratio It Costs
+
+```{r fig-23-bite}
+#| fig-alt: "Scatter of annual turnover against Sharpe ratio lost to costs for five strategies across the nine configurations of the sweep."
+#| fig-asp: 0.5
+```
+
+The relationship is close to linear because the cost model is: what varies is how much each strategy trades and in which asset classes.
+
+## Calendar Rules and Band Rules
+
+A **band rule** trades when a weight leaves a tolerance around its target: the practical form of the no-trade region.
+
+- A calendar rule trades when nothing has happened and waits when something has.
+- A band rule responds to the portfolio, but its turnover is unpredictable and it can trade repeatedly as a weight oscillates across a boundary.
+- Tokat and Wicas (2007) find that the width matters far more than the trigger; Donohue and Yip (2003) recover the no-trade region from a dynamic program.
+- `PortfolioAnalytics` has no band policy; a few lines around the `EOP.Weight` history build one.
+
+<p class="source">Tokat, Y. and Wicas, N. (2007). *Journal of Investing* 16(2), 52–59. Donohue, C. and Yip, K. (2003). *Journal of Portfolio Management* 29(4), 49–63.</p>
+
+## Where the Cost Model Stops Being Credible {.smaller}
+
+- **Linear and symmetric.** The same rate to buy and to sell, and for a one percent trade as for a twenty percent one. Defensible for index proxies, not for a single security.
+- **Constant rates.** Real spreads widen exactly when portfolios most want to trade. In the credit crisis the cost of trading credit runs at several times its calm-market level.
+- The turnover of the optimized strategies is concentrated in such episodes, so the bite measured here is a **lower bound** for them and close to exact for equal weighting.
+
+::: {.notes}
+The point here is only the direction of the bias: constant rates understate the cost of exactly the strategies that trade most in stress.
+:::
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** Turnover and its cost are linear here, which is defensible at asset-class scale. Costs are per class: `r sprintf("%.0f", 1e4 * pm_costs_default()[["government"]])` basis points for a government bond against `r sprintf("%.0f", 1e4 * pm_costs_default()[["credit"]])` for credit.
+- **Outcome 2.** With costs, the optimal policy is to trade back only to the edge of a no-trade region, or to adjust partially toward a moving aim portfolio.
+- **Outcome 3.** A turnover constraint is hard under `ROI` and a penalty under `CVXR`, and proportional costs exist only under `ROI`.
+- **Outcome 3.** `Return.portfolio()` back-fills equal weights before the first supplied weight vector and warns rather than failing; a rolling window makes this the normal case.
+- **Outcome 4.** Rebalancing less often helps the rules at every window; for the optimizers the sign depends on the window. At sixty months equal weighting moves from `r sprintf("%.3f", sr_at("equal_weight", "months"))` to `r sprintf("%.3f", sr_at("equal_weight", "years"))`, maximum Sharpe from `r sprintf("%.3f", sr_at("max_sharpe", "months"))` to `r sprintf("%.3f", sr_at("max_sharpe", "years"))`.
+- **Outcome 4.** The cost bite is monotone in how much a strategy optimizes: a median of `r sprintf("%.3f", bite_of("max_sharpe"))` of Sharpe ratio for maximum Sharpe against `r sprintf("%.3f", bite_of("equal_weight"))` for equal weighting.
+
+## Exercises {.smaller}
+
+Work these in `code/23-rebalancing-exercises.R`; solutions to follow.
+
+1. Double every rate in `pm_costs_default()` and recompute the cost-bite table. Does the ordering change, or only the magnitudes? At what multiple does the maximum-Sharpe strategy's net Sharpe reach zero?
+2. Replace the per-class cost model with a single flat rate equal to the average and compare. Which strategies are flattered by the simplification, and why?
+3. Add a `turnover_constraint()` capping annual turnover at 25 percent to the maximum-Sharpe specification and rerun it under both `ROI` and `CVXR`. Measure the realized turnover under each. Which one bound?
+4. Using `Return.portfolio(verbose = TRUE)`, compute the drift turnover of an equal-weighted portfolio that is never rebalanced. How far does it get from equal weighting by the end of the 31 model years, and which series does it become?

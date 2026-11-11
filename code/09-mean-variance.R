@@ -17,9 +17,8 @@ rf <- sim_riskfree_monthly$return
 Re <- R - rf
 stopifnot(ncol(Re) == 16L, !anyNA(Re))
 
-# ===== Worked: two assets, by hand =====
-
 ## ---- two-asset-inputs ----
+# ===== Worked: two assets, by hand =====
 pair <- c("US_equity", "US_government")
 X    <- Re[, pair]
 
@@ -60,9 +59,8 @@ w_mx <- as.numeric(solve(S2) %*% i2) / as.numeric(t(i2) %*% solve(S2) %*% i2)
 stopifnot(all.equal(w1, w_mx[1]))
 round(c(by_hand = w1, by_matrix = w_mx[1]), 8)
 
-# ===== Looking at the inputs first =====
-
 ## ---- moments ----
+# ===== Looking at the inputs first =====
 ann_ret <- function(x) prod(1 + x)^(12 / length(x)) - 1
 ann_vol <- function(x) stats::sd(x) * sqrt(12)
 
@@ -130,9 +128,8 @@ moments |>
   ggplot2::scale_colour_manual(values = unname(tidyaa_colors[c("broken", "blue")])) +
   ggplot2::labs(x = "annualized volatility", y = "compounded return", colour = NULL)
 
-# ===== Specifying and solving the problem =====
-
 ## ---- spec ----
+# ===== Specifying and solving the problem =====
 base_spec <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "full_investment") |>   # weights sum to one
   add.constraint(type = "long_only")            # 0 <= w <= 1
@@ -152,9 +149,8 @@ p_sr  <- function(w) p_ret(w) / p_vol(w)
 
 c(volatility = p_vol(w_gmv), excess_return = p_ret(w_gmv), sharpe = p_sr(w_gmv))
 
-# ===== The tangency portfolio =====
-
 ## ---- tangency ----
+# ===== The tangency portfolio =====
 ef_spec <- base_spec |>
   add.objective(type = "return", name = "mean") |>
   add.objective(type = "risk",   name = "StdDev")
@@ -223,9 +219,8 @@ stopifnot(
             c("US_equity", "US_credit"))
 )
 
-# ===== Worked: the closed form of @eq-09-gmv against the solver =====
-
 ## ---- closed-form-gmv ----
+# ===== Worked: the closed form of @eq-09-gmv against the solver =====
 iota <- rep(1, ncol(Re))
 Sinv <- solve(S)
 
@@ -261,9 +256,8 @@ c(gmv_variance_from_A   = 1 / A,
   max_sharpe_sqrt_C     = sqrt(C),
   max_sharpe_long_only  = p_sr(w_tan) / sqrt(12))
 
-# ===== The solver most examples use is the wrong one =====
-
 ## ---- cvxr-whitelist ----
+# ===== The solver most examples use is the wrong one =====
 pa_cvxr_solvers <- c("CBC", "GLPK", "GLPK_MI", "OSQP", "CPLEX",
                      "SCS", "ECOS", "GUROBI", "MOSEK")
 setdiff(CVXR::installed_solvers(), pa_cvxr_solvers)
@@ -292,9 +286,8 @@ solve_checked <- function(R, spec, ...) {
 
 try(solve_checked(Re, min_var_spec, optimize_method = c("CVXR", "CLARABEL")))
 
-# ===== An exact budget constraint can be reported as infeasible =====
-
 ## ---- target-trap ----
+# ===== An exact budget constraint can be reported as infeasible =====
 target_monthly <- as.numeric(quantile(mu, 0.75))
 
 on_constraint <- base_spec |>
@@ -331,17 +324,15 @@ stopifnot(trap$hit[1:3], !trap$hit[4],
           isTRUE(all.equal(trap$achieved[4], achieved(no_target, "ROI"),
                            tolerance = 1e-6)))
 
-# ===== The package's own frontier chart =====
-
 ## ---- fig-09-native-frontier ----
+# ===== The package's own frontier chart =====
 # The package's own frontier chart. Base graphics, unstyled, and the whole
 # picture in one line.
 chart.EfficientFrontier(ef, match.col = "StdDev", tangent.line = TRUE, rf = 0,
                         main = "", RAR.text = "Sharpe")
 
-# ===== The frontier is a set of answers, not an object =====
-
 ## ---- utility-portfolios ----
+# ===== The frontier is a set of answers, not an object =====
 # Quadratic utility: maximize mu'w - lambda * w'Sigma w. In PortfolioAnalytics
 # this is a return objective plus a risk objective carrying `risk_aversion`.
 # Note that `risk_aversion` is gamma/2, not gamma -- see appendix B.
@@ -436,9 +427,8 @@ ggplot2::ggplot() +
   ggplot2::scale_y_continuous(labels = scales::percent) +
   ggplot2::labs(x = "annualized volatility", y = "annualized excess return")
 
-# ===== Worked: the same five portfolios, four different ways of asking =====
-
 ## ---- equivalences ----
+# ===== Worked: the same five portfolios, four different ways of asking =====
 best_frontier <- function(target_vol) {
   i <- which.min(abs(fr$StdDev * sqrt(12) - target_vol))
   w <- setNames(as.numeric(fr[i, wcols]), sub("^w[.]", "", colnames(fr)[wcols]))
@@ -458,9 +448,8 @@ tibble::tibble(
         col.names = c("", "volatility", "return", "frontier return at that risk",
                       "gap"))
 
-# ===== Reading the frontier through its weights =====
-
 ## ---- fig-09-ef-weights ----
+# ===== Reading the frontier through its weights =====
 # Weights along the efficient frontier. Each vertical slice is one portfolio;
 # the left edge is minimum variance and the right edge is the highest
 # attainable return. The two dashed lines mark the minimum-variance and
@@ -500,9 +489,8 @@ round(sort(unlist(corner), decreasing = TRUE)[1:3], 4)
 # and correct.
 chart.EF.Weights(ef, match.col = "StdDev", main = "", legend.loc = NULL)
 
-# ===== Worked: where each asset enters and leaves =====
-
 ## ---- entry-exit ----
+# ===== Worked: where each asset enters and leaves =====
 held <- vapply(colnames(Re), function(a) {
   w <- fr[[paste0("w.", a)]]
   v <- fr$StdDev * sqrt(12)
@@ -519,9 +507,8 @@ t(held) |>
   kable(align = "lrrr",
         col.names = c("", "first held at vol", "last held at vol", "peak weight"))
 
-# ===== The left end is stable and the right end is not =====
-
 ## ---- bootstrap ----
+# ===== The left end is stable and the right end is not =====
 set.seed(1602)
 
 block_index <- function(n, block = 12L) {
@@ -564,9 +551,8 @@ tibble::tibble(
   dplyr::mutate(dplyr::across(where(is.numeric), ~ sprintf("%.3f", .x))) |>
   kable(align = "lrrr", col.names = c("", "mean", "median", "95th percentile"))
 
-# ===== Diversification effort and diversification payoff are unrelated =====
-
 ## ---- diversification ----
+# ===== Diversification effort and diversification payoff are unrelated =====
 Req <- Re[, grepl("_equity$", colnames(Re))]
 Ceq <- stats::cor(Req)
 Seq <- stats::cov(Req)
@@ -640,9 +626,8 @@ ggplot2::ggplot(both, ggplot2::aes(vol, ret, colour = universe)) +
   ggplot2::theme(legend.position = "top") +
   ggplot2::labs(x = "annualized volatility", y = "annualized excess return")
 
-# ===== Five hundred universes, one constant =====
-
 ## ---- subuniverses ----
+# ===== Five hundred universes, one constant =====
 set.seed(1602)
 
 gmv_vol_of <- function(X) {
@@ -677,9 +662,8 @@ c(lowest_vol_alone    = r2(log(gmv_vol) ~ log(min_vol)),
   correlation_alone    = r2(log(gmv_vol) ~ mean_cor),
   everything           = r2(log(gmv_vol) ~ log(min_vol) + mean_cor + n))
 
-# ===== What each constraint costs =====
-
 ## ---- constraint-ladder ----
+# ===== What each constraint costs =====
 group_of <- function(a) dplyr::case_when(
   grepl("_equity$", a)     ~ "equity",
   grepl("_government$", a) ~ "government",
@@ -775,9 +759,8 @@ ggplot2::ggplot() +
   ggplot2::theme(legend.position = "top") +
   ggplot2::labs(x = "annualized volatility", y = "annualized excess return")
 
-# ===== And it does not survive contact with the future =====
-
 ## ---- tbl-09-oos ----
+# ===== And it does not survive contact with the future =====
 # The same three portfolios, estimated on the full sample and estimated on a
 # sixty-month rolling window. Only the second column is achievable.
 oos <- utils::read.csv("tables/oos-sweep.csv") |>

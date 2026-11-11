@@ -27,9 +27,8 @@ stopifnot(identical(names(sharpe_rank), colnames(Re)), identical(names(skew_tota
           names(which.min(skew_total)) == "US_credit")
 credit_rank <- c("best", "second-best", "third-best")[sharpe_rank[["US_credit"]]]
 
-# ===== Worked: where value at risk fails subadditivity on this data =====
-
 ## ---- subadditivity ----
+# ===== Worked: where value at risk fails subadditivity on this data =====
 loss_var <- function(x) as.numeric(VaR(x, p = 0.95, method = "historical", invert = FALSE))
 loss_es  <- function(x) as.numeric(ES(x,  p = 0.95, method = "historical", invert = FALSE))
 
@@ -57,9 +56,8 @@ stopifnot(sum(mix$es_fails) == 0L, nrow(viol) >= 1L,
           all(sub("_.*$", "", viol$a) == sub("_.*$", "", viol$b)),
           all(sub("^.*_", "", viol$a) == "credit"), all(sub("^.*_", "", viol$b) == "government"))
 
-# ===== Worked: the expected shortfall of `US_credit` by hand =====
-
 ## ---- es-by-hand ----
+# ===== Worked: the expected shortfall of `US_credit` by hand =====
 x  <- as.numeric(Re[, "US_credit"])
 q  <- stats::quantile(x, 0.05)              # the quantile; its negative is the VaR
 tail_months <- x[x < q]
@@ -70,9 +68,8 @@ c(months = length(x), alpha_T = 0.05 * length(x), in_tail = length(tail_months),
   VaR = as.numeric(-q), ES = es_hand,
   ES_modified = as.numeric(ES(x, p = 0.95, method = "modified", invert = FALSE)))
 
-# ===== The objectives the package knows =====
-
 ## ---- specs ----
+# ===== The objectives the package knows =====
 base_spec <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "full_investment") |>
   add.constraint(type = "long_only")
@@ -103,9 +100,8 @@ round(W3[, keep], 3)
 extractObjectiveMeasures(o_es)
 unlist(extract_risk(Re, w_es)[c("StdDev", "ES", "CSM")])
 
-# ===== Under `ROI` the `method` argument is not read =====
-
 ## ---- roi-ignores-method ----
+# ===== Under `ROI` the `method` argument is not read =====
 o_mes_roi <- optimize.portfolio(Re, spec_mes, optimize_method = "ROI")
 c(same_weights_as_historical = isTRUE(all.equal(w_of(o_mes_roi), w_es)))
 
@@ -120,9 +116,8 @@ c(modified_ES = as.numeric(extractObjectiveMeasures(o_mes)$ES),
   US_credit = w_mes[["US_credit"]], positions = sum(w_mes > 0.005),
   seconds = round(as.numeric(o_mes$elapsed_time, units = "secs"), 1))
 
-# ===== A mean plus a risk objective is a ratio problem by default, but only for the tail measures =====
-
 ## ---- ratio-defaults ----
+# ===== A mean plus a risk objective is a ratio problem by default, but only for the tail measures =====
 spec_mean_es <- base_spec |>
   add.objective(type = "return", name = "mean") |>
   add.objective(type = "risk",   name = "ES", arguments = list(p = 0.95))
@@ -175,9 +170,8 @@ ratios |>
   kable(align = "llrrl",
         col.names = c("specification", "solves", "STARR", "Sharpe", "largest holding"))
 
-# ===== The mean-ES frontier =====
-
 ## ---- frontiers ----
+# ===== The mean-ES frontier =====
 ef_es <- create.EfficientFrontier(Re, spec_mean_es, type = "mean-ETL",
                                   n.portfolios = 50, optimize_method = "ROI")
 ef_sd <- create.EfficientFrontier(Re, spec_mean_sd, type = "mean-StdDev",
@@ -318,9 +312,8 @@ stopifnot(in_episode(d_worst, "credit_crisis"),
 round(credit_tail, 2)
 tail_rank
 
-# ===== Two coherent measures that need a cone solver =====
-
 ## ---- csm-eqs ----
+# ===== Two coherent measures that need a cone solver =====
 spec_csm <- base_spec |> add.objective(type = "risk", name = "CSM", arguments = list(p = 0.95))
 spec_eqs <- base_spec |> add.objective(type = "risk", name = "EQS", arguments = list(p = 0.95))
 
@@ -330,9 +323,8 @@ w_eqs <- w_of(optimize.portfolio(Re, spec_eqs, optimize_method = "CVXR"))
 W_tail <- rbind(`minimum ES` = w_es, `minimum CSM` = w_csm, `minimum EQS` = w_eqs)
 round(W_tail[, colnames(Re)[apply(W_tail, 2, max) > 0.005]], 3)
 
-# ===== `CSM` is unavailable to the search methods =====
-
 ## ---- csm-metaheuristic ----
+# ===== `CSM` is unavailable to the search methods =====
 set.seed(1602)
 rp <- random_portfolios(base_spec, permutations = 2000, rp_method = "simplex")
 o_csm_rp <- optimize.portfolio(Re, spec_csm, optimize_method = "random", rp = rp, trace = TRUE)
@@ -343,9 +335,8 @@ c(candidates = nrow(rp), distinct_scores = length(unique(scores)), score = uniqu
                                               unname(rp[1, colnames(Re)]))))
 length(extractObjectiveMeasures(o_csm_rp))
 
-# ===== Two things to check before trusting an `EQS` number =====
-
 ## ---- eqs-ratio-box ----
+# ===== Two things to check before trusting an `EQS` number =====
 # split() orders groups alphabetically; the limit vectors are built by name and
 # the assertion fails the render if they ever drift apart.
 grp  <- split(seq_len(ncol(Re)), dplyr::case_when(
@@ -393,9 +384,8 @@ signif(eqs_check, 4)
 skew_of <- function(w) as.numeric(skewness(as.numeric(Re %*% w)))
 stopifnot(skew_of(w_eqs) < skew_of(w_es))        # the order the next sentence states
 
-# ===== What each objective bought =====
-
 ## ---- four-portfolios ----
+# ===== What each objective bought =====
 portfolios <- list(`minimum variance` = w_var,
                    `minimum ES` = w_es,
                    `quadratic utility, lambda = 2` = w_qu,
@@ -454,9 +444,8 @@ stopifnot(best_mes != "minimum modified ES (search)",
           length(only_var) == 1L, length(only_es) == 1L,
           skew_total[[only_var]] < 0, skew_total[[only_es]] > 0)
 
-# ===== Each portfolio on every measure =====
-
 ## ---- tbl-10-cross ----
+# ===== Each portfolio on every measure =====
 # Each portfolio on each objective. Bold marks the measure a row was chosen
 # by; an asterisk marks the best value in a column. Volatility annualized,
 # shortfalls monthly at 95%, utility the annualized certainty equivalent at
@@ -478,9 +467,8 @@ tibble::tibble(portfolio = cross$portfolio,
   kable(align = "lrrrr",
         col.names = c("", "volatility", "ES", "utility", "modified ES"))
 
-# ===== Out of sample, read from the register =====
-
 ## ---- oos ----
+# ===== Out of sample, read from the register =====
 oos <- utils::read.csv("tables/oos-sweep.csv") |>
   dplyr::filter(universe == "classes", frequency == "months", basis == "gross",
                 strategy %in% c("min_variance", "min_cvar")) |>

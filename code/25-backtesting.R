@@ -16,9 +16,8 @@ R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
 Re <- R - sim_riskfree_monthly$return
 win <- 60L
 
-# ===== What a Backtest Estimates =====
-
 ## ---- basic ----
+# ===== What a Backtest Estimates =====
 spec <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "full_investment") |>
   add.constraint(type = "long_only") |>
@@ -32,9 +31,8 @@ bt <- optimize.portfolio.rebalancing(
 )
 length(bt$opt_rebalancing)
 
-# ===== The backtest that looks complete and is not =====
-
 ## ---- mandate ----
+# ===== The backtest that looks complete and is not =====
 target <- 0.0040        # monthly, in excess of the bill: about 4.9% a year
 
 mandate <- portfolio.spec(assets = colnames(Re)) |>
@@ -57,18 +55,16 @@ n_bad <- sum(no_solution)
 stopifnot(length(bt_mandate$opt_rebalancing) == length(bt$opt_rebalancing), n_bad > 0)
 bt_mandate$opt_rebalancing[[which(no_solution)[1]]][c("weights", "out", "solver_status")]
 
-# ===== A failed period is stored, not raised =====
-
 ## ---- downstream ----
+# ===== A failed period is stored, not raised =====
 W_hat  <- extractWeights(bt_mandate)
 pr_hat <- suppressWarnings(Return.portfolio(Re, weights = W_hat))
 c(summary_works  = !inherits(try(summary(bt_mandate), silent = TRUE), "try-error"),
   na_weight_rows = sum(!stats::complete.cases(W_hat)),
   na_returns     = sum(is.na(pr_hat)))
 
-# ===== Diagnose every period, always =====
-
 ## ---- diagnose ----
+# ===== Diagnose every period, always =====
 d <- diagnose_rebalancing(bt_mandate)
 table(d$status)
 fail <- d$date[d$status != "converged"]
@@ -105,18 +101,16 @@ tibble::tibble(date = zoo::index(R), level = mkt) |>
   scale_x_model() +
   ggplot2::labs(y = "equal-weighted market, indexed")
 
-# ===== What to do about a period that failed =====
-
 ## ---- report ----
+# ===== What to do about a period that failed =====
 run <- suppressWarnings(
   pm_backtest(Re, pm_strategy("mandate", spec = function(assets) mandate),
               estimation_window = win, riskfree = sim_riskfree_monthly,
               verbose = FALSE))
 run$metrics |> dplyr::select(strategy, basis, sharpe, n_periods, n_failed)
 
-# ===== The register, assembled =====
-
 ## ---- sweep ----
+# ===== The register, assembled =====
 sweep <- readr::read_csv("tables/oos-sweep.csv", show_col_types = FALSE)
 
 ## ---- tbl-25-register ----
@@ -163,9 +157,8 @@ stopifnot(all(by_win$gap > 0),                              # a no-mean rule lea
           at_w(36, "rank_tan") == 5, at_w(120, "rank_tan") < 5,
           !is.unsorted(rev(by_win$gap[order(by_win$window)])))  # the gap closes with the window
 
-# ===== A backtest is a measurement, and it has an error bar =====
-
 ## ---- error-bar ----
+# ===== A backtest is a measurement, and it has an error bar =====
 sr <- reg |>
   dplyr::select(strategy, sharpe) |>
   dplyr::mutate(se = sqrt((1 + (sharpe / sqrt(12))^2 / 2) / Tn) * sqrt(12),

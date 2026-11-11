@@ -13,9 +13,8 @@ library(tidypm)
 ann_ret <- function(x, p = 12) prod(1 + x)^(p / length(x)) - 1
 ann_vol <- function(x, p = 12) stats::sd(x) * sqrt(p)
 
-# ===== Implementation =====
-
 ## ---- proxy ----
+# ===== Implementation =====
 returns <- sim_class_returns_monthly
 R  <- as_xts_pm(returns, date, class, return)
 rf <- sim_riskfree_monthly$return
@@ -52,9 +51,8 @@ usm <- sim_assets$region[match(colnames(Ra), sim_assets$asset_id)] == "US"
 us_share <- rowSums(W[, usm])
 c(first = us_share[1], mean = mean(us_share), last = us_share[length(us_share)])
 
-# ===== One factor, sixteen series =====
-
 ## ---- single-factor ----
+# ===== One factor, sixteen series =====
 fit1 <- lapply(colnames(R), function(s) {
   y <- as.numeric(R[, s]) - rf
   m <- stats::lm(y ~ mkt_e)
@@ -106,9 +104,8 @@ by_t      <- fit1[order(-abs(fit1$alpha_t)), ]
 sig_alpha <- by_t$series[abs(by_t$alpha_t) > 2]
 stopifnot(identical(sig_alpha, "US_government"), by_t$series[2] == "US_credit")
 
-# ===== Splitting the beta, and then testing the split =====
-
 ## ---- conditional-betas ----
+# ===== Splitting the beta, and then testing the split =====
 Rm <- xts::xts(MKT, order.by = d)
 rfx <- xts::xts(rf, order.by = d)
 
@@ -171,9 +168,8 @@ cond |>
   ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0.06, 0.28))) +
   ggplot2::labs(x = "beta when the market is up", y = "beta when the market is down")
 
-# ===== What a factor is actually sorting on =====
-
 ## ---- smb ----
+# ===== What a factor is actually sorting on =====
 capW <- W
 reg  <- sim_assets$region[match(colnames(Ra), sim_assets$asset_id)]
 
@@ -225,15 +221,13 @@ c(global_premium  = ann_ret(smb_global),  global_t  = nw_t(smb_global),
 stopifnot(med_r2(smb_global) > med_r2(smb_neutral), med_r2(smb_neutral) > med_r2(),
           nw_t(smb_neutral) > 2, nw_t(smb_neutral) > nw_t(smb_global))
 
-# ===== `table.CAPM()` computes most of this chapter in one call =====
-
 ## ---- table-capm ----
+# ===== `table.CAPM()` computes most of this chapter in one call =====
 PerformanceAnalytics::table.CAPM(R[, c("US_credit", "JP_government", "US_equity")],
                                  Rm, Rf = rfx)
 
-# ===== A beta is a time series =====
-
 ## ---- rolling-betas ----
+# ===== A beta is a time series =====
 win <- 60L
 roll_beta <- function(s) {
   y <- as.numeric(R[, s]) - rf
@@ -301,9 +295,8 @@ lapply(show, function(s) {
   scale_x_model(by = 10) +
   ggplot2::labs(y = NULL)
 
-# ===== Measuring the instability itself =====
-
 ## ---- turbulence ----
+# ===== Measuring the instability itself =====
 library(uncertaintymeasures)
 
 R_risky <- R[, risky]

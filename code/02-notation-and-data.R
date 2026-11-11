@@ -11,9 +11,8 @@ source("_common.R")
 library(tidypm)
 library(knitr)
 
-# ===== Annualizing =====
-
 ## ---- data ----
+# ===== Annualizing =====
 R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)   # total returns
 rf <- sim_riskfree_monthly$return                                  # the bill
 Re <- R - rf                                                       # excess returns
@@ -23,9 +22,8 @@ stopifnot(ncol(R) == 16L, nrow(R) == length(rf), !anyNA(R))
 ann_ret <- function(x, p = 12) prod(1 + x)^(p / length(x)) - 1   # compounded
 ann_vol <- function(x, p = 12) stats::sd(x) * sqrt(p)             # sqrt-of-time
 
-# ===== Worked: annualizing one series three ways =====
-
 ## ---- worked-inputs ----
+# ===== Worked: annualizing one series three ways =====
 x   <- as.numeric(R[, "US_equity"])
 m   <- mean(x)
 s   <- stats::sd(x)
@@ -38,9 +36,8 @@ round(c(arithmetic = 12 * m, compounded = ann_ret(x), volatility = ann_vol(x),
         annual_gap = 12 * m - ann_ret(x), half_annual_variance = 0.5 * ann_vol(x)^2,
         return_on_return = (1 + g)^12 - 1 - 12 * g), 5)
 
-# ===== The model calendar =====
-
 ## ---- calendar-years ----
+# ===== The model calendar =====
 d <- zoo::index(R)                                   # the month ends of the sample
 range(d)                                             # as stored
 range(model_year(d))                                 # as read
@@ -84,9 +81,8 @@ sim_class_returns_monthly |>
   scale_x_model() +
   ggplot2::labs(y = "total-return index (log scale)")
 
-# ===== The class universe =====
-
 ## ---- classes ----
+# ===== The class universe =====
 colnames(R)
 
 ## ---- money-market ----
@@ -149,9 +145,8 @@ ggplot2::ggplot(idx, ggplot2::aes(date, index, colour = region)) +
   scale_colour_tidyaa() +
   ggplot2::labs(y = "total-return index (log scale)")
 
-# ===== How the class series are built =====
-
 ## ---- monthly-from-weekly ----
+# ===== How the class series are built =====
 weekly_compounded <- sim_class_returns_weekly |>
   dplyr::mutate(month = lubridate::floor_date(date, "month")) |>
   dplyr::group_by(class, month) |>
@@ -166,9 +161,8 @@ stopifnot(nrow(both) == nrow(sim_class_returns_monthly),
           min(sim_marketcap_weekly$date) < min(sim_class_returns_weekly$date)) # a prior week
 max(abs(both$return - both$compounded))
 
-# ===== The instrument universe =====
-
 ## ---- tbl-02-instruments ----
+# ===== The instrument universe =====
 # The instrument universe by region and asset class. Equities carry one of
 # eight sectors; credit carries an investment-grade or high-yield grade.
 stopifnot(dplyr::n_distinct(stats::na.omit(sim_assets$sector)) == 8L,
@@ -187,9 +181,8 @@ n_by_class <- table(sim_assets$asset_class)
 c(sectors = dplyr::n_distinct(stats::na.omit(sim_assets$sector)),
   grades  = dplyr::n_distinct(stats::na.omit(sim_assets$credit_grade)))
 
-# ===== Exchange rates, curves, capitalizations and rating changes =====
-
 ## ---- hedge ----
+# ===== Exchange rates, curves, capitalizations and rating changes =====
 fx <- sim_fx_monthly
 hedged_vol <- function(series, region) {
   f <- fx[fx$region == region, ]
@@ -206,9 +199,8 @@ round(rbind(gov, JP_equity = jp_equity), 3)
 ## ---- curve ----
 sort(unique(sim_curve_weekly$series))
 
-# ===== Three caveats, one departure, and a frozen version =====
-
 ## ---- conditioning ----
+# ===== Three caveats, one departure, and a frozen version =====
 A <- as_xts_pm(sim_asset_returns_monthly, date, asset, return)
 stopifnot(ncol(A) == nrow(sim_assets), setequal(colnames(A), sim_assets$asset_id))
 
@@ -255,9 +247,8 @@ round(c(return_without    = without[["EU_equity"]],
         se_of_annual_mean = se_mean,
         overlay_in_se     = overlay / se_mean), 2)
 
-# ===== The Real Data Sleeves =====
-
 ## ---- tbl-02-sources ----
+# ===== The Real Data Sleeves =====
 # The sleeve registry of `pm_sources()`. A sleeve with no fetch function is
 # declared so that the gap is visible rather than implied.
 src <- pm_sources()

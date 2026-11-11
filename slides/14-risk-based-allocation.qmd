@@ -1,0 +1,336 @@
+---
+title: "Risk-Based Allocation"
+subtitle: "Tidy Asset Allocation in R, Chapter 14"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 14"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/14-risk-based-allocation.R to the chunks
+# below, so no line of analysis is maintained twice. root.dir takes effect after
+# this chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(PortfolioAnalytics)   # the chapter's setup chunk loads it; the risk-budget slides need it
+library(knitr)
+knitr::read_chunk("14-risk-based-allocation.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** the decomposition of portfolio volatility into risk contributions, and **define** the equal risk contribution portfolio and general risk budgets.
+2. **Compute** the equal risk contribution portfolio by a fixed-point iteration and approximate it by inverse-volatility weighting.
+3. **Diagnose** why the package's risk-budget objective cannot equalize risk contributions, and where it can be used.
+4. **Evaluate** what risk parity buys and costs: effective bets against volatility, out-of-sample results, and dependence on the covariance regime.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+How much of a portfolio's risk sits in each position, and can we allocate the risk rather than the capital?
+
+::: {.statement}
+Qian (2006) showed that risk contributions add up exactly; Maillard, Roncalli and Teïletche (2010) asked for the portfolio in which every position contributes the same.
+:::
+
+- Equal capital is not equal risk: on the sixteen classes the two are far apart.
+- The idea has a clean definition, a cheap approximation, and an implementation in `PortfolioAnalytics` that does not work.
+- We set out the decomposition, compute the exact answer two ways, and measure what the package's risk-budget objective does with a problem whose optimum it scores correctly and cannot find.
+
+<p class="source">Qian, E. (2006). On the Financial Interpretation of Risk Contribution: Risk Budgets Do Add Up. *Journal of Investment Management* 4(4), 41–51. Maillard, S., Roncalli, T. and Teïletche, J. (2010). The Properties of Equally Weighted Risk Contribution Portfolios. *Journal of Portfolio Management* 36(4), 60–70.</p>
+
+## The Decomposition
+
+Portfolio volatility $\sigma(\boldsymbol{w}) = \sqrt{\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}}$ is homogeneous of degree one in the weights, so by Euler's theorem it decomposes exactly into additive contributions,
+
+$$
+\sigma(\boldsymbol{w}) = \sum_{i=1}^{N} \mathrm{RC}_i,
+\qquad
+\mathrm{RC}_i = w_i \frac{\partial \sigma}{\partial w_i}
+= \frac{w_i\,(\boldsymbol{\Sigma}\boldsymbol{w})_i}{\sigma(\boldsymbol{w})} .
+$$
+
+- The shares are not an approximation or an attribution convention: they sum to the total by construction.
+- Dividing through by $\sigma$ gives shares that sum to one.
+
+::: {.notes}
+This exactness is what makes risk budgeting possible at all, and it is the point Qian (2006) makes when he says risk budgets do add up.
+:::
+
+## Risk Contributions in Code {.codesmall}
+
+```{r risk-contribution}
+#| echo: true
+```
+
+Sixteen equally weighted series, and the largest contributes `r sprintf("%.1f%%", 100 * max(risk_contribution(w_eq, S)))` of the risk against `r sprintf("%.1f%%", 100 / N)` of the capital. Equal capital is not equal risk.
+
+## Equal Risk Contribution
+
+The equal risk contribution portfolio sets every term of the decomposition equal,
+
+$$
+\mathrm{RC}_i = \frac{\sigma(\boldsymbol{w})}{N}
+\quad \text{for every } i,
+\qquad \text{equivalently} \qquad
+w_i (\boldsymbol{\Sigma}\boldsymbol{w})_i = w_j (\boldsymbol{\Sigma}\boldsymbol{w})_j
+\;\; \forall\, i, j .
+$$
+
+- Long-only, it always exists and is unique (Maillard et al., 2010).
+- Its volatility sits between the minimum-variance portfolio's and the equally weighted portfolio's, in that order.
+- It has no closed form except in special cases, but it is not a hard problem.
+
+## A Convex Program
+
+Spinu (2013) shows that the equality condition is the first-order condition of
+
+$$
+\min_{\boldsymbol{w} > 0} \;
+  \tfrac{1}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}
+  - \frac{1}{N}\sum_{i=1}^{N}\ln w_i ,
+$$
+
+whose log barrier keeps every weight strictly positive and which any convex solver handles. Bai, Scheinberg and Tutuncu (2016) give a least-squares formulation with the same property.
+
+::: {.notes}
+Keep this program in mind for the implementation section: the package solves the same problem with a metaheuristic, and the problem is convex.
+:::
+
+## A Fixed Point in Six Lines {.codesmall}
+
+```{r erc}
+#| echo: true
+```
+
+The risk contributions are equal to machine precision, and the iteration converges in milliseconds.
+
+## The Equal Risk Contribution Weights
+
+```{r erc-weights}
+```
+
+```{r erc-claims}
+#| include: false
+```
+
+`US_government` still receives the largest allocation, at `r sprintf("%.1f%%", 100 * max(w_erc))`, because it is the least volatile series and equalizing risk means overweighting low-volatility assets.
+
+## The Approximation That Is Nearly Free {.codesmall}
+
+If every pairwise correlation equals a common $\rho$, equal risk contribution is solved exactly by inverse-volatility weighting (Maillard et al., 2010),
+
+$$
+w_i = \frac{\sigma_i^{-1}}{\sum_{j=1}^{N}\sigma_j^{-1}} .
+$$
+
+```{r inverse-vol}
+#| echo: true
+```
+
+The approximation lies within `r sprintf("%.2f", sum(abs(w_iv - w_erc)) / 2)` of the exact answer in $L_1$ terms, with a weight correlation of `r sprintf("%.2f", stats::cor(w_iv, w_erc))`.
+
+## The Risk-Budget Objective {.codesmall}
+
+The package has a purpose-built objective for this problem. It accepts the problem, scores it correctly, and cannot solve it.
+
+```{r spec}
+#| echo: true
+```
+
+::: {.callout-important}
+## Risk budgeting has no convex solver
+
+The risk-budget objective is routed to a metaheuristic search (`DEoptim`, `random`, `pso`, `GenSA`) even though the equal risk contribution problem is convex.
+:::
+
+## The Objective Is Right {.codesmall}
+
+Before blaming a solver we check what it was asked to minimize, by scoring two portfolios with the package's own objective function.
+
+```{r objective-values}
+#| echo: true
+```
+
+`r sprintf("%.3f", score(w_eq))` at equal weights and exactly `r sprintf("%.1f", score(w_erc))` at the equal risk contribution solution. The objective is not misspecified: it knows precisely which portfolio it wants.
+
+```{r searches}
+#| include: false
+```
+
+```{r searches-claims}
+#| include: false
+```
+
+## The Search Does Not Find It
+
+```{r tbl-14-searches}
+```
+
+- Of the five attempts, `r sum(searches$is_equal_weight)` return the equally weighted portfolio they started from; ten times the evaluation budget changes nothing.
+- `pso` does move, and moves further from the answer than standing still would have been.
+
+::: {.notes}
+The attempts are five solvers on the same specification: DEoptim at 20,000 and 200,000 evaluations, random portfolios, particle swarm and simulated annealing. The seed is the chapter's.
+:::
+
+## Three Ways of Pursuing the Same Objective
+
+```{r tbl-14-comparison}
+```
+
+The one-line approximation is closer to the answer than the twenty-thousand-evaluation search. That is not a statement about risk parity but about reaching for a heuristic on a convex problem that a fixed point solves to machine precision.
+
+## What the Machinery Does Do {.codesmall}
+
+Asked for a cap rather than an equalization, the objective delivers.
+
+```{r max-prisk}
+#| echo: true
+```
+
+A ceiling on any single risk contribution can be satisfied by rejection: the search has only to recognize a violation, not to locate an optimum. We use the risk-budget objective for budgets and bounds, and compute equal risk contribution directly.
+
+```{r concentration}
+#| include: false
+```
+
+## Auditing Concentration
+
+```{r tbl-14-concentration}
+```
+
+- `HHI()` and `diversification()` are exported and take a weight vector, so any portfolio can be audited in one line.
+- `bets` is the exponential of the entropy of the risk shares, against a maximum of sixteen.
+
+```{r oos-line}
+#| include: false
+```
+
+## What Risk Parity Buys and Costs
+
+Minimum variance achieves `r sprintf("%.2f%%", 100 * p_vol(w_mv))` volatility with `r sprintf("%.1f", effective_bets(w_mv))` effective bets out of sixteen. Equal risk contribution achieves `r sprintf("%.2f%%", 100 * p_vol(w_erc))` with exactly `r sprintf("%.0f", effective_bets(w_erc))`.
+
+That is about `r sprintf("%.0f", 100 * (p_vol(w_erc) / p_vol(w_mv) - 1))` percent more volatility for `r sprintf("%.0f", effective_bets(w_erc) / effective_bets(w_mv))` times the number of independent bets.
+
+- Asness, Frazzini and Pedersen (2012): if investors are averse to leverage rather than merely to risk, they overpay for high-beta assets, and a levered risk-parity portfolio harvests the difference.
+- Clarke, de Silva and Thorley (2013): risk parity, maximum diversification and minimum variance coincide only under conditions this market does not satisfy.
+
+## Out of Sample
+
+Sixty-month rolling estimates, monthly rebalancing, sixteen classes, gross of costs.
+
+| Strategy | Sharpe ratio |
+|:---------|-------------:|
+| Minimum variance | `r sprintf("%.3f", sr_oos("min_variance"))` |
+| Equal weighting | `r sprintf("%.3f", sr_oos("equal_weight"))` |
+| Inverse volatility | `r sprintf("%.3f", sr_oos("inverse_vol"))` |
+| Tangency | `r sprintf("%.3f", sr_oos("max_sharpe"))` |
+
+Inverse volatility trades `r sprintf("%.0f%%", 100 * to_oos("inverse_vol") / to_oos("max_sharpe"))` as much as the mean-variance optimizer. Minimum variance leads all four; the risk-based portfolios are competitive and cheaper, not uniformly better.
+
+::: {.notes}
+The order is read from the backtesting register, and the chapter asserts it so that the render fails if the data stop supporting it.
+:::
+
+## The Covariance as a Regime Variable
+
+```{r regime-spectrum}
+```
+
+- Outside the four episodes of `sim_episodes`, the first principal component carries `r sprintf("%.0f%%", 100 * regime["calm", "pc1_share"])` of the variance and the matrix behaves like `r sprintf("%.1f", regime["calm", "directions"])` independent directions.
+- Through the credit crisis it carries `r sprintf("%.0f%%", 100 * regime["crisis", "pc1_share"])` and the count falls to `r sprintf("%.1f", regime["crisis", "directions"])`.
+
+::: {.notes}
+The short crisis window exaggerates the fall, and calm windows of the same length still do not reach it. The number of effective bets is a property of the covariance matrix, not of the portfolio.
+:::
+
+## Budgets That Are Not Equal
+
+A risk budget assigns each asset a share $b_i$ with $\sum_i b_i = 1$ and asks for weights satisfying
+
+$$
+\mathrm{RC}_i = b_i \,\sigma(\boldsymbol{w})
+\quad \text{for every } i ,
+$$
+
+which reduces to equal risk contribution at $b_i = 1/N$ (Roncalli, 2013).
+
+- The convex program generalizes by replacing the uniform coefficient on the log barrier with $b_i$; the fixed point, by dividing the marginal contributions by the budget.
+- A mandate says that credit may consume no more than a quarter of the risk, which survives a change in volatility; a twenty percent capital weight does not.
+- Bounds on a budget are checkable by rejection, which is the form in which the package's objective is usable.
+
+## Hierarchical Risk Parity
+
+López de Prado (2016) avoids the inverse of $\boldsymbol{\Sigma}$ entirely:
+
+1. Cluster the assets on a distance derived from their correlations.
+2. Order them so that similar assets are adjacent.
+3. Split the ordered set in two, allocate between the halves in inverse proportion to their variances, and recurse.
+
+- Nothing is inverted, so the method is defined even when $\boldsymbol{\Sigma}$ is singular.
+- `PortfolioAnalytics` does not implement it; it belongs with the sleeve structure of the next chapter.
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** Portfolio volatility decomposes exactly into additive risk contributions; the shares sum to the total by construction.
+- **Outcome 1.** Equal capital is not equal risk: sixteen equally weighted series put `r sprintf("%.0f%%", 100 * max(risk_contribution(w_eq, S)))` of the risk in one of them, against `r sprintf("%.1f%%", 100 / N)` of the capital.
+- **Outcome 2.** The equal risk contribution portfolio always exists, is unique long-only, and sits between minimum variance and equal weighting in volatility; it is a convex program, and a six-line fixed point reaches machine precision.
+- **Outcome 2.** The one-line inverse-volatility approximation is closer to the answer than a twenty-thousand-evaluation search.
+- **Outcome 3.** Of five solvers, `r sum(searches$is_equal_weight)` hand back the portfolio they started from, and a tenfold budget changes nothing. We use the risk-budget objective for caps and budgets and compute equal risk contribution directly.
+- **Outcome 4.** Risk parity buys about `r sprintf("%.0f", effective_bets(w_erc) / effective_bets(w_mv))` times the effective bets for about `r sprintf("%.0f", 100 * (p_vol(w_erc) / p_vol(w_mv) - 1))` percent more volatility; out of sample, inverse volatility lands between equal weighting and the tangency portfolio at a fraction of the latter's turnover.
+- **Outcome 4.** The effective number of bets is a property of the covariance matrix, not of the portfolio, and it falls by more than half going into the credit crisis.
+
+## Exercises {.smaller}
+
+Work these in `code/14-risk-based-allocation-exercises.R`; solutions to follow.
+
+1. Run the fixed-point `erc()` on a covariance matrix estimated from the months outside the four episodes of `sim_episodes` only, then apply the weights to the months of the credit crisis. How equal are the realized risk contributions?
+2. `inverse.volatility.weight()` ignores correlations entirely. Construct a universe where that is catastrophic (two nearly identical series and one independent one) and report the risk contributions it produces.
+3. Repeat the searches table with a `max_prisk` objective instead of `min_concentration`. Do the solvers agree with each other? Does the budget bind?
+4. The effective-bets measure uses entropy. Replace it with `1 / sum(rc^2)`, the inverse Herfindahl of the risk shares, and recompute the concentration table. Which portfolios change rank, and which measure would we defend to a client?

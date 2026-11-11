@@ -57,6 +57,50 @@ every chapter's code once more. What came back, and what was done:
 - [ ] **03** — "Chapters 9 to 14 and chapter 15" in the strategic/tactical
       paragraph; read as intended (Part IV, then the hierarchical chapter)
       and left.
+- [x] **15** — the last `cache: true` (chunk `mult-run`) removed, so the
+      chapter re-executes on every render like the others.
+- [x] **code downloads** — section headings were written before the chunk
+      header, so `read_chunk()` attached each to the previous chunk; a
+      callout's own `## Title` was taken for a section; an exercise's inline
+      R expression was printed raw; an exercise file pointed at a solutions
+      file that does not exist. All four fixed in `tools/build-code.py`.
+
+Open, for the restructuring pass that follows the reverse outline
+(`review/outline/`, 2026-11-11); none of these blocks a render:
+
+- [ ] **05** — "`US_credit` comes next … and both return later" is unclear;
+      "at 1.93, 1.95 times the next one" reads like a typo though both
+      numbers are right.
+- [ ] **06** — an open `<!-- SS: -->` note on the market-weight proxy (line
+      589); exercise 4's "the factor that the se equation predicts" does not
+      say which factor; takeaway 1 states a measured median as if a law.
+- [ ] **07** — `tbl-07-race` and `the-tie` print row names as a first column
+      (`row.names = FALSE`); `rank-by-level` prints the smallest eigenvalue as
+      a long decimal; the long-only "comparable work for nothing" claim is
+      asserted, not computed (exercise 4 computes it).
+- [ ] **08** — the `usable` column of the rebalancing-trap table mixes types;
+      the worked callout says its simulation checks non-normality and draws
+      from a normal.
+- [ ] **09** — three pointers to a callout explaining why `maxSR = TRUE` is
+      avoided ("the callout below explains why"), and no such callout exists;
+      the inputs subsection plots total returns while every solve uses excess
+      returns, without saying so; "Three ways this fails" walks four.
+- [ ] **10** — "Three of the four bold cells carry the asterisk" is typed,
+      not computed, and goes false if the search ever wins its own column.
+- [ ] **12** — a code comment counts seven constraint lines where `build()`
+      sets six; the group-weights figure uses a 20% equity floor and the
+      mandate 40% without saying they differ; exercise 1 needs `build()` and
+      `tighten` from the mandate chunks.
+- [ ] **14** — the takeaway on "effective bets" halving uses the
+      participation ratio of the eigenvalues, while the chapter defines
+      effective bets by the entropy of risk shares: two measures under one
+      name.
+- [ ] **19** — "None of this is distinguishable from sampling error" holds
+      for the two detected strategies only (the dated switch has a paired z of
+      2.78); "about half" of the excess kurtosis is typed, not inline.
+- [ ] **21** — the observation-check callout never says the pinned build
+      lifts the check with `allow.fewer.obs = TRUE`; several captions type
+      their numbers ("372 month-starts", "123 equities", "observation 121").
 
 ### 09 · Mean-Variance Optimization — first Word round, 2026-09-13
 

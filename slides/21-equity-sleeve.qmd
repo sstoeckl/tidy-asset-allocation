@@ -1,0 +1,392 @@
+---
+title: "The Equity Sleeve"
+subtitle: "Tidy Asset Allocation in R, Chapter 21"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 21"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/21-equity-sleeve.R to the chunks below,
+# so no line of analysis is maintained twice. root.dir takes effect after this
+# chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+library(knitr)
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+knitr::read_chunk("21-equity-sleeve.R")
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r setup}
+#| include: false
+```
+
+```{r deck-theme}
+#| include: false
+# The chapter's setup chunk sources _common.R again, which resets the theme.
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** the mandate of an equity sleeve and the arithmetic that carries its active return into the total portfolio.
+2. **Rebuild** the sleeve's benchmark from its instruments, and **measure** equal weighting and the size and momentum sorts against it.
+3. **Implement** a covariance matrix for `r ncol(A)` names and a minimum-variance sleeve under a tracking-error budget, and **read** where the package drops the constraint.
+4. **Evaluate** whether selection survives the allocation above it.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+An equity sleeve arrives with a budget and a benchmark fixed from above. Which stocks should fill it, and is what the selection earns still visible once the sleeve is one line of the allocation that set the budget?
+
+::: {.statement}
+Fama and French showed that the cross-section of stock returns lines up with a few observable characteristics, which makes selection by sorting a method; Treynor and Black showed how a portfolio selected for its alpha is to be combined with the passive portfolio it departs from.
+:::
+
+- This is the first chapter to work *inside* a class rather than across classes: the `r sum(sim_assets$asset_class == "equity")` equities behind the five equity series that earlier parts allocated as single numbers.
+- The sleeve built here is **strategic**: it conditions on nothing but a rolling covariance estimate and the benchmark's weights.
+
+<p class="source">Fama, E. and French, K. (1992). The Cross-Section of Expected Stock Returns. *Journal of Finance* 47(2), 427–465. Treynor, J. and Black, F. (1973). How to Use Security Analysis to Improve Portfolio Selection. *Journal of Business* 46(1), 66–86.</p>
+
+## The Mandate and the Arithmetic of a Sleeve
+
+The benchmark is the capitalization-weighted regional equity index. With $\boldsymbol{b}$ its weights, $\boldsymbol{v}$ the sleeve's and $\boldsymbol{x} = \boldsymbol{v} - \boldsymbol{b}$ the active weights, the mandate is as much active return as a tracking-error budget $\tau$ buys:
+
+$$
+\sqrt{\boldsymbol{x}'\boldsymbol{\Sigma}\boldsymbol{x}} \leq \tau,
+\qquad \text{scored by the information ratio.}
+$$
+
+The sleeve holds a share $\omega$ of the total portfolio and the policy holds the same share in the benchmark. With every other line held as it is,
+
+$$
+r^{P}_t - r^{B}_t = \omega\,(r^{S}_t - r^{b}_t),
+\quad
+\alpha_P = \omega\,\alpha_S,
+\quad
+\text{TE}_P = \omega\,\text{TE}_S,
+\quad
+\text{IR}_P = \text{IR}_S .
+$$
+
+The budget scales active return and tracking error alike and leaves the information ratio alone: skill is not diluted by the allocation above it, only its weight in the outcome is.
+
+## How Much the Total Can Gain
+
+Regress the sleeve's excess return on the benchmark's; $\alpha$ is the intercept and $\sigma_\varepsilon$ the residual volatility. The optimal combination of active sleeve and passive portfolio reaches (Treynor and Black, 1973)
+
+$$
+\text{SR}^2_{P} = \text{SR}^2_{B} + \left(\frac{\alpha}{\sigma_\varepsilon}\right)^2 .
+$$
+
+- The second term is the appraisal ratio.
+- An appraisal ratio of one quarter added to a policy Sharpe ratio of three quarters gives $\sqrt{0.75^2 + 0.25^2} = `r sprintf("%.3f", sqrt(0.75^2 + 0.25^2))`$.
+- The ceiling is reached only if $\omega$ is chosen for it rather than set by the policy.
+
+::: {.notes}
+The application checks both questions: whether the sleeve earned an information ratio at all, and how much of it a fixed budget let through.
+:::
+
+## Selection by Characteristic {.smaller}
+
+A sort ranks the names on a characteristic known at the start of the month and holds the favored group.
+
+- **Size** was the first (Banz, 1981; Fama and French, 1992), **momentum** the most durable (Jegadeesh and Titman, 1993), **value** completes the standard set.
+- Size and momentum need capitalizations and past returns, which ship. Value needs a fundamental, and the modeled market carries none, so no value sort can be built.
+- Premia are local rather than global (Fama and French, 2012), and a global size sort in a five-region universe sorts on region. Every sort is therefore run **within a region** and averaged across the five.
+- Breadth is what many names buy: the fundamental law puts the attainable information ratio at $\text{IC}\sqrt{\text{BR}}\cdot\text{TC}$ (Grinold, 1989), less what the long-only constraint takes back.
+
+## Equal Weighting Is an Active Bet
+
+The simplest alternative to the benchmark holds every name at $1/N$. Its active weights are
+
+$$
+x_i = \frac{1}{N} - b_i ,
+$$
+
+long every name smaller than average and short every larger one, rebalanced against drift every month.
+
+- A size tilt and a contrarian rule at once, and both parts matter (Plyakha et al., 2021).
+- DeMiguel et al. (2009) are the reason the rule is taken seriously.
+- Inside a sleeve it is a bet against the largest names; the question is whether it pays.
+
+## The Covariance Matrix of a Sleeve {.smaller}
+
+With $N = `r ncol(A)`$, any window shorter than `r ncol(A) + 1L` months gives a singular sample matrix, and a minimizer handed one finds the portfolios it believes are riskless. A repair is needed before the sleeve can be optimized at all.
+
+- **Shrinkage** pulls the sample matrix toward a well-conditioned target (Ledoit and Wolf, 2003, 2004).
+- **A factor structure** asserts one. With $k$ statistical factors extracted from the returns,
+
+$$
+\hat{\boldsymbol{\Sigma}}_k = \boldsymbol{B}\boldsymbol{B}' + \boldsymbol{D},
+$$
+
+where $\boldsymbol{B}$ is $N \times k$, the first $k$ principal components scaled by their volatilities, and $\boldsymbol{D}$ the diagonal matrix of residual variances.
+
+- $N(k+1)$ parameters in place of $N(N+1)/2$, and full rank whatever $T$ is, because $\boldsymbol{D}$ is positive (Connor and Korajczyk, 1993; Bai and Ng, 2002).
+
+## The Tracking-Error Budget as a Family
+
+The Lagrangian of variance subject to $\boldsymbol{x}'\boldsymbol{\Sigma}\boldsymbol{x} \leq \tau^2$ is, up to a constant, the one-parameter family
+
+$$
+\boldsymbol{v}(\theta) = \arg\min_{\boldsymbol{v}}\;
+  \boldsymbol{v}'\boldsymbol{\Sigma}\boldsymbol{v}
+  - 2\theta\,\boldsymbol{b}'\boldsymbol{\Sigma}\boldsymbol{v},
+\qquad \theta \in [0, 1).
+$$
+
+- Without further constraints, $\boldsymbol{v}(\theta) = \theta\boldsymbol{b} + (1-\theta)\boldsymbol{v}_{\text{mv}}$: the budget picks a **blend** of the benchmark and the minimum-variance portfolio.
+- Under a box the blend is no longer linear, but each $\theta$ is still one quadratic program, and a root search finds the $\theta$ that spends the budget exactly.
+- The family does not ask whether the benchmark is efficient (Roll, 1992).
+
+```{r benchmark}
+#| include: false
+```
+
+```{r cap-month}
+#| include: false
+```
+
+## The Benchmark, Rebuilt from Its Instruments {.smaller}
+
+The class series are capitalization weighted on the *previous* week's capitalization, weekly, and compounded to months. Rebuilding them from the instruments checks that the benchmark is one the sleeve could have held: the five series reproduce to `r sprintf("%.0e", gap)`.
+
+```{r tbl-21-concentration}
+```
+
+- The United States index holds `r conc$names[conc$region == "US"]` names and behaves like `r sprintf("%.1f", conc$eff[conc$region == "US"])` of them; the Swiss index holds `r conc$names[conc$region == "CH"]` and behaves like `r sprintf("%.1f", conc$eff[conc$region == "CH"])`.
+
+```{r ew-cw}
+#| include: false
+```
+
+## Equal Against Capitalization Weighting {.smaller}
+
+```{r tbl-21-ew-cw}
+```
+
+- Equal weighting earns more than its benchmark in every region, by `r sprintf("%.1f", 100 * min(ew_cw$ew_ret - ew_cw$cw_ret))` to `r sprintf("%.1f", 100 * max(ew_cw$ew_ret - ew_cw$cw_ret))` percentage points a year, at a tracking error of `r sprintf("%.1f%%", 100 * min(ew_cw$te))` to `r sprintf("%.1f%%", 100 * max(ew_cw$te))`, larger than most mandates allow.
+- The information ratios run from `r sprintf("%.2f", min(ew_cw$ir))` to `r sprintf("%.2f", max(ew_cw$ir))`; their standard error over `r nrow(X)` months is about `r sprintf("%.2f", sqrt((1 + (mean(ew_cw$ir) / sqrt(12))^2 / 2) / nrow(X)) * sqrt(12))`, so the smaller ones are not distinguishable from zero.
+
+::: {.notes}
+Whether the gap is a size premium or the rebalancing effect is what the sorts on the next slide separate.
+:::
+
+```{r sorts}
+#| include: false
+```
+
+```{r sorts-verdict}
+#| include: false
+```
+
+## Sorting on Size and Momentum {.smaller}
+
+Terciles within each region, five spreads averaged; momentum skips the most recent month. Long-only is the favored tercile minus the equally weighted region.
+
+```{r tbl-21-sorts}
+```
+
+- Small names earn `r sprintf("%.1f", 100 * sorts$mean[1])` percentage points a year more than large ones within their region ($t = `r sprintf("%.1f", size_t)`$); the long-only version a sleeve could hold keeps `r sprintf("%.1f", 100 * sorts$mean[2])` points.
+- The momentum spread is `r sprintf("%+.1f", 100 * sorts$mean[3])` points ($t = `r sprintf("%.2f", mom_t)`$). Each instrument's idiosyncratic component is drawn independently period by period, so cross-sectional momentum cannot exist here by construction.
+
+::: {.notes}
+The absence is a property of the modeled data rather than of the strategy. A real market has momentum; this one tests the machinery.
+:::
+
+## A Statistical Factor Covariance {.codesmall}
+
+`statistical.factor.model()` fits the factor covariance by principal components and `extractCovariance()` assembles the matrix.
+
+```{r factor-models}
+#| echo: true
+#| output: false
+```
+
+The first component carries `r sprintf("%.0f%%", 100 * share[1])` of the variance and the next two `r sprintf("%.0f%%", 100 * sum(share[2:3]))` together. The assertion shows that `factor_covs()` returns the package's matrix wherever the package returns one.
+
+## A Trap: The Observation Check
+
+::: {.callout-important}
+## `statistical.factor.model()` refuses the case it exists for
+
+The function stops whenever $T < N$, which is exactly the window on which the factor covariance is needed: principal components need enough components, not enough columns.
+:::
+
+- On a ten-year window of `r nrow(A[1:120, ])` months for `r ncol(A)` names the call returns the message "`r refused`".
+- `factor_covs()` is the body of the function without the check. The book's pinned package fix lifts the check with `allow.fewer.obs = TRUE`, which bounds `k` by the observations and leaves the default unchanged.
+
+::: {.notes}
+The pinned fix is recorded in the package notes of the book. The deck runs the default call, which still refuses.
+:::
+
+```{r race}
+#| include: false
+```
+
+```{r race-check}
+#| include: false
+```
+
+## Shrinkage Against Factor Matrices {.smaller}
+
+Minimum variance, long only, on a rolling window of 120 months held one month. The sample matrix is singular on every window, and `quadprog` refuses it rather than inverting noise.
+
+```{r tbl-21-race}
+```
+
+- The factor matrices give the lowest realized volatility, `r sprintf("%.1f%%", 100 * min(race$ann_vol))` for `r lowest_vol` against `r sprintf("%.1f%%", 100 * race$ann_vol[race$estimator == "shrunk"])` for shrinkage and `r sprintf("%.1f%%", 100 * race$ann_vol[race$estimator == "equal weight"])` for equal weighting.
+- Shrinkage gives the highest Sharpe ratio, `r sprintf("%.2f", race$sharpe[race$estimator == "shrunk"])` against `r sprintf("%.2f", race$sharpe[race$estimator == lowest_vol])`. Which repair is better depends on which number the mandate scores.
+
+```{r us-setup}
+#| include: false
+```
+
+## A Position Limit Is Dropped on the Variance Path {.codesmall}
+
+Unconstrained, minimum variance holds `r sum(w_mv > 1e-6)` of the `r length(us)` American names and puts `r sprintf("%.0f%%", 100 * max(w_mv))` in one of them. A mandate limits that, and the two ways of writing the limit behave differently.
+
+```{r position-limit}
+#| echo: true
+```
+
+- Under a variance objective `ROI` has no integer formulation, so the limit of `r K` names is read and discarded: `r sum(w_K_var > 1e-6)` names come back, identical to the unconstrained solution.
+- Under minimum ES the constraint goes to `Rglpk` as a mixed-integer program and is honored. The convex substitute for a concentrated variance sleeve is a cap per name.
+
+## The Budgeted Sleeve {.codesmall}
+
+```{r select-sleeve}
+#| echo: true
+#| output: false
+```
+
+The sleeve holds `r sum(w_sel > 1e-6)` names, spends the budget exactly, and has an estimated volatility of `r sprintf("%.1f%%", 100 * p_vol(w_sel))` against the benchmark's `r sprintf("%.1f%%", 100 * p_vol(b_us))` and the unconstrained minimum's `r sprintf("%.1f%%", 100 * p_vol(w_mv))`: the budget bought `r sprintf("%.0f%%", 100 * (p_vol(b_us) - p_vol(w_sel)) / (p_vol(b_us) - p_vol(w_mv)))` of the distance between the two.
+
+```{r sub-portfolio}
+#| include: false
+```
+
+## The Sleeve as a Sub-Portfolio {.smaller}
+
+`mult.portfolio.spec()` is the package's structure for a sleeve the allocation layer can consume: each regional sleeve is a sub-portfolio, minimum variance under a ten percent cap, re-estimated yearly; the top level allocates across the five proxies.
+
+- `trailing_periods` is the window less one, because the rolling solver counts the end point.
+- The proxies in `o_mp$R` have `r nrow(o_mp$R)` rows, the first `r W` back-filled with a drifting equal-weight sleeve nobody chose.
+- The weights come back as `proxy.1` to `proxy.5`, in the order added.
+- `momentFUN` passes through the dots of `add.sub.portfolio()`, so a sleeve can carry its own covariance estimator. It cannot carry the tracking-error budget, so the two stages of the application are run by hand.
+
+```{r policy}
+#| include: false
+```
+
+```{r fill}
+#| include: false
+```
+
+```{r omega-check}
+#| include: false
+```
+
+## Filling the Equity Budget {.smaller}
+
+The allocation above the sleeve is the policy of the hierarchical chapter. Its equity budget is $\omega = `r sprintf("%.1f%%", 100 * omega)`$, split `r sprintf("%.0f%%", 100 * eq_split[["US_equity"]])` United States and `r sprintf("%.0f%%", 100 * eq_split[["EU_equity"]])` Europe.
+
+We fill it three ways, holding every other line of the policy at its weight: the benchmark itself, the equally weighted sleeve, and the selected sleeve re-estimated monthly on the trailing `r W` months.
+
+- Costs are `r sprintf("%.0f", 1e4 * pm_costs_default()[["equity"]])` basis points per unit traded, charged on each sleeve's monthly trades against drifted weights.
+- The arithmetic holds in the data: the ratio of the total's tracking error to the sleeve's is `r sprintf("%.4f", te(totals$selected$total - r_policy) / te(totals$selected$sleeve - r_bench))` against $\omega = `r sprintf("%.4f", omega)`$, and the two information ratios coincide (`r sprintf("%+.3f", ir(totals$selected$sleeve - r_bench))` and `r sprintf("%+.3f", ir(totals$selected$total - r_policy))`).
+
+```{r scores}
+#| include: false
+```
+
+## The Three Fillers, Out of Sample {.smaller}
+
+```{r tbl-21-fill}
+```
+
+```{r fill-verdict}
+#| include: false
+```
+
+## What the Total Portfolio Noticed {.smaller}
+
+- **Sleeve level.** Equal weighting earns an information ratio of `r sprintf("%+.2f", sl_ir[["equal weight"]])` (standard error `r sprintf("%.2f", se_ew)`), the selected sleeve `r sprintf("%+.2f", sl_ir[["selected"]])` (`r sprintf("%.2f", se_sel)`). Neither is two standard errors from zero.
+- **What selection delivered** is what it was built for: volatility of `r sprintf("%.1f%%", 100 * sl_vol[["selected"]])` against the benchmark's `r sprintf("%.1f%%", 100 * sl_vol[["benchmark"]])`, and a realized tracking error of `r sprintf("%.1f%%", 100 * g_("sleeve", "gross", "selected", "te"))` against the four percent budgeted.
+- **Total level.** Sharpe ratios of `r sprintf("%.3f", tot("sharpe")[["benchmark"]])` (policy), `r sprintf("%.3f", tot("sharpe")[["equal weight"]])` (equal weight) and `r sprintf("%.3f", tot("sharpe")[["selected"]])` (selected). Equal weighting adds return; the selected sleeve takes the total's volatility from `r sprintf("%.2f%%", 100 * tot("ann_vol")[["benchmark"]])` to `r sprintf("%.2f%%", 100 * tot("ann_vol")[["selected"]])`.
+- **Against sampling error** the Sharpe differences give $z = `r sprintf("%.2f", z_tot[["equal weight"]])`$ and $z = `r sprintf("%.2f", z_tot[["selected"]])`$ (Jobson and Korkie, 1981; Memmel, 2003): nearer the threshold than the information ratios, on the same side of it.
+
+::: {.notes}
+Selection survives the allocation in the sense of the scaling result: the information ratio is intact, and active return and tracking error arrive scaled by the budget. What the total registers most clearly is the sleeve's variance rather than its alpha.
+:::
+
+## The Chapter in One Picture
+
+```{r fig-21-active}
+#| fig-alt: "Cumulative active return of the equally weighted and the selected sleeve, upper panel at the sleeve level against the benchmark, lower panel at the total level against the policy."
+#| fig-asp: 0.62
+```
+
+The lower panel is the upper one multiplied by the equity budget: the investor who owns the policy lives in the lower one, where the breadth of the fundamental law has been divided by the budget.
+
+## Key Takeaways {.smaller}
+
+- **Outcome 2.** A sleeve's benchmark reproduces from the instruments to machine precision with a one-week lag on the capitalization weights, and the sleeve is judged against it under a tracking-error budget.
+- **Outcome 1.** Active return and tracking error scale by the budget $\omega$ and the information ratio does not; $\text{SR}^2_P = \text{SR}^2_B + (\alpha/\sigma_\varepsilon)^2$ bounds what the total can gain.
+- **Outcome 2.** Size is present and momentum absent by construction; value cannot be built for want of fundamentals. Equal weighting is a size tilt and a contrarian rule at once.
+- **Outcome 3.** Many names make the sample covariance singular on any window shorter than 124 months; the sleeve needs shrinkage or a factor structure. Out of sample the factor matrices give the lowest volatility, the shrinkage matrix the highest Sharpe ratio.
+- **Outcome 3.** A cardinality limit is dropped silently on the variance path and honored on the ES path; a cap per name is the convex substitute. The budget is a one-parameter family, and a sub-portfolio can carry its own covariance estimator but not the budget.
+- **Outcome 4.** Selection survives the allocation in the sense of the scaling result: the information ratio is intact, and the total registers the sleeve's variance more clearly than its alpha.
+
+## Exercises {.smaller}
+
+Work these in `code/21-equity-sleeve-exercises.R`; solutions are in appendix G of the book.
+
+1. Repeat the United States sleeve with tracking-error budgets of two, four and eight percent, re-estimated monthly. Report realized tracking error, information ratio and volatility, and say whether the realized tracking error stays inside the budget and why it might not.
+2. Change the momentum signal to the return over months $t-6$ to $t-2$, sort into quintiles, and recompute the sorts table. Does momentum appear at any horizon on this market, and what would its appearance have to mean given how the instruments are modeled?
+3. Rebalance the equally weighted sleeve annually instead of monthly, compute its turnover and net Sharpe ratio, and attribute the difference to the size tilt and to the rebalancing.
+4. Estimate the appraisal ratio of the equally weighted United States sleeve and the sleeve weight $\omega^{*}$ that the Treynor-Black result assigns it. Compare it with the policy's equity budget and explain what the comparison does and does not say.

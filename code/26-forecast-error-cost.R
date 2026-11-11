@@ -20,9 +20,8 @@ mu <- colMeans(Re); S <- stats::cov(Re)                            # the stand-i
 theta2 <- as.numeric(t(mu) %*% solve(S, mu))                       # squared maximum Sharpe ratio, monthly
 stopifnot(N == 16L, !anyNA(Re), model_year(dates[121]) == 11L)
 
-# ===== Two functions and a worked box =====
-
 ## ---- helpers ----
+# ===== Two functions and a worked box =====
 gmv_qp <- function(S) {
   n <- ncol(S)
   sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
@@ -70,9 +69,8 @@ sharpe_shortfall <- function(w, mu, Sigma) {
   sqrt(12 * as.numeric(t(mu) %*% solve(Sigma, mu))) - sharpe_of(w, mu, Sigma)
 }
 
-# ===== Worked: the first sixty months against the full-sample truth =====
-
 ## ---- worked ----
+# ===== Worked: the first sixty months against the full-sample truth =====
 m60 <- colMeans(zoo::coredata(Re)[1:60, ])            # the sample mean of the first window
 e60 <- m60 - mu
 w60 <- solve(S, m60)                                   # plug-in position, gamma = 1, Sigma known
@@ -84,9 +82,8 @@ stopifnot(abs(wk$loss - wk$rafe^2) < 1e-12,                             # @eq-26
           abs(wk$short - sqrt(12 * theta2) * (1 - wk$cos)) < 1e-12)     # @eq-26-cos
 round(unlist(wk), 4)
 
-# ===== Three forecasts of the mean on rolling windows =====
-
 ## ---- market-proxy ----
+# ===== Three forecasts of the mean on rolling windows =====
 eq_ids     <- sim_assets$asset_id[sim_assets$asset_class == "equity"]
 region_of  <- setNames(sim_assets$region, sim_assets$asset_id)
 eq_classes <- grep("_equity$", colnames(Re), value = TRUE)
@@ -211,9 +208,8 @@ ggplot2::ggplot(pts, ggplot2::aes(error, shortfall, colour = forecast)) +
   scale_colour_tidyaa() +
   ggplot2::labs(x = "forecast error (RMSE monthly; RAFE annualized)", y = "realized Sharpe-ratio shortfall")
 
-# ===== The covariance channel by simulation =====
-
 ## ---- mc ----
+# ===== The covariance channel by simulation =====
 set.seed(1602)
 L <- chol(S)
 draw_months <- function(Tw, mu, L) matrix(rnorm(Tw * length(mu)), Tw) %*% L + matrix(mu, Tw, length(mu), byrow = TRUE)
@@ -266,9 +262,8 @@ mc |>
 ## ---- mc-facts ----
 at <- function(Tw, col) mc[[col]][mc$T == Tw]
 
-# ===== The bound on the term-spread forecast =====
-
 ## ---- term ----
+# ===== The bound on the term-spread forecast =====
 cv <- sim_curve_weekly |>
   dplyr::filter(series == "US_Slope") |>
   dplyr::arrange(date)
@@ -319,9 +314,8 @@ stopifnot(abs(tilt[["policy"]] - s0_p * sqrt(12)) < 1e-12,
           tilt[["tilt"]] - tilt[["policy"]] < bound_p - tilt[["policy"]])
 round(tilt, 3)
 
-# ===== The two channels at 36, 60 and 120 months =====
-
 ## ---- tbl-26-channels ----
+# ===== The two channels at 36, 60 and 120 months =====
 # Share of the plug-in rule's expected loss attributable to the covariance
 # channel, the inversion error plus the amplification of @eq-26-kz-split, at
 # the three windows of the register. In certainty-equivalent units from the
@@ -342,9 +336,8 @@ chan |>
         col.names = c("T", "mean channel (CE)", "covariance channel (CE)", "covariance share (CE)",
                       "mean channel (SR)", "covariance channel (SR)", "covariance share (SR)"))
 
-# ===== Where the shortfall is largest =====
-
 ## ---- episodes ----
+# ===== Where the shortfall is largest =====
 ends <- seq.int(win, Tn - 1L)
 ceiling_lo_truth <- sharpe_of(tan_qp(mu, S), mu, S)
 top_truth <- names(which.max(tan_qp(mu, S)))                # the series the true tangency portfolio holds most of
@@ -385,9 +378,8 @@ ep_tab |>
 ## ---- ep-facts ----
 ep_at <- function(e, col) ep_tab[[col]][ep_tab$episode == e]
 
-# ===== The register, ranked by what it estimates =====
-
 ## ---- register ----
+# ===== The register, ranked by what it estimates =====
 sweep <- utils::read.csv("tables/oos-sweep.csv") |>
   dplyr::filter(universe == "classes", frequency == "months", basis == "gross", window == 60)
 oos_r <- seq.int(121L, Tn)

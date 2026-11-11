@@ -1,0 +1,392 @@
+---
+title: "Notation and Data"
+subtitle: "Tidy Asset Allocation in R, Chapter 2"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 2"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/02-notation-and-data.R to the chunks
+# below, so no line of analysis is maintained twice. root.dir takes effect after
+# this chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("02-notation-and-data.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+```
+
+```{r data}
+#| include: false
+```
+
+```{r conventions}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **Read** the notation of the book and **choose** between arithmetic and compounded annualizing.
+2. **Describe** the modeled market, its model calendar and the four tools that read a date.
+3. **Navigate** the class and instrument universes, and **apply** the hedging identity.
+4. **State** the caveats and the deliberate overlay of the modeled market, and the role of the real-data layer.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcome 3.
+:::
+
+## The Question {.smaller}
+
+What do the symbols mean, and where do the numbers come from?
+
+::: {.statement}
+Markowitz (1952) needed four objects before he could state the problem the rest of the book solves: a matrix of returns, a vector of weights, a mean vector and a covariance matrix.
+:::
+
+- We fix the notation once, so that no later chapter redefines a symbol.
+- We describe the two sources of data once, so that no later chapter has to explain what it computes on.
+- The chapter sits on neither side of the strategic-tactical distinction; it is the ground both stand on.
+
+<p class="source">Markowitz, H. (1952). Portfolio Selection. *Journal of Finance* 7(1), 77–91.</p>
+
+## Returns, Weights and Moments
+
+There are $N$ assets over $T$ periods; $\boldsymbol{R}$ is the $T \times N$ matrix of **simple total returns**,
+
+$$
+r_{t,i} = \frac{P_{t,i} + D_{t,i}}{P_{t-1,i}} - 1 .
+$$
+
+- Excess returns, $r_{t,i} - r_{f,t}$, are the default basis; the bill enters an optimization as the origin of the return axis.
+- $\boldsymbol{w}$: weights; $\boldsymbol{\iota}$: ones, so $\boldsymbol{w}'\boldsymbol{\iota} = 1$ is full investment.
+- $\boldsymbol{\mu}$, $\boldsymbol{\Sigma}$: moments of excess returns; $\hat{\boldsymbol{\mu}}$, $\hat{\boldsymbol{\Sigma}}$: their estimates.
+
+$$
+\mu_{\boldsymbol{w}} = \boldsymbol{w}'\boldsymbol{\mu},
+\qquad
+\sigma^2_{\boldsymbol{w}} = \boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w} .
+$$
+
+::: {.notes}
+Simple rather than log returns, because a portfolio's simple return is the weighted average of its constituents' simple returns; the moment formulas rest on that linearity. Chapter 3 argues the excess basis.
+:::
+
+## Two Ways to Annualize
+
+::: {.columns}
+::: {.column width="50%"}
+**Arithmetic**: mean $\times 12$, volatility $\times \sqrt{12}$.
+
+- The convention for anything that enters or leaves an optimizer, because $\boldsymbol{\mu}$ and $\boldsymbol{\Sigma}$ are arithmetic objects.
+- Exact for the variance only if returns are uncorrelated over time (Lo, 2002).
+:::
+::: {.column width="50%"}
+**Compounded**: what the investor earned per year.
+
+$$
+\bar{r}_{\text{ann}} = \Big(\prod_{t=1}^{T}(1 + r_t)\Big)^{12/T} - 1
+$$
+
+The convention for tables that describe a series.
+:::
+:::
+
+Per period the compounded mean falls short of the arithmetic one by about half the variance: the variance drag.
+
+## The Data Preparation Block
+
+```{r data-code}
+#| echo: true
+#| eval: false
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)   # total returns
+rf <- sim_riskfree_monthly$return                                  # the bill
+Re <- R - rf                                                       # excess returns
+stopifnot(ncol(R) == 16L, nrow(R) == length(rf), !anyNA(R))
+```
+
+```{r conventions-code}
+#| echo: true
+#| eval: false
+ann_ret <- function(x, p = 12) prod(1 + x)^(p / length(x)) - 1   # compounded
+ann_vol <- function(x, p = 12) stats::sd(x) * sqrt(p)             # sqrt-of-time
+```
+
+- These are the only data-preparation steps the book performs; `as_xts_pm()` crosses from the tidy table to the wide `xts` matrix.
+- The `stopifnot()` states the invariant in code, so a mismatch fails the render rather than producing a plausible number.
+
+## Worked: Annualizing One Series
+
+```{r worked-inputs}
+#| echo: false
+```
+
+```{r worked-check}
+#| echo: false
+```
+
+- `US_equity`: the arithmetic annual mean is $12 \times `r sprintf("%.5f", m)` = `r sprintf("%.4f", 12 * m)`$, the annual volatility $\sqrt{12} \times `r sprintf("%.5f", s)` = `r sprintf("%.4f", s * sqrt(12))`$.
+- The compounded return is `r sprintf("%.4f", ann_ret(x))`.
+- Per month the gap, `r sprintf("%.5f", m - g)`, equals half the monthly variance, `r sprintf("%.5f", 0.5 * s^2)`. Between the annual figures the gap is smaller, because the compounded figure also earns return on return within the year.
+
+::: {.notes}
+Both blocks above are the chapter's own chunks. The second printout lists, in order, the two annual returns, the volatility, and the two pairs of gaps.
+:::
+
+## The Modeled Market
+
+::: {.statement}
+The default data of this book is a modeled market, and it contains no real data.
+:::
+
+- Factor models for government bonds, credit, equities and commodities were estimated by historical simulation on market data from 1992 to 2022.
+- The factors were replayed, the idiosyncratic components drawn afresh, and the asset paths reassembled: no series is the history of a real security.
+- The market runs on its own calendar, model years `r min(model_year(zoo::index(R)))` to `r max(model_year(zoo::index(R)))`.
+- Every series is the output of a factor model, so the market can be re-run with its factors shocked, which a history cannot.
+- The whole market ships inside `tidypm`: every number reproduces offline.
+
+## The Model Calendar {.smaller}
+
+Dates are stored as ordinary `Date` objects, but their years are positions on the model calendar. Four tools read them: `model_year()`, `in_episode()`, `fmt_model()` and `scale_x_model()`.
+
+```{r calendar-years}
+#| echo: true
+```
+
+The sample is `r nrow(R)` months, model years `r min(model_year(d))` to `r max(model_year(d))`; its worst `US_equity` month is `r fmt_model(worst)`.
+
+::: {.notes}
+The first line shows the dates as stored, the second as read, the third as written. A position in the sample is always derived from the data, never typed.
+:::
+
+## The Four Named Episodes {.smaller}
+
+```{r tbl-02-episodes}
+```
+
+`in_episode()` returns a logical vector that is `TRUE` on the dates of one episode, so that no chapter types a window.
+
+```{r calendar-episode}
+#| include: false
+```
+
+Over the `r sum(crisis)` months of the credit crisis `US_equity` loses `r sprintf("%.0f%%", -100 * in_crisis[["US_equity"]])` and `US_government` gains `r sprintf("%.0f%%", 100 * in_crisis[["US_government"]])`.
+
+## The Calendar on a Time Axis
+
+```{r fig-02-calendar}
+#| fig-alt: "Logarithmic total-return index of US_equity on the model calendar with the four episodes shaded."
+#| fig-asp: 0.45
+```
+
+`scale_x_model()` replaces the date scale and labels model years; the four shaded bands are the rows of `sim_episodes`.
+
+## The Sixteen Class Series {.smaller}
+
+Five currencies (`US`, `UK`, `EU`, `CH`, `JP`) times government, credit and equity, plus one global commodity index: `r nrow(R)` months, in dollars, unhedged.
+
+```{r classes}
+#| include: false
+```
+
+```{r tbl-02-classes}
+#| include: false
+```
+
+```{r deck-classes}
+# Reshape only: the chapter's `classes` object, formatted as in tbl-02-classes,
+# split into two blocks so that sixteen rows fit on a slide.
+cls <- classes |>
+  dplyr::transmute(class,
+                   ret    = sprintf("%.1f%%", 100 * ret),
+                   vol    = sprintf("%.1f%%", 100 * vol),
+                   sharpe = sprintf("%.2f", sharpe))
+cls_cols <- c("", "return", "volatility", "Sharpe")
+```
+
+::: {.columns}
+::: {.column width="50%"}
+```{r deck-classes-a}
+kable(cls[1:8, ], align = "lrrr", col.names = cls_cols)
+```
+:::
+::: {.column width="50%"}
+```{r deck-classes-b}
+kable(cls[9:16, ], align = "lrrr", col.names = cls_cols)
+```
+:::
+:::
+
+## Total-Return Indices
+
+```{r fig-02-indices}
+#| fig-alt: "Total-return indices of the sixteen class series on a logarithmic scale, one panel per asset class, one line per region."
+#| fig-asp: 0.46
+```
+
+Equal vertical distances are equal percentage moves.
+
+## How the Class Series Are Built
+
+- Equity classes are value-weighted on the **previous** weekly capitalization; the other classes are equally weighted.
+- A monthly return is the compounded weekly return within the month.
+- The chunk checks the claim rather than asking us to believe it: it asserts month-end dates and a prior week of capitalizations, then prints the largest difference between the shipped and the rebuilt monthly return.
+
+```{r monthly-from-weekly}
+#| echo: false
+```
+
+
+## Money Markets Are Not the Risk-Free Rate
+
+Five money-market series ship beside the universe, deliberately outside it: each is a marked-to-market short-duration bond.
+
+```{r money-market}
+#| echo: true
+```
+
+`US_money_market` tracks the bill at a correlation of `r sprintf("%.2f", stats::cor(mm, rf))`, yet is negative in `r sprintf("%.0f%%", 100 * mean(mm < 0))` of months against the bill's `r sprintf("%.1f%%", 100 * mean(rf < 0))`. A risk-free rate has to be riskless over the holding period; `sim_riskfree_monthly` is the one used everywhere.
+
+## The Instrument Universe {.smaller}
+
+```{r instrument-metadata}
+#| include: false
+```
+
+```{r tbl-02-instruments}
+```
+
+- Beneath the sixteen classes sit `r nrow(sim_assets)` instruments: the universe of the sleeve chapters.
+- The `r n_by_class[["equity"]]` equities carry one of `r dplyr::n_distinct(stats::na.omit(sim_assets$sector))` sectors; credit comes in three maturities and two grades, `IG` and `HY`.
+
+## Currency Hedging {.codesmall}
+
+A foreign holding carries its local return and its currency's move. With $f_t$ the matching `fx_return`,
+
+$$
+r^{\text{hedged}}_{t} = r^{\text{unhedged}}_{t} - f_{t}.
+$$
+
+```{r hedge}
+#| echo: true
+```
+
+Hedging takes `JP_government` from `r sprintf("%.1f%%", 100 * gov["JP_government", "unhedged"])` to `r sprintf("%.1f%%", 100 * gov["JP_government", "hedged"])` and leaves `JP_equity` at `r sprintf("%.1f%%", 100 * jp_equity[["hedged"]])`, from `r sprintf("%.1f%%", 100 * jp_equity[["unhedged"]])`.
+
+::: {.notes}
+The columns are unhedged and hedged annualized volatility. Currency dominates a foreign bond's dollar volatility and barely matters for an equity market, so currency is not one decision per country.
+:::
+
+## Near Rank Deficiency at Instrument Level
+
+Three maturities per region are priced off a three-factor curve, and the two credit grades share one credit factor: some bond combinations replicate others.
+
+```{r conditioning}
+#| echo: true
+```
+
+- Condition number: $10^{`r sprintf("%.1f", log10_condition(A))`}$ for the `r nrow(sim_assets)` instruments, $10^{`r sprintf("%.1f", log10_condition(R))`}$ for the sixteen classes.
+- Unconstrained mean-variance at instrument level produces nonsense; the sleeve chapters shrink the matrix (Ledoit and Wolf, 2004) or constrain the weights.
+
+## A Deliberate Overlay {.smaller}
+
+Every euro-area equity carries an expected-return overlay of **three percentage points a year**, a capital-market assumption rather than a measurement.
+
+```{r overlay}
+#| echo: false
+```
+
+- Without it `EU_equity` earns `r sprintf("%.1f%%", 100 * without[["EU_equity"]])` at the highest volatility of the five equity markets, a Sharpe ratio of `r sprintf("%.2f", sharpe_without[["EU_equity"]])`, and the long-only tangency portfolio holds none of it, against `r sprintf("%.0f%%", 100 * w_eu[["with"]])` with it.
+- The overlay is `r sprintf("%.1f", overlay / se_mean)` standard errors of the sample mean: `r nrow(R) / 12` model years cannot tell it from the measured mean (Merton, 1980).
+
+::: {.notes}
+The printout runs from the return and Sharpe ratio without the overlay, through two correlations and the two tangency weights, to the standard error. The dataset is frozen at version 6.2.0; regenerating it redraws the idiosyncratic components and is an event, not a refresh.
+:::
+
+## The Real-Data Layer {.smaller}
+
+Where a claim has to be about real markets, `tidypm` carries a small layer built from free public sources. `pm_sources()` is a registry and downloads nothing.
+
+```{r tbl-02-sources}
+```
+
+## Run Once, Read Offline
+
+```{r deck-real-data-layer}
+#| echo: true
+#| eval: false
+pm_init()                       # downloads once, writes the panel and its manifest
+panel <- pm_data()              # a disk read: no network, no recomputation
+pm_data(sleeves = c("us_equity", "gov_long"), from = "1990-07-01")
+pm_check()                      # your build against the manifest the book was built on
+```
+
+```{r cutoff}
+#| echo: true
+```
+
+The pinned cutoff is exported as `PM_CUTOFF`, so that a chapter names it rather than repeats a literal.
+
+- `pm_data()` never reaches the network; the panel is deliberately ragged, and nothing pads a sleeve that starts later.
+- French and FRED revise history: `pm_check()` names the sleeves that moved.
+
+## Asset Class Vocabulary {.smaller}
+
+Code uses the data's names; prose uses whichever is clearer, usually the industry's.
+
+| In the data | In the industry | Note |
+|:--|:--|:--|
+| `government` | sovereign bonds | zero-coupon, constant two, five and ten-year |
+| `credit` | corporate bonds | two grades, `IG` and `HY` |
+| `money_market` | cash; money market | **not cash and not the risk-free rate** |
+| `commodity` | alternatives; real assets | the only alternative asset, one global class |
+| `equity` | stocks; equities | value-weighted class of securities |
+| `sim_riskfree_*` | the risk-free rate; the bill | a three-month Treasury bill |
+
+The class level is where Parts III to V work; the instrument level belongs to Part VI.
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** Vectors are bold lower case, matrices bold capitals, estimates carry hats; excess over the bill is the default basis everywhere.
+- **Outcome 1.** Arithmetic annualizing is for anything that enters an optimizer, the compounded return for what a series earned. Per period, the gap is half the variance.
+- **Outcome 2.** The modeled market contains no real data and runs on model years; `model_year()`, `in_episode()`, `fmt_model()` and `scale_x_model()` read every date.
+- **Outcome 3.** The market is sixteen risky class series over `r nrow(R)` months with `r nrow(sim_assets)` instruments beneath; the money markets are neither cash nor the risk-free rate, the bill is.
+- **Outcome 4.** Currency dominates foreign bonds, the bond block is nearly rank-deficient at instrument level, and euro-area equity carries a three-point overlay within one standard error.
+- **Outcome 4.** Real data enters through `pm_sources()`, `pm_init()`, `pm_data()` and `pm_check()`, where a claim has to be about real markets.
+
+## Exercises {.smaller}
+
+Work these in `code/02-notation-and-data-exercises.R`; solutions are in appendix G of the book.
+
+1. Apply the hedging identity to all twelve non-US series, tabulate unhedged and hedged volatility with the share of variance removed, and group by asset class. Why does hedging remove most of a bond's volatility and almost none of an equity market's?
+2. Rebuild `GLOBAL_commodity` weekly as the equally weighted mean of its eight instruments, compound to months and compare. What does the answer say about how the non-equity classes are constructed?
+3. Rebuild `US_equity` weekly equally weighted and value-weighted on the previous week's capitalization. Confirm the second reproduces the shipped series. Which should a benchmark use?

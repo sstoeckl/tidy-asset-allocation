@@ -1,0 +1,434 @@
+---
+title: "The Cost of Forecast Error"
+subtitle: "Tidy Asset Allocation in R, Chapter 26"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 26"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/26-forecast-error-cost.R to the chunks
+# below, so no line of analysis is maintained twice. root.dir takes effect after
+# this chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("26-forecast-error-cost.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **Derive** the certainty-equivalent loss of a mean-variance investor as a squared distance in risk units, and **read** the Sharpe-ratio shortfall and the RMSE off it.
+2. **Decompose** the covariance channel into the three terms of Kan and Zhou, and **state** the Sharpe-ratio ceiling a forecast's $R^2$ allows.
+3. **Implement** the RAFE and score three forecasts of the mean on rolling windows.
+4. **Evaluate** which error measure explains the shortfall, which channel costs more, and whether a strategy's shortfall follows how much it estimates.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+What does an error in a return forecast cost, and in which units should the cost be written?
+
+::: {.statement}
+Salcher et al. (2026): the natural unit is the investor's own. The forecast error is measured in the risk metric of the optimizer that consumes it, and the RMSE is a special case under assumptions that are rarely true.
+:::
+
+- Chopra and Ziemba (1993) put a number on the cost: errors in means are roughly ten times as costly as errors in variances. The formula behind the number was not given.
+- For a mean-variance investor the loss from a wrong mean vector is an **identity**, a squared distance with $\boldsymbol{\Sigma}$ as the metric.
+- The measure applies to a strategic estimate and a tactical forecast alike: this chapter is about measurement.
+
+<p class="source">Chopra, V. and Ziemba, W. (1993). The effect of errors in means, variances, and covariances on optimal portfolio choice. *Journal of Portfolio Management* 19(2), 6–11.</p>
+
+## The Certainty Equivalent
+
+A mean-variance investor with risk aversion $\gamma$ values a position $\boldsymbol{w}$ by
+
+$$
+CE(\boldsymbol{w}) = \boldsymbol{w}'\boldsymbol{\mu} - \frac{\gamma}{2}\,\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w},
+\qquad
+\boldsymbol{w}^* = \frac{\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}}{\gamma},
+\qquad
+CE^* = \frac{\boldsymbol{\mu}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}}{2\gamma} = \frac{\theta^2}{2\gamma},
+$$
+
+with $\theta$ the maximum Sharpe ratio.
+
+- The optimum is proportional to $\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$, the direction of the tangency portfolio.
+- $CE^*$ is the best the investor can attain: every loss below is measured against it.
+
+## Positions and Means in Risk Units
+
+With $\boldsymbol{\Sigma}^{1/2}$ the symmetric square root, write
+
+$$
+\boldsymbol{a} = \boldsymbol{\Sigma}^{-1/2}\boldsymbol{\mu},
+\qquad
+\boldsymbol{v} = \boldsymbol{\Sigma}^{1/2}\boldsymbol{w},
+\qquad\text{so that}\qquad
+\boldsymbol{w}'\boldsymbol{\mu} = \boldsymbol{v}'\boldsymbol{a},
+\quad
+\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w} = \|\boldsymbol{v}\|^2,
+\quad
+\|\boldsymbol{a}\| = \theta .
+$$
+
+- The vector $\boldsymbol{a}$ lists the Sharpe ratios of $N$ orthogonal directions.
+- The optimum is $\boldsymbol{v}^* = \boldsymbol{a}/\gamma$.
+
+## The Loss Identity
+
+For **any** position, not only the plug-in, the loss is a squared distance:
+
+$$
+CE^* - CE(\boldsymbol{w})
+= \frac{1}{2\gamma}\left(\|\boldsymbol{a}\|^2 - 2\gamma\,\boldsymbol{v}'\boldsymbol{a} + \gamma^2\|\boldsymbol{v}\|^2\right)
+= \frac{1}{2\gamma}\,\|\gamma\boldsymbol{v} - \boldsymbol{a}\|^2 .
+$$
+
+This is the loss function of Klein and Bawa (1976) and Kan and Zhou (2007) written in risk units.
+
+::: {.notes}
+The step is completing the square: the first equality inserts the three expressions of the previous slide, the second collects them into one norm.
+:::
+
+## The Risk-Adjusted Forecast Error
+
+Let the investor hold a forecast $\hat{\boldsymbol{\mu}}$, from any source, and know $\boldsymbol{\Sigma}$. The plug-in position has $\gamma\boldsymbol{v} = \hat{\boldsymbol{a}}$, and
+
+$$
+CE^* - CE(\hat{\boldsymbol{w}}) = \frac{1}{2\gamma}\,\|\hat{\boldsymbol{a}} - \boldsymbol{a}\|^2
+= \frac{1}{2\gamma}\,(\hat{\boldsymbol{\mu}} - \boldsymbol{\mu})'\boldsymbol{\Sigma}^{-1}(\hat{\boldsymbol{\mu}} - \boldsymbol{\mu})
+= \frac{\text{RAFE}(\hat{\boldsymbol{\mu}})^2}{2\gamma} .
+$$
+
+- Welfare is lost only through forecast error, only in risk units, and the loss is exact.
+- For the sample mean on $T$ independent months $\hat{\boldsymbol{a}} \sim N(\boldsymbol{a}, \boldsymbol{I}_N/T)$, so $\mathbb{E}[\text{RAFE}^2] = N/T$: each dimension costs $1/T$, whatever signal it carries.
+- An error in a direction of low risk meets a large entry of $\boldsymbol{\Sigma}^{-1}$: error maximization (Michaud, 1989; Best and Grauer, 1991).
+
+## From the Certainty Equivalent to the Sharpe Ratio
+
+A Sharpe-ratio investor sees the direction of a position and not its length. With $\varphi$ the angle between $\hat{\boldsymbol{a}}$ and $\boldsymbol{a}$,
+
+$$
+SR(\hat{\boldsymbol{w}}) = \frac{\hat{\boldsymbol{a}}'\boldsymbol{a}}{\|\hat{\boldsymbol{a}}\|} = \theta\cos\varphi ,
+\qquad
+\Delta = \theta - SR(\hat{\boldsymbol{w}}) = \theta\,(1 - \cos\varphi) .
+$$
+
+The distance from $\boldsymbol{a}$ to the ray through $\hat{\boldsymbol{a}}$ is at most $\text{RAFE}$, and $1 - \cos\varphi \le \sin\varphi$ on $[0, \pi/2]$, so
+
+$$
+\Delta \le c_0\,\text{RAFE}(\hat{\boldsymbol{\mu}}),
+\qquad
+c_0 = \begin{cases} 1 & \text{if } \text{RAFE} \le \theta, \\ 2 & \text{otherwise.}\end{cases}
+$$
+
+The RAFE bounds the Sharpe-ratio shortfall and equals, up to $2\gamma$, the certainty-equivalent loss.
+
+## The RMSE as a Special Case {.smaller}
+
+Salcher et al. (2026) order the simplifications of $\boldsymbol{\Sigma}$ as a nested sequence:
+
+$$
+\begin{aligned}
+\text{RAFE}^2 &= (\hat{\boldsymbol{\mu}} - \boldsymbol{\mu})'\boldsymbol{\Sigma}^{-1}(\hat{\boldsymbol{\mu}} - \boldsymbol{\mu})
+&&\text{the investor's metric,}\\
+\text{RAFE-CC}_0^2 &= \sum_{i=1}^{N}\frac{(\hat{\mu}_i - \mu_i)^2}{\sigma_i^2}
+&&\text{correlations ignored,}\\
+\text{RAFE-CV}^2 &= \frac{1}{\sigma^2}\sum_{i=1}^{N}(\hat{\mu}_i - \mu_i)^2
+&&\text{one volatility for all,}\\
+N\cdot\text{RMSE}^2 &= \sum_{i=1}^{N}(\hat{\mu}_i - \mu_i)^2
+&&\boldsymbol{\Sigma} = \boldsymbol{I} .
+\end{aligned}
+$$
+
+- Each step discards something the optimizer uses: which combinations are cheap to hold, an error that cancels in the portfolio, the scale of each asset.
+- In their data the correlation with the tangency portfolio's shortfall falls from 0.77 (RAFE) to 0.42 (RMSE) in simulation and from 0.68 to 0.11 on empirical data.
+
+::: {.notes}
+The chapter also states the constant-correlation member, RAFE-CC with correlation rho, between the first two lines. Kandel and Stambaugh (1996) made the point from the other side: an $R^2$ too small to pass a test can move an allocation a great deal.
+:::
+
+## The Covariance Channel
+
+When $\boldsymbol{\Sigma}$ is estimated too, $\hat{\boldsymbol{w}} = \hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}/\gamma$ and a second error enters, $\hat{\boldsymbol{C}} = \boldsymbol{\Sigma}^{1/2}\hat{\boldsymbol{\Sigma}}^{-1}\boldsymbol{\Sigma}^{1/2}$, which equals $\boldsymbol{I}_N$ when the estimate is right. Then $\gamma\boldsymbol{v} = \hat{\boldsymbol{C}}\hat{\boldsymbol{a}}$ and, path by path, $2\gamma\,\text{loss} = \|\hat{\boldsymbol{C}}\hat{\boldsymbol{a}} - \boldsymbol{a}\|^2$. The triangle inequality separates the two errors:
+
+$$
+\Delta \le c_0\,\text{RAFE}(\hat{\boldsymbol{\mu}}) + \theta\cdot\text{C-RAFE}(\hat{\boldsymbol{\Sigma}}),
+\qquad
+\text{C-RAFE}(\hat{\boldsymbol{\Sigma}}) = \big\|\boldsymbol{\Sigma}^{1/2}\hat{\boldsymbol{\Sigma}}^{-1}\boldsymbol{\Sigma}^{1/2} - \boldsymbol{I}_N\big\|_2 ,
+$$
+
+with $\|\cdot\|_2$ the spectral norm, the largest relative eigenvalue error of the inverse.
+
+- The covariance error is multiplied by $\theta$: errors in risk cost most where the opportunity set is best.
+
+## Expected Loss Under Normality
+
+Under normality $\hat{\boldsymbol{\mu}}$ and $\hat{\boldsymbol{\Sigma}}$ are independent, $(T-1)\hat{\boldsymbol{\Sigma}}$ is Wishart, and
+
+$$
+\mathbb{E}\big[\hat{\boldsymbol{\Sigma}}^{-1}\big] = \alpha_N\boldsymbol{\Sigma}^{-1},
+\quad
+\mathbb{E}\big[\hat{\boldsymbol{\Sigma}}^{-1}\boldsymbol{\Sigma}\hat{\boldsymbol{\Sigma}}^{-1}\big] = \beta_N\boldsymbol{\Sigma}^{-1},
+\qquad
+\alpha_N = \frac{T-1}{T-N-2},
+\quad
+\beta_N = \frac{(T-1)^2(T-2)}{(T-N-1)(T-N-2)(T-N-4)} .
+$$
+
+Taking expectations of the mean and variance terms and subtracting from $2\gamma\,CE^* = \theta^2$:
+
+$$
+2\gamma\,\mathbb{E}[\text{loss}]
+= \underbrace{\frac{N}{T}}_{\text{mean noise}}
+\;+\;\underbrace{(1 - 2\alpha_N + \beta_N)\,\theta^2}_{\text{inversion error}}
+\;+\;\underbrace{(\beta_N - 1)\frac{N}{T}}_{\text{noise, amplified}} .
+$$
+
+::: {.notes}
+Both constants exceed one and are unbounded as N/T approaches one. The third term is the interaction; a substitution design that holds one input at its truth cannot measure it. A long-only constraint caps every term.
+:::
+
+## An Upper Bound from the Forecast's Information
+
+For a single asset let $r_{t+1} = m_t + e_{t+1}$ with $\operatorname{Var}(m_t) = R^2\sigma^2$, $\operatorname{Var}(e_{t+1}) = (1 - R^2)\sigma^2$ and $S_0 = \mu/\sigma$. The conditional tangency position holds $m_t/(\gamma\sigma_e^2)$, and its average squared Sharpe ratio is
+
+$$
+\theta_c^2 = \frac{\mathbb{E}[m_t^2]}{\sigma_e^2} = \frac{S_0^2 + R^2}{1 - R^2} ,
+\qquad
+\theta_c^2 = \boldsymbol{\mu}'\boldsymbol{\Sigma}_e^{-1}\boldsymbol{\mu} + \operatorname{tr}\big(\boldsymbol{\Sigma}_e^{-1}\operatorname{Var}(\boldsymbol{m}_t)\big)\ \text{(multivariate)}.
+$$
+
+- No strategy built on the forecast can exceed $\theta_c$ on average (Campbell and Thompson, 2008).
+- The bound is tight for the unconstrained conditional tangency position every month; it is slack for any restrained use of the forecast.
+
+## Two Functions and a Worked Box
+
+The measures are a few lines each; $\gamma$ cancels for a plug-in position at $\gamma = 1$.
+
+```{r helpers}
+#| include: false
+```
+
+```{r measures}
+#| echo: true
+#| output: false
+```
+
+::: {.notes}
+The long-only programs, the Sharpe ratio under given moments and the Bayes-Stein estimator are hidden helpers repeated from chapters 6 and 8.
+:::
+
+## The First Sixty Months Against the Truth {.smaller}
+
+```{r worked}
+```
+
+$\text{RAFE}^2 = `r sprintf("%.4f", wk$rafe^2)`$ against $N\cdot\text{RMSE}^2 = `r sprintf("%.6f", N * wk$rmse^2)`$, and $\cos\varphi = `r sprintf("%.3f", wk$cos)`$, so in annualized units
+
+$$
+\Delta = \theta(1 - \cos\varphi) = `r sprintf("%.3f", sqrt(12 * theta2))` \times `r sprintf("%.3f", 1 - wk$cos)` = `r sprintf("%.3f", wk$short)`
+\le c_0\,\text{RAFE} = `r sprintf("%.3f", sqrt(12) * wk$rafe)` .
+$$
+
+- With $\boldsymbol{\Sigma}$ known the error costs `r sprintf("%.0f%%", 100 * wk$rafe^2 / theta2)` of the attainable certainty equivalent; $\mathbb{E}[\text{RAFE}^2] = N/60 = `r sprintf("%.3f", N / 60)`$, and this window came in `r if (wk$rafe^2 > N / 60) "above" else "below"` it.
+
+```{r market-proxy}
+#| include: false
+```
+
+## Three Forecasts on Rolling Windows {.smaller}
+
+Sixty training months supply the forecast and the estimated covariance matrix; the sixty months that follow supply the realization. The forecasts are the sample mean, the Bayes-Stein estimate and the equilibrium return.
+
+- Per window and forecast: the RMSE, the RAFE whitened by the **realized** test-window covariance, and the RAFE whitened by the **estimated** training-window covariance, the measure available in real time.
+- Two rules turn a forecast into a position: the unconstrained plug-in $\hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}$ and the long-only tangency portfolio of the register.
+- The shortfall is each rule's Sharpe ratio on the test months against its own perfect-foresight version.
+
+```{r rolling}
+```
+
+The assertion in the chapter is the identity on data: with $\boldsymbol{\Sigma}$ known, the loss equals the squared RAFE on all `r length(starts)` windows, to machine precision.
+
+```{r cor-frame}
+#| include: false
+```
+
+## Which Measure Explains the Shortfall {.smaller}
+
+```{r tbl-26-correlations}
+```
+
+```{r cor-facts}
+#| include: false
+```
+
+- Unconstrained plug-in: the RMSE correlates `r sprintf("%.2f", rc("all three, pooled", U, RM))` pooled, the RAFE `r sprintf("%.2f", rc("all three, pooled", U, RR))` under the realized and `r sprintf("%.2f", rc("all three, pooled", U, RE))` under the estimated covariance.
+- Long-only tangency: the RAFE in the investor's estimated units still dominates the RMSE, `r sprintf("%.2f", rc("sample mean", LO, RE))` against `r sprintf("%.2f", rc("sample mean", LO, RM))` for the sample mean, but the realized-covariance RAFE falls below the RMSE for two forecasts.
+
+::: {.notes}
+A long-only position is the plug-in projected onto the simplex in the metric of the estimated covariance, so the measure that explains its shortfall is the one in that metric. The identity does not cover constrained positions.
+:::
+
+## Error and Shortfall, Window by Window
+
+```{r fig-26-error-shortfall}
+#| fig-alt: "Scatter of realized Sharpe-ratio shortfall against RMSE and two versions of the RAFE, one point per rolling window, by position rule and forecast."
+#| fig-asp: 0.55
+```
+
+The RMSE is nearly uncorrelated with the unconstrained shortfall; the RAFE orders the windows.
+
+## The Covariance Channel by Simulation {.smaller}
+
+The unconstrained plug-in is drawn from a normal distribution with this market's moments, 300 draws per window length; the table checks the three terms against the draws.
+
+```{r mc}
+#| include: false
+```
+
+```{r tbl-26-kz}
+```
+
+```{r mc-facts}
+#| include: false
+```
+
+- At sixty months the mean channel averages `r sprintf("%.3f", at(60L, "rafe2"))` against $N/T = `r sprintf("%.3f", N / 60)`$; the full loss is `r sprintf("%.3f", at(60L, "loss_both"))` against `r sprintf("%.3f", at(60L, "f_both"))` from the formula.
+- The inversion error alone is `r sprintf("%.3f", at(60L, "f_inv"))`; the amplification of the mean's noise is `r sprintf("%.3f", at(60L, "f_amp"))`, larger than the mean channel itself.
+
+::: {.notes}
+In Sharpe units the mean channel leads, because beta scales the whole inverse and a scaled direction has the same Sharpe ratio.
+:::
+
+## Which Channel Costs More
+
+```{r tbl-26-channels}
+```
+
+- In certainty-equivalent units the covariance channel is the larger at 36 and 60 months, `r sprintf("%.0f%%", 100 * chan$share_ce[chan$T == 60L])` of the loss at sixty, and the smaller at 120.
+- In Sharpe units the mean channel is the larger at every window; Chopra and Ziemba's ten-to-one is a Sharpe-unit statement.
+- For long-only, monthly rebalanced rules the Sharpe reading is the relevant one.
+
+## The Bound on the Term-Spread Forecast {.smaller}
+
+The forecast of chapter 16: the term spread, an expanding-window predictive regression after a burn-in of 120 months, scored against the expanding historical mean.
+
+```{r term}
+```
+
+```{r tilt}
+#| include: false
+```
+
+$$
+\theta_c = \sqrt{\frac{`r sprintf("%.4f", s0_p^2)` + `r sprintf("%.4f", r2_p)`}{1 - `r sprintf("%.4f", r2_p)`}} \times \sqrt{12} = `r sprintf("%.3f", bound_p)` .
+$$
+
+- Out-of-sample $R^2$ of the equal-weight policy: `r sprintf("%.2f%%", 100 * r2_p)`; Sharpe ratio `r sprintf("%.3f", tilt[["policy"]])` over `r length(oos)` months.
+- The bound allows a timer at most `r sprintf("%.3f", bound_p - tilt[["policy"]])` of Sharpe ratio on top; the banded tilt realized `r sprintf("%.3f", tilt[["tilt"]] - tilt[["policy"]])`, inside the bound.
+
+::: {.notes}
+The one-asset bound is the right ceiling for a timer of the policy and a loose one for the tilt, which reads the forecast cross-sectionally. The distance to the ceiling is the price of restraint.
+:::
+
+## Where the Shortfall Is Largest {.smaller}
+
+Sixty-month estimation windows, sorted by the episode their last month falls in, against the full-sample truth.
+
+```{r episodes}
+#| include: false
+```
+
+```{r tbl-26-episodes}
+```
+
+```{r ep-facts}
+#| include: false
+```
+
+- A window ending in the credit crisis gives the worst unconstrained portfolio, `r sprintf("%.2f", ep_at("credit crisis", "short_u"))` against `r sprintf("%.2f", ep_at("outside every episode", "short_u"))` outside every episode.
+- The long-only rule is hurt most by the rates shock, `r sprintf("%.2f", ep_at("rates shock", "short_lo"))`: `` `r top_truth` ``, the series the truth holds most of, has a negative estimated mean in `r sprintf("%.0f%%", 100 * rates_neg)` of those windows.
+- The RAFE reads the length of the error and the shortfall its angle, so errors of the same length can cost different amounts.
+
+## The Register, Ranked by What It Estimates {.smaller}
+
+Perfect foresight: the strategy solved on the out-of-sample months' own moments and held. Shortfall: that Sharpe ratio minus the rolling, realized one.
+
+```{r register}
+#| include: false
+```
+
+```{r tbl-26-register}
+```
+
+```{r reg-facts}
+#| include: false
+```
+
+- Equal weighting estimates nothing and loses exactly zero; the tangency portfolio, the one rule that estimates the mean, loses `r sprintf("%.2f", rg("max_sharpe", "shortfall"))`, `r sprintf("%.1f", rg("max_sharpe", "in_se"))` standard errors.
+- Minimum CVaR is the exception, with a negative shortfall: its perfect-foresight benchmark minimizes a tail, not variance, so it is the wrong ceiling.
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** The cost of a wrong mean forecast is an identity: the certainty-equivalent loss is $\text{RAFE}^2/(2\gamma)$, the squared Mahalanobis distance between forecast and truth under $\boldsymbol{\Sigma}$.
+- **Outcome 1.** The Sharpe-ratio shortfall is $\theta(1 - \cos\varphi)$, bounded by $c_0\,\text{RAFE}$; the RMSE is the RAFE with $\boldsymbol{\Sigma} = \boldsymbol{I}$.
+- **Outcome 2.** The covariance channel has three terms: the mean's noise $N/T$, the inversion error, and the amplification of the noise by the inverse.
+- **Outcome 2.** A forecast with out-of-sample $R^2$ allows at most $\theta_c^2 = (S_0^2 + R^2)/(1 - R^2)$: for the term spread on the equal-weight policy, `r sprintf("%.3f", bound_p - tilt[["policy"]])` of Sharpe ratio.
+- **Outcome 4.** For the unconstrained plug-in the RAFE correlates `r sprintf("%.2f", rc("all three, pooled", U, RR))` with the realized shortfall and the RMSE `r sprintf("%.2f", rc("all three, pooled", U, RM))`; for a long-only position the measure is the RAFE in the metric the position was built in.
+- **Outcome 4.** In certainty-equivalent units the covariance channel is larger at 36 and 60 months; in Sharpe units the mean channel is larger at every window.
+- **Outcome 4.** The register's shortfalls follow the order of estimation at both ends, zero for equal weighting and `r sprintf("%.2f", rg("max_sharpe", "shortfall"))` for the tangency portfolio; minimum CVaR is the exception.
+
+## Exercises {.smaller}
+
+Work these in `code/26-forecast-error-cost-exercises.R`; solutions are in appendix G of the book.
+
+1. Replace the two position rules by the long-only minimum-variance portfolio, which uses no forecast, and correlate its shortfall with the RAFE and the C-RAFE. Which measure explains a rule that estimates only $\boldsymbol{\Sigma}$?
+2. Add RAFE-CC$_0$ and RAFE-CV to the rolling frame for the unconstrained rule. Where do they sit between the RMSE and the RAFE, and which simplification costs more explanatory power?
+3. Using the expected-loss formula with this market's $\theta^2$ and $N = 16$, find the window length at which the covariance channel's share falls below one half, and where the amplification term falls below the inversion error. How do both change for $N = 50$?
+4. From the bound, how much Sharpe ratio could a forecast with out-of-sample $R^2$ of one percent, and of five percent, add to the equal-weight policy? Compare with the standard error on `r length(oos)` months.

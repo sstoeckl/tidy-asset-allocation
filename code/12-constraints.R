@@ -17,9 +17,8 @@ rf <- sim_riskfree_monthly$return                                  # the bill
 Re <- R - rf                                                       # excess returns
 stopifnot(ncol(Re) == 16L, !anyNA(Re))
 
-# ===== Two anchors and a bookkeeping function =====
-
 ## ---- helpers ----
+# ===== Two anchors and a bookkeeping function =====
 S  <- stats::cov(Re); mu <- colMeans(Re); N <- ncol(Re)
 p_vol <- function(w) sqrt(as.numeric(t(w) %*% S %*% w) * 12)
 p_ret <- function(w) sum(mu * w) * 12
@@ -56,9 +55,8 @@ anchors <- dplyr::bind_rows(stats_of("minimum variance", w_gmv),
                             stats_of("tangency", w_tan))
 anchors
 
-# ===== Worked: the shadow prices of the long-only constraint, and @eq-12-jm checked =====
-
 ## ---- jm-check ----
+# ===== Worked: the shadow prices of the long-only constraint, and @eq-12-jm checked =====
 lambda0 <- as.numeric(t(w_gmv) %*% S %*% w_gmv)
 delta   <- setNames(as.numeric(S %*% w_gmv) - lambda0, colnames(Re))
 stopifnot(all(abs(delta[w_gmv > 1e-6]) < 1e-7), all(delta[w_gmv <= 1e-6] > 0))   # complementary slackness
@@ -71,9 +69,8 @@ c(max_abs_difference = max(abs(w_jm - w_gmv)),
   smallest_eigenvalue_ratio = min(eigen(S_tilde)$values) / min(eigen(S)$values))
 round(sort(delta * 12 * 1e4, decreasing = TRUE)[1:4], 2)      # largest, annualized variance x 1e4
 
-# ===== Box constraints =====
-
 ## ---- box ----
+# ===== Box constraints =====
 bmax <- setNames(rep(0.25, N), colnames(Re))
 bmax["GLOBAL_commodity"] <- 0.10                    # one class capped tighter
 spec_box <- base_spec |> add.constraint(type = "box", min = 0, max = bmax)
@@ -82,9 +79,8 @@ w_gmv_box <- min_var(spec_box); w_tan_box <- tangency(spec_box)
 dplyr::bind_rows(stats_of("minimum variance, 25% cap", w_gmv_box),
                  stats_of("tangency, 25% cap", w_tan_box))
 
-# ===== Group constraints =====
-
 ## ---- group ----
+# ===== Group constraints =====
 group_of <- function(a) dplyr::case_when(
   grepl("_equity$", a)     ~ "equity",
   grepl("_government$", a) ~ "government",
@@ -122,9 +118,8 @@ tibble::tibble(group = names(grp), lower = gmin[names(grp)], upper = gmax[names(
   dplyr::mutate(binds_mv  = abs(min_variance - lower) < 1e-6 | abs(min_variance - upper) < 1e-6,
                 binds_tan = abs(tangency - lower) < 1e-6 | abs(tangency - upper) < 1e-6)
 
-# ===== Weight-sum constraints =====
-
 ## ---- weight-sum ----
+# ===== Weight-sum constraints =====
 spec_dn <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "dollar_neutral") |>
   add.constraint(type = "box", min = -0.3, max = 0.3) |>
@@ -133,18 +128,16 @@ spec_dn <- portfolio.spec(assets = colnames(Re)) |>
 w_dn <- weights_of(spec_dn)
 round(c(sum = sum(w_dn), gross = sum(abs(w_dn)), longs = sum(w_dn > 1e-6), shorts = sum(w_dn < -1e-6)), 4)
 
-# ===== `weight_sum` with no arguments leaves one percent uninvested =====
-
 ## ---- weight-sum-default ----
+# ===== `weight_sum` with no arguments leaves one percent uninvested =====
 w_loose <- weights_of(portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "weight_sum") |>
   add.constraint(type = "long_only") |>
   add.objective(type = "risk", name = "var"))
 sum(w_loose)
 
-# ===== A target return =====
-
 ## ---- return-target ----
+# ===== A target return =====
 target_of <- function(ann) stats_of(sprintf("target %.1f%%", 100 * ann),
   min_var(base_spec |> add.constraint(type = "return", return_target = ann / 12)))
 ret_tbl <- dplyr::bind_rows(stats_of("minimum variance, no target", w_gmv),
@@ -157,9 +150,8 @@ w_tan_8 <- tangency(base_spec |> add.constraint(type = "return", return_target =
 stopifnot(isTRUE(all.equal(w_tan_8, w_tan)))                # the target changed nothing
 c(requested_under_maxSR = 0.08, achieved = p_ret(w_tan_8), tangency = p_ret(w_tan))
 
-# ===== A position limit on the quadratic path is dropped without a message =====
-
 ## ---- poslimit-roi ----
+# ===== A position limit on the quadratic path is dropped without a message =====
 spec_pos  <- base_spec |> add.constraint(type = "position_limit", max_pos = 5)
 w_pos_roi <- min_var(spec_pos)
 # the limit has to bind for this to be a test: the unconstrained answer holds more than five
@@ -190,9 +182,8 @@ stopifnot(!pos_limit_fail(w_pos_de, 5, NULL, NULL), p_vol(w_pos_de) > p_vol(w_sc
 dplyr::bind_rows(stats_of("DEoptim, max 5", w_pos_de),
                  stats_of("screen then re-solve, 5", w_screen))[, c("portfolio", "vol", "held")]
 
-# ===== Under ROI the leverage constraint returns a long-only portfolio =====
-
 ## ---- leverage-roi ----
+# ===== Under ROI the leverage constraint returns a long-only portfolio =====
 spec_ls  <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "full_investment") |>
   add.constraint(type = "box", min = -0.3, max = 1)
@@ -218,9 +209,8 @@ lev_tbl <- tibble::tibble(
   vol    = c(p_vol(w_lev_pa), p_vol(w_lev_pacvx), p_vol(w_lev_cvx)))
 lev_tbl
 
-# ===== Linear exposures, not only factor exposures =====
-
 ## ---- factor-region ----
+# ===== Linear exposures, not only factor exposures =====
 region   <- sub("_.*$", "", colnames(Re))
 B_region <- sapply(sort(unique(region)), function(r) as.numeric(region == r))
 rownames(B_region) <- colnames(Re)
@@ -243,9 +233,8 @@ stopifnot(sum(betas * w_gmv) < 0.3, abs(sum(betas * w_gmv_beta) - 0.3) < 1e-6)  
 c(beta_unconstrained = sum(betas * w_gmv), beta_constrained = sum(betas * w_gmv_beta),
   vol_unconstrained = p_vol(w_gmv), vol_constrained = p_vol(w_gmv_beta))
 
-# ===== Under ROI the constraint is ignored; under the searches it is a band =====
-
 ## ---- div-roi ----
+# ===== Under ROI the constraint is ignored; under the searches it is a band =====
 spec_div  <- base_spec |> add.constraint(type = "diversification", div_target = 0.7)
 w_div_roi <- min_var(spec_div)
 stopifnot(diversification(w_gmv) < 0.7, isTRUE(all.equal(w_div_roi, w_gmv)))   # a target that binds, and is not read
@@ -272,9 +261,8 @@ tibble::tibble(route = c("DEoptim, target 0.7", "CVXR, floor 0.7"),
                diversification = c(diversification(w_div_de), diversification(w_div_cvx)),
                vol = c(p_vol(w_div_de), p_vol(w_div_cvx)))
 
-# ===== Auditing a weight vector against its specification =====
-
 ## ---- audit-spec ----
+# ===== Auditing a weight vector against its specification =====
 audit_spec <- function(w, spec, tol = 1e-6) {
   w <- w[names(spec$assets)]
   rows <- lapply(spec$constraints, function(cn) {
@@ -304,9 +292,8 @@ audit_spec(w_pos_roi, spec_pos)
 # limits. Base graphics, unstyled; the bound lines are the box constraint.
 chart.Weights(opt_group, main = "")
 
-# ===== The policy statement =====
-
 ## ---- mandate-spec ----
+# ===== The policy statement =====
 m_min <- c(commodity = 0.00, credit = 0.00, equity = 0.40, government = 0.10)
 m_max <- c(commodity = 0.15, credit = 0.40, equity = 0.60, government = 1.00)
 stopifnot(identical(names(grp), names(m_min)), identical(names(grp), names(m_max)))
@@ -369,9 +356,8 @@ dplyr::bind_rows(
   kable(align = "lrrrrrl",
         col.names = c("", "volatility", "excess return", "Sharpe", "held", "largest", "in"))
 
-# ===== Which lines bind, and what each is worth =====
-
 ## ---- shadow ----
+# ===== Which lines bind, and what each is worth =====
 tighten <- list(
   `equity >= 40%`     = \(m1, m2, cap, fl) { m1["equity"] <- m1["equity"] + 0.01;         build(m1, m2, cap, fl) },
   `equity <= 60%`     = \(m1, m2, cap, fl) { m2["equity"] <- m2["equity"] - 0.01;         build(m1, m2, cap, fl) },
@@ -423,9 +409,8 @@ stopifnot(identical(names(slack_of(w_m_qp)), shadow$line),
 stopifnot(setequal(intersect(bind_mv, bind_tan), c("equity >= 40%", "no series > 35%")),
           2 * length(bind_mv) < nrow(shadow), top_mv == "return >= 6%")
 
-# ===== What the mandate costs, and what it buys =====
-
 ## ---- cost ----
+# ===== What the mandate costs, and what it buys =====
 sig <- sqrt(diag(S))
 tc  <- stats::cor(sig * w_m_tan, sig * w_tan)               # @eq-12-tc
 stopifnot(p_sr(w_m_tan) < p_sr(w_tan), identical(names(which.max(w_m_tan)), names(which.max(w_tan))))

@@ -1,0 +1,384 @@
+---
+title: "Parametric Portfolio Policies"
+subtitle: "Tidy Asset Allocation in R, Chapter 18"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 18"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/18-parametric-policies.R to the chunks
+# below, so no line of analysis is maintained twice. root.dir takes effect after
+# this chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("18-parametric-policies.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** the parametric policy and its utility-based estimator, and count the parameters it saves against a plug-in mean-variance rule.
+2. **Implement** the policy in R and **read** its coefficients with sandwich and block-bootstrap standard errors.
+3. **Impose** a long-only mandate and trading costs, and **time** a few asset classes on state variables.
+4. **Evaluate** the policies out of sample against their benchmarks and against the optimizers of the register.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+What if an investor skipped the forecast altogether and wrote the weight of each asset directly as a function of what can be observed about it?
+
+::: {.statement}
+Brandt, Santa-Clara and Valkanov (2009) proposed a portfolio policy with a handful of coefficients on asset characteristics, estimated by maximizing the utility the policy would have delivered.
+:::
+
+- No expected return and no covariance matrix is computed along the way.
+- A policy on $K$ characteristics has $K$ parameters however large $N$ is.
+- On the horizon axis the chapter is **tactical** in its positions and strategic in its rule: the coefficients are estimated once from the unconditional history and then held fixed.
+
+<p class="source">Brandt, M. W., Santa-Clara, P., Valkanov, R. (2009). Parametric Portfolio Policies: Exploiting Characteristics in the Cross-Section of Equity Returns. *Review of Financial Studies* 22(9), 3411–3447.</p>
+
+## What the Policy Saves
+
+The data are the sixteen risky class series and the `r ncol(Ra)` equities of the modeled market, `r Tn` monthly returns each, as total returns because both policies are fully invested in risky assets.
+
+- A plug-in mean-variance rule on the equities needs `r ncol(Ra)` means and `r ncol(Ra) * (ncol(Ra) + 1) / 2` variances and covariances from `r Tn` months.
+- The policy needs two coefficients: size and momentum.
+- Estimation error in the first route is what Michaud (1989), Kan and Zhou (2007) and DeMiguel et al. (2009) measure; the policy is the far end of that road, since weights may differ across assets only as far as characteristics do.
+
+::: {.notes}
+This is the arithmetic appeal of the method. The price is the restriction itself: the policy cannot express a view that characteristics do not carry.
+:::
+
+## The Policy
+
+Let $\bar{w}_{i,t}$ be the benchmark weight of asset $i$ and $\hat{\boldsymbol{x}}_{i,t}$ its $K$ characteristics, standardized across the $N_t$ assets then available. The policy is linear in them:
+
+$$
+w_{i,t} = \bar{w}_{i,t} + \frac{1}{N_t}\,\boldsymbol{\theta}'\hat{\boldsymbol{x}}_{i,t},
+\qquad i = 1, \dots, N_t .
+$$
+
+- The coefficients $\boldsymbol{\theta}$ are the same for every asset and every month: the policy knows characteristics, not assets.
+- Standardized characteristics sum to zero, so the tilts do, and the weights sum to one whenever the benchmark's do.
+- The division by $N_t$ keeps the active position from growing with the number of assets; $\boldsymbol{\theta} = \boldsymbol{0}$ returns the benchmark.
+
+## The Estimator
+
+The coefficients maximize the average utility the policy would have earned over the sample,
+
+$$
+\hat{\boldsymbol{\theta}} = \arg\max_{\boldsymbol{\theta}}\;
+\frac{1}{T}\sum_{t=0}^{T-1} u\big(r_{p,t+1}(\boldsymbol{\theta})\big),
+\qquad
+u(r) = \frac{(1+r)^{1-\gamma}}{1-\gamma},
+$$
+
+with $r_{p,t+1}(\boldsymbol{\theta}) = \sum_{i} w_{i,t}(\boldsymbol{\theta})\,r_{i,t+1}$ and relative risk aversion $\gamma$.
+
+- The whole distribution of the portfolio return enters, not only two moments.
+- Nothing is forecast: $\hat{\boldsymbol{\mu}}$ and $\hat{\boldsymbol{\Sigma}}$ are never computed.
+- Estimating the rule from the optimality condition goes back to Brandt (1999); Aït-Sahalia and Brandt (2001) used it to ask which predictors matter for the portfolio as opposed to the return.
+
+## A Position in K + 1 Portfolios
+
+Because the policy is linear in $\boldsymbol{\theta}$, so is the portfolio return:
+
+$$
+r_{p,t+1}(\boldsymbol{\theta}) = r_{b,t+1} + \boldsymbol{\theta}'\boldsymbol{a}_{t+1},
+\qquad
+\boldsymbol{a}_{t+1} = \frac{1}{N_t}\sum_{i=1}^{N_t}\hat{\boldsymbol{x}}_{i,t}\,r_{i,t+1}.
+$$
+
+- $a_{k,t+1}$ is the return of a zero-investment portfolio, long the assets with a high value of characteristic $k$ and short those with a low one.
+- The policy holds the benchmark and one long-short portfolio per characteristic; $\boldsymbol{\theta}$ is the weight vector over the last $K$.
+- This is why each bootstrap draw later is a two-parameter problem on three return series.
+
+## Standard Errors
+
+The objective is concave, so the estimate solves $K$ moment conditions in $K$ unknowns,
+
+$$
+\frac{1}{T}\sum_{t}\boldsymbol{h}_{t+1}(\hat{\boldsymbol{\theta}}) = \boldsymbol{0},
+\qquad
+\boldsymbol{h}_{t+1}(\boldsymbol{\theta}) = u'\big(r_{p,t+1}(\boldsymbol{\theta})\big)\,\boldsymbol{a}_{t+1},
+$$
+
+an exactly identified method-of-moments estimator (Hansen, 1982) with sandwich covariance matrix
+
+$$
+\widehat{\operatorname{Var}}(\hat{\boldsymbol{\theta}})
+= \frac{1}{T}\,\hat{\boldsymbol{G}}^{-1}\hat{\boldsymbol{V}}\hat{\boldsymbol{G}}^{-1},
+\quad
+\hat{\boldsymbol{G}} = \frac{1}{T}\sum_{t}\frac{\partial\boldsymbol{h}_{t+1}}{\partial\boldsymbol{\theta}'},
+\quad
+\hat{\boldsymbol{V}} = \frac{1}{T}\sum_{t}\boldsymbol{h}_{t+1}\boldsymbol{h}_{t+1}' .
+$$
+
+::: {.notes}
+The test is whether a characteristic belongs in the portfolio, which is not the question of whether it forecasts returns. A characteristic whose portfolio earns nothing on average still enters if it pays when marginal utility is high. A block bootstrap over months is the check that does not lean on the asymptotics.
+:::
+
+## Long-Only Weights and Costs
+
+A long-only mandate by truncation and renormalization, as in Brandt et al. (2009):
+
+$$
+w^{+}_{i,t} = \frac{\max(0, w_{i,t})}{\sum_{j=1}^{N_t}\max(0, w_{j,t})} .
+$$
+
+- The weights are no longer linear in $\boldsymbol{\theta}$, and the kink at zero removes the gradient: estimation falls back on a derivative-free search and the bootstrap.
+- At class level we keep the smooth objective and restrict the parameters instead: no weight of the estimation sample may be negative, a set of linear inequalities in $\boldsymbol{\theta}$.
+
+Trading costs enter the objective, with one-way rates $c_i$ and $w^{h}$ the drifted previous position:
+
+$$
+r^{\text{net}}_{p,t+1}(\boldsymbol{\theta}) = r_{p,t+1}(\boldsymbol{\theta})
+- \sum_{i=1}^{N_t} c_i\,\big|w_{i,t}(\boldsymbol{\theta}) - w^{h}_{i,t}(\boldsymbol{\theta})\big| .
+$$
+
+## Timing Across a Few Asset Classes
+
+With sixteen assets there is little cross-section; the information is in the time series. Brandt and Santa-Clara (2006) write weights as linear functions of state variables $\boldsymbol{z}_t$. We keep the parsimony with one coefficient per signal and a fixed loading pattern $g_{k,i}$ that sums to zero:
+
+$$
+w_{i,t} = \bar{w}_{i} + \frac{1}{N}\sum_{k=1}^{K}\theta_k\,z_{k,t}\,g_{k,i}.
+$$
+
+- **Term spread**, loading on the government series, and **credit spread**, loading on the credit series (Fama and French, 1989).
+- Each class's own **12-1 momentum**, a characteristic in the ordinary sense (Asness et al., 2013).
+- The loss function is the difference from chapter 16: the map from signal to weight is estimated on the investor's own objective, costs and constraints included.
+
+## The Equity Panel
+
+```{r characteristics}
+#| include: false
+```
+
+```{r panel}
+#| include: false
+```
+
+Size is the logarithm of capitalization, momentum the 12-1 return; both are standardized each month within region, so every tilt sums to zero region by region and the policy selects stocks while the benchmark keeps the regional allocation.
+
+- The benchmark is the capitalization-weighted portfolio: the weight over a month is the last capitalization observed before the month began.
+- All variables are stored as one array, months by assets by characteristics: `r dim(X_eq)[1]` months, `r dim(X_eq)[2]` equities, `r dim(X_eq)[3]` characteristics, beginning in `r fmt_model(dates[held[1]])`.
+- Assertions check the alignment against the raw tables for one month rather than trust it.
+
+::: {.notes}
+The panel starts late because momentum needs twelve months of history and is lagged once. All equities are present in every month, so the number of assets is constant.
+:::
+
+## The Policy in Forty Lines {.codesmall}
+
+```{r policy}
+#| echo: true
+```
+
+## Estimation {.smaller}
+
+`ppp_estimate()` maximizes the objective with `optim()` (BFGS) from zero, or with `constrOptim()` for the simplex restriction.
+
+```{r estimate}
+#| echo: true
+```
+
+A second optimizer from a distant start reaches the same coefficients, as it must on a concave objective.
+
+## Standard Errors Two Ways
+
+```{r inference}
+#| include: false
+```
+
+The sandwich takes scores and Hessian from `numDeriv`, without algebra; the bootstrap resamples months in blocks of twelve and uses the linear form, so the panel is never rebuilt.
+
+```{r tbl-18-theta}
+```
+
+## Why Momentum Enters
+
+```{r theta-facts}
+#| include: false
+```
+
+- The two standard errors agree to within `r sprintf("%.2f", max(abs(se_sandwich - se_boot)))`.
+- Size: $\hat\theta$ = `r sprintf("%.2f", tt("size", "theta"))`, $t$ = `r sprintf("%.2f", tt("size", "t"))`. The size portfolio, long large and short small, loses `r sprintf("%.1f%%", -100 * tt("size", "premium"))` a year.
+- Momentum: $\hat\theta$ = `r sprintf("%.2f", tt("momentum", "theta"))`, $t$ = `r sprintf("%.1f", tt("momentum", "t"))`, yet the momentum portfolio earns `r sprintf("%.1f%%", 100 * tt("momentum", "premium"))` a year with a $t$-statistic of `r sprintf("%.2f", tt("momentum", "premium_t"))`.
+- The policy keeps it because returns are weighted by marginal utility: the portfolio has a correlation of `r sprintf("%.2f", cor_mom_b)` with the benchmark, and its marginal-utility-weighted mean is `r sprintf("%.1f%%", 100 * mom_priced)` a year.
+- In sample the certainty equivalent rises from `r sprintf("%.1f%%", 100 * ce_crra(r_b))` to `r sprintf("%.1f%%", 100 * ce_crra(rowSums(W_eq * Rn_eq)))`, with leverage: `r sprintf("%.0f%%", 100 * mean(W_eq < 0))` of weights are negative.
+
+::: {.notes}
+A return forecaster would drop momentum. That it has no premium here is a property of this market and not of the method: the idiosyncratic components were drawn independently over time.
+:::
+
+## Worked: One Weight
+
+```{r worked}
+#| include: false
+```
+
+For `r worked$name[1]`, the largest name in the last month of the sample, the policy reads
+
+$$
+w = `r sprintf("%.4f", worked$benchmark[1])`
++ \frac{1}{`r ncol(wbar_eq)`}\Big[(`r sprintf("%.2f", theta_eq[["size"]])`)(`r sprintf("%.2f", worked$size[1])`)
++ (`r sprintf("%.2f", theta_eq[["momentum"]])`)(`r sprintf("%.2f", worked$momentum[1])`)\Big]
+= `r sprintf("%.4f", worked$policy[1])` .
+$$
+
+```{r tbl-18-worked}
+```
+
+The policy cuts the largest holding from `r sprintf("%.1f%%", 100 * worked$benchmark[1])` to `r sprintf("%.1f%%", 100 * worked$policy[1])` and takes `r sum(worked$policy < 0)` of the ten below zero.
+
+## The Class-Level Panel
+
+```{r class-panel}
+#| include: false
+```
+
+The benchmark is the equal-weight portfolio of chapter 16: it estimates nothing, so every difference from it is attributable to the policy.
+
+- The two curve signals are standardized with what was known at the time, the mean and standard deviation of their own history through $t$, and clipped at two.
+- Each is multiplied by a standardized indicator of the classes it loads on.
+- An assertion checks that no later month enters the signal at month 200.
+
+## Free and Restricted Estimates {.smaller}
+
+The first estimate uses the first 120 months, the burn-in of the register, made freely and under the restriction that no weight of those months is negative.
+
+```{r class-estimate}
+```
+
+- Left free, the policy puts `r sprintf("%.2f", theta_free[["term"]])` on the term spread and takes one class to a weight of `r sprintf("%.0f%%", 100 * min(W_free))`.
+- Restricted, all three coefficients are positive and small, and the estimate sits at a vertex: `r nrow(bind)` weights are exactly zero, as many as there are coefficients. A long-only mandate is set by its most extreme months.
+
+## A Trap: The Policy Is Outside PortfolioAnalytics {.smaller}
+
+::: {.callout-note}
+## The policy itself is outside `PortfolioAnalytics`
+
+`optimize.portfolio()` searches over weight vectors; a parametric policy searches over the coefficients of a function that returns weight vectors, and the package has no objective, constraint or solver interface for that. Three things can be reused once the weights exist: `Return.portfolio()`, `turnover()`, and the optimizers as the comparison.
+:::
+
+```{r pa-reuse}
+```
+
+- `Return.portfolio()` reproduces the gross returns when the path starts where the data do; handed the whole burn-in, it warns and prepends equal weights.
+- `turnover()` divides the summed absolute changes by $N$, not by two, so it differs from the register's measure by the factor $N/2$.
+
+## The Coefficients Through Time
+
+Both policies are run as an investor would have run them: coefficients are re-estimated at the end of every model year on all data to that date, and weights are set from the latest estimate and the characteristics of the month end before.
+
+```{r oos-estimates}
+#| include: false
+```
+
+```{r fig-18-theta}
+#| fig-alt: "Estimated coefficients of the equity policy and the class policy at each annual re-estimation, gross and net of costs."
+#| fig-asp: 0.46
+```
+
+```{r theta-path-facts}
+#| include: false
+```
+
+- Size is negative at all `r length(refit)` dates; momentum is negative at the first `r mom_neg`. Costs shrink momentum to `r sprintf("%.0f%%", 100 * shrink("momentum"))` of its size and size to `r sprintf("%.0f%%", 100 * shrink("size"))`.
+
+::: {.notes}
+The class coefficients keep their signs and move within narrow bands, but that stability is the restriction's as much as the data's, since the simplex caps them.
+:::
+
+## Performance Against the Benchmarks {.smaller}
+
+```{r oos-performance}
+#| include: false
+```
+
+```{r tbl-18-oos}
+```
+
+```{r oos-facts}
+#| include: false
+```
+
+::: {.notes}
+The register rows are read from the backtesting chapter's table, not retyped, and the equal-weight row of this chapter must reproduce the register's or the render fails. The register does not record a certainty equivalent.
+:::
+
+## Reading the Table {.smaller}
+
+- **Equities.** Net Sharpe ratio `r sprintf("%.2f", g("eq_gross", "sharpe_net"))` against `r sprintf("%.2f", g("eq_bench", "sharpe_net"))` for the benchmark; the gap of `r sprintf("%.2f", gap_eq)` is `r sprintf("%.1f", gap_eq / se_sr(g("eq_bench", "sharpe_net")))` standard errors of one Sharpe ratio, and the paired $z$-statistic (Jobson and Korkie, 1981; Memmel, 2003) is `r sprintf("%.2f", z_eq)`: suggestive, not significant.
+- **Not the benchmark's kind of portfolio.** The policy is short `r sprintf("%.0f%%", 100 * short_oos)` of wealth on average, with a deeper drawdown (`r sprintf("%.0f%%", 100 * g("eq_gross", "max_dd"))` against `r sprintf("%.0f%%", 100 * g("eq_bench", "max_dd"))`).
+- **Costs in the objective.** Turnover falls from `r sprintf("%.0f%%", 100 * g("eq_gross", "turnover"))` to `r sprintf("%.0f%%", 100 * g("eq_net", "turnover"))`; the net Sharpe ratio is `r sprintf("%.3f", g("eq_net", "sharpe_net"))` against `r sprintf("%.3f", g("eq_gross", "sharpe_net"))`.
+- **Classes.** Net Sharpe ratio from `r sprintf("%.2f", g("cl_bench", "sharpe_net"))` to `r sprintf("%.2f", g("cl_gross", "sharpe_net"))`, paired $z$ = `r sprintf("%.2f", z_cl)`; the truncation was needed in `r breach` of `r sum(oos)` months.
+- **The register.** `r n_ahead` of its `r length(reg_net)` strategies `r if (n_ahead == 1L) "has" else "have"` a higher net Sharpe ratio, among them minimum variance at `r sprintf("%.2f", reg_of("min_variance", "net", "sharpe"))`, which estimates a covariance matrix and no mean.
+
+::: {.notes}
+Both policies finish ahead of their benchmarks and neither by a margin the sample can certify. What the equity policy earns is the size tilt, the one coefficient that was stable.
+:::
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** A parametric policy writes each weight as the benchmark weight plus a linear function of standardized characteristics and estimates the coefficients by maximizing realized utility: `r length(theta_eq)` parameters for `r ncol(Ra)` equities in place of `r ncol(Ra) + ncol(Ra) * (ncol(Ra) + 1) / 2` moments.
+- **Outcome 2.** The estimate solves a moment condition, so it has a sandwich covariance matrix, and a block bootstrap agrees with it. The test is whether a characteristic belongs in the portfolio, not whether it forecasts: momentum earns nothing here and still enters, as a hedge.
+- **Outcome 3.** Truncating at zero imposes a long-only mandate at the price of differentiability; restricting $\boldsymbol{\theta}$ so that no in-sample weight is negative keeps the objective smooth, and the restriction is set by the most extreme months.
+- **Outcome 4.** Out of sample the equity policy earns a net Sharpe ratio of `r sprintf("%.2f", g("eq_gross", "sharpe_net"))` against `r sprintf("%.2f", g("eq_bench", "sharpe_net"))` and the class policy `r sprintf("%.2f", g("cl_gross", "sharpe_net"))` against `r sprintf("%.2f", g("cl_bench", "sharpe_net"))`; the paired $z$-statistics are `r sprintf("%.1f", z_eq)` and `r sprintf("%.1f", z_cl)`, short of significance.
+- **Outcome 4.** The size coefficient keeps its sign at every re-estimation and the momentum coefficient does not; costs in the objective shrink the faster-moving characteristic more and cut turnover while leaving the net Sharpe ratio where it was.
+- **Outcome 2.** `PortfolioAnalytics` has no parametric policy. `Return.portfolio()` reproduces the returns of a weight path that starts where the data do, and `turnover()` divides by $N$ rather than by two.
+
+## Exercises {.smaller}
+
+Work these in `code/18-parametric-policies-exercises.R`; solutions are in appendix G of the book.
+
+1. Standardize size and momentum across all `r ncol(Ra)` equities instead of within region and re-estimate the policy on the full sample. How do the coefficients change, and how far does the average weight in US names now differ from the benchmark's?
+2. Re-estimate the equity policy at $\gamma = 2$ and $\gamma = 10$. Do the coefficients scale with $1/\gamma$, and what happens to the short side?
+3. Estimate the equity policy on the full sample with costs of 10 and of 50 basis points in the objective. Which coefficient shrinks more, and how does the turnover of each characteristic portfolio explain it?
+4. Replace the simplex restriction of the class policy by the truncation: maximize the utility of the truncated policy over the first 120 months with a derivative-free search from two starting points. What happens to the scale of $\hat{\boldsymbol{\theta}}$, and why?

@@ -575,7 +575,6 @@ cat(strwrap(conditionMessage(attr(bad, "condition")), width = 78), sep = "\n")
 
 ```{r}
 #| label: mult-run
-#| cache: true
 o_mp <- suppressWarnings(optimize.portfolio(Re, mp, optimize_method = "ROI", trace = TRUE))
 round(o_mp$weights, 4)
 c(proxy_rows = nrow(o_mp$R), proxy_cols = ncol(o_mp$R),

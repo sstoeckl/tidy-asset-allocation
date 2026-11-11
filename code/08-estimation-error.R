@@ -20,9 +20,8 @@ mu <- colMeans(Re)                                                 # full-sample
 S  <- stats::cov(Re)                                               # application treats them as the truth
 stopifnot(N == 16L, !anyNA(Re), nrow(Re) == length(rf))
 
-# ===== Worked: @eq-08-kz on the sixteen series =====
-
 ## ---- kz-numbers ----
+# ===== Worked: @eq-08-kz on the sixteen series =====
 theta2 <- as.numeric(t(mu) %*% solve(S, mu))     # squared maximum Sharpe ratio, monthly
 
 # gamma = 1. Both terms scale with 1 / gamma, so the ratio to the optimum does not.
@@ -63,9 +62,8 @@ round(c(utility_simulated    = mean(mc["utility", ]),
         theta2_hat_simulated = mean(mc["theta2_hat", ]),
         theta2_hat_formula   = (60 * theta2 + N) / (60 - N - 2)), 4)
 
-# ===== The naive rules in `PortfolioAnalytics` =====
-
 ## ---- naive-rules ----
+# ===== The naive rules in `PortfolioAnalytics` =====
 base <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "full_investment") |>
   add.constraint(type = "long_only")
@@ -85,9 +83,8 @@ stopifnot(all.equal(sum(w_ew), 1), all.equal(sum(w_iv), 1),
           all.equal(unname(w_iv), unname((1 / vols) / sum(1 / vols))))   # @eq-08-iv
 round(sort(w_iv, decreasing = TRUE)[1:4], 4)
 
-# ===== The naive rules cannot be passed to the rebalancing loop =====
-
 ## ---- naive-in-rebalancing ----
+# ===== The naive rules cannot be passed to the rebalancing loop =====
 bt_naive <- suppressWarnings(optimize.portfolio.rebalancing(
   Re, base, optimize_method = "equal.weight",
   rebalance_on = "months", training_period = 60L, rolling_window = 59L))
@@ -103,9 +100,8 @@ tibble::tibble(
   usable  = c(sum(!is.na(extractWeights(bt_naive))), NA,
               !is.null(extractWeights(optimize.portfolio(Re, base, optimize_method = "equal.weight")))))
 
-# ===== The two optimized rules as quadratic programs =====
-
 ## ---- qp-rules ----
+# ===== The two optimized rules as quadratic programs =====
 # Long-only minimum variance: min w'Sw subject to w'i = 1, w >= 0. Percent scaling
 # keeps quadprog's matrix well away from its positive-definiteness tolerance.
 gmv_qp <- function(S) {
@@ -152,9 +148,8 @@ stopifnot(sum(abs(w_gmv - w_gmv_roi)) / 2 < 1e-4,
 
 round(w_tan[w_tan > 0.005], 4)
 
-# ===== Three hundred and twelve windows =====
-
 ## ---- rolling-gap ----
+# ===== Three hundred and twelve windows =====
 win  <- 60L
 ends <- seq.int(win, nrow(Re) - 1L)           # every window forecasts the month after it
 rf_by_month <- setNames(rf, as.character(zoo::index(R)))
@@ -219,9 +214,8 @@ stopifnot(!anyNA(check$register),
           all(abs(check$difference) < 1e-3))
 check |> dplyr::select(rule, realized, register, difference)
 
-# ===== The gap, rule by rule =====
-
 ## ---- tbl-08-gap ----
+# ===== The gap, rule by rule =====
 # Promised and realized Sharpe ratios on sixty-month rolling windows, out of
 # sample from the first month of model year 11. Promised is the average of
 # @eq-08-promised over the windows; realized is the Sharpe ratio of the held
@@ -262,9 +256,8 @@ ggplot2::ggplot(gap_pts, ggplot2::aes(sharpe, rule)) +
   scale_colour_tidyaa() +
   ggplot2::labs(x = "annualized Sharpe ratio", y = NULL)
 
-# ===== A truth to score against =====
-
 ## ---- truth ----
+# ===== A truth to score against =====
 draw_months <- function(T, mu, L) {
   matrix(rnorm(T * length(mu)), T) %*% L + matrix(mu, T, length(mu), byrow = TRUE)
 }
@@ -275,9 +268,8 @@ sr_gmv  <- sharpe_of(gmv_qp(S), mu, S)
 sr_ew   <- sharpe_of(w_ew, mu, S)
 round(c(tangency = sr_star, min_variance = sr_gmv, equal_weight = sr_ew), 3)
 
-# ===== The mean channel and the covariance channel =====
-
 ## ---- channels ----
+# ===== The mean channel and the covariance channel =====
 set.seed(1602)
 Ts <- c(60L, 120L, 240L, 372L, 1000L)
 B  <- 300L
@@ -359,9 +351,8 @@ ggplot2::ggplot(chan_pts, ggplot2::aes(T, sharpe, colour = label, linetype = kin
   ggplot2::guides(colour = ggplot2::guide_legend(ncol = 2)) +
   ggplot2::labs(x = "estimation window, months (log scale)", y = "Sharpe ratio under the truth")
 
-# ===== When $1/N$ stops winning =====
-
 ## ---- region ----
+# ===== When $1/N$ stops winning =====
 set.seed(1602)
 Ns <- c(4L, 8L, 16L)
 Tg <- c(24L, 36L, 48L, 60L, 120L, 240L, 372L, 600L, 1000L, 2000L)
@@ -447,9 +438,8 @@ stopifnot(share_60 > 0.5, cr(16L, "T_long_only") < 60,
           sr_sweep("max_sharpe", 120) > sr_sweep("equal_weight", 120),   # ahead of it on 120,
           sr_sweep("max_sharpe", c(60, 120)) < c(at(60L, "plug_in"), at(120L, "plug_in")))   # below the simulation
 
-# ===== The register line =====
-
 ## ---- register ----
+# ===== The register line =====
 reg     <- sweep |> dplyr::arrange(dplyr::desc(sharpe))
 reg_120 <- sweep_all |> dplyr::filter(window == 120) |> dplyr::arrange(dplyr::desc(sharpe))
 rank_of <- function(s, r = reg) match(s, r$strategy)

@@ -18,18 +18,16 @@ Re <- R - rf                                                       # excess retu
 N  <- ncol(Re); dates <- zoo::index(R)
 stopifnot(N == 16L, !anyNA(Re), all(sim_riskfree_monthly$date == dates))
 
-# ===== Which signals this universe can carry =====
-
 ## ---- goyal-welch ----
+# ===== Which signals this universe can carry =====
 # Not run in the book; shown for the reader to try.
 # gw <- tidyfinance::download_data_macro_predictors(
 #   dataset = "macro_predictors_monthly",
 #   start_date = "2000-01-01", end_date = "2020-12-31")   # an illustrative range
 # gw[, c("date", "tms", "dfy", "dp")]
 
-# ===== Signals at month end, lagged once =====
-
 ## ---- momentum ----
+# ===== Signals at month end, lagged once =====
 P   <- cumprod(1 + R)                                   # total-return index
 mom <- xts::lag.xts(P, 1) / xts::lag.xts(P, 12) - 1     # months t-11 .. t-1; month t skipped
 k <- 100L
@@ -104,9 +102,8 @@ ggplot2::ggplot(sig_pts, ggplot2::aes(date, value)) +
   scale_x_model() +
   ggplot2::labs(y = NULL)
 
-# ===== In sample: sixty-four regressions =====
-
 ## ---- insample ----
+# ===== In sample: sixty-four regressions =====
 sig4 <- c(mom = "12-1 momentum", term = "term spread", ig = "IG spread", turb = "turbulence")
 
 nw_t <- function(m, j = 2L) {
@@ -155,9 +152,8 @@ stopifnot(term_bond_pos == n_bond,
           at_ins("mom", "t_above_2") == 0L,               # momentum clears two nowhere
           all(ins$slope[ins$signal == "mom" & grepl("_government$", ins$series)] > 0))
 
-# ===== Out of sample: an expanding window from model year 11 =====
-
 ## ---- oos-setup ----
+# ===== Out of sample: an expanding window from model year 11 =====
 burn <- 120L
 oos  <- seq.int(burn + 1L, nrow(Re))       # forecast months 121 .. 372
 stopifnot(model_year(dates[oos[1]]) == 11L)   # the register's out-of-sample start
@@ -267,9 +263,8 @@ oos_tbl |>
   ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2)) +
   ggplot2::labs(x = "out-of-sample R², percent", y = NULL)
 
-# ===== A tilt around the policy =====
-
 ## ---- policy ----
+# ===== A tilt around the policy =====
 base_spec <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "full_investment") |>
   add.constraint(type = "long_only")
@@ -304,9 +299,8 @@ W_term   <- tilt_weights("term")
 c(mean_abs_tilt = mean(abs(W_term - 1 / N)),
   share_at_band = mean(abs(abs(W_term - 1 / N) - band) < 1e-9))
 
-# ===== `applyFUN()` and `trailingFUN()` do not roll anything =====
-
 ## ---- applyfun ----
+# ===== `applyFUN()` and `trailingFUN()` do not roll anything =====
 # applyFUN: one metric, many static weight vectors, the full return history.
 applyFUN(Re, weights = rbind(policy = w_policy, average_tilt = colMeans(W_term)),
          FUN = "StdDev")
@@ -319,9 +313,8 @@ c(trailingFUN_n11 = tf,
   mean_last_12 = mean(utils::tail(as.numeric(x), 12)),
   mean_last_11 = mean(utils::tail(as.numeric(x), 11)))
 
-# ===== Rebalancing, turnover and costs =====
-
 ## ---- accounting ----
+# ===== Rebalancing, turnover and costs =====
 cost_rate <- pm_costs_default()[sub(".*_", "", colnames(Re))]
 stopifnot(!anyNA(cost_rate)); names(cost_rate) <- colnames(Re)
 

@@ -19,9 +19,8 @@ N  <- ncol(Re); dates <- zoo::index(R); X <- zoo::coredata(Re)
 ep <- sim_episodes                                                 # the four named episodes
 stopifnot(N == 16L, !anyNA(Re), all(sim_riskfree_monthly$date == dates))
 
-# ===== Regimes dated with hindsight =====
-
 ## ---- dated ----
+# ===== Regimes dated with hindsight =====
 state <- rep("remaining months", nrow(Re))
 for (k in ep$episode) state[in_episode(dates, k)] <- ep$label[ep$episode == k]
 in_any <- state != "remaining months"
@@ -55,9 +54,8 @@ gov_up <- sum(dated$government[dated$state != "remaining months"] > 0)
 stopifnot(all(dated$equity[dated$state != "remaining months"] < 0),
           dv("rates shock", "government") < 0)
 
-# ===== A detected regime: the turbulence threshold =====
-
 ## ---- turbulence ----
+# ===== A detected regime: the turbulence threshold =====
 turb <- uncertaintymeasures::OSturbulence(R, rolling = TRUE, roll.obs = 60)$turb
 tb   <- as.numeric(turb)
 stopifnot(length(tb) == nrow(R), all(zoo::index(turb) == dates))
@@ -83,9 +81,8 @@ tb_alt <- replace(tb, (cut + 1L):length(tb), rev(tb[(cut + 1L):length(tb)]))
 stopifnot(identical(turb_flag(tb_alt)[seq_len(cut)], flag_turb[seq_len(cut)]),
           !identical(turb_flag(tb_alt), flag_turb))
 
-# ===== A detected regime: a two-state hidden Markov model =====
-
 ## ---- hmm ----
+# ===== A detected regime: a two-state hidden Markov model =====
 hamilton <- function(y, th) {
   n <- length(y); filt <- pred <- matrix(NA_real_, n, 2); loglik <- 0
   dens <- cbind(stats::dnorm(y, th$mu[1], th$sigma[1]), stats::dnorm(y, th$mu[2], th$sigma[2]))
@@ -130,9 +127,8 @@ fit_full <- fit_hmm(y)
 smoothed <- kim(hamilton(y, fit_full), fit_full$P)[, 2]
 round(c(mu = 12 * fit_full$mu, sigma = sqrt(12) * fit_full$sigma, stay = diag(fit_full$P)), 3)
 
-# ===== Worked: the mixture moments of the summary series =====
-
 ## ---- mixture-scalar ----
+# ===== Worked: the mixture moments of the summary series =====
 P_hat   <- fit_full$P
 pi_bar  <- c(P_hat[2, 1], P_hat[1, 2]) / (P_hat[1, 2] + P_hat[2, 1])     # long-run state shares
 stopifnot(all.equal(as.numeric(pi_bar %*% P_hat), pi_bar))
@@ -220,9 +216,8 @@ before  <- live[live < min(which(in_episode(dates, "credit_crisis")))]
 dt <- function(e, col) detect[[col]][detect$episode == e]
 stopifnot(mean(flag_hmm[before]) > 5 * mean(smoothed[before] > 0.5) + 0.1)
 
-# ===== Regime portfolios in `PortfolioAnalytics` =====
-
 ## ---- specs ----
+# ===== Regime portfolios in `PortfolioAnalytics` =====
 win <- 60L
 base_spec <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "full_investment") |>
@@ -315,9 +310,8 @@ stopifnot(identical(quirk$coded_01_stress, 1), quirk$coded_01_calm,
           quirk$measure_labels[["regime.1"]] == sum(used == 1))
 str(quirk, give.attr = FALSE)
 
-# ===== The strategies and their accounting =====
-
 ## ---- strategies ----
+# ===== The strategies and their accounting =====
 p_stress <- rep(NA_real_, length(y)); p_stress[rt$month] <- rt$prob[, "predicted"]
 stress_by <- list(dated      = in_any[oos],          # the month ahead: hindsight
                   turbulence = flag_turb[reb],       # known at the rebalancing date
@@ -470,9 +464,8 @@ stopifnot(pv("hmm", "sharpe") < pv("static", "sharpe"), pv("turbulence", "sharpe
           all(abs(perf$z[perf$key %in% detected]) < 1.96),
           timing("turbulence") < timing("dated"), timing("hmm") < timing("dated"))
 
-# ===== Reading the result =====
-
 ## ---- tbl-19-episodes ----
+# ===== Reading the result =====
 # Cumulative gross return of each strategy inside each dated episode, over the
 # episode's out-of-sample months.
 episode_ret <- lapply(names(paths), function(k) {

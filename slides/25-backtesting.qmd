@@ -1,0 +1,311 @@
+---
+title: "Backtesting and Diagnostics"
+subtitle: "Tidy Asset Allocation in R, Chapter 25"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 25"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/25-backtesting.R to the chunks below,
+# so no line of analysis is maintained twice. root.dir takes effect after this
+# chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("25-backtesting.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** a backtest as an estimate produced by a rule that sees only the past, and **name** what its two window arguments mean.
+2. **Run** a rolling backtest with `optimize.portfolio.rebalancing()` and **diagnose** every period, including the ones that never solved.
+3. **Explain** why failed periods are not a random sample of history, and how to carry the failure count into the result.
+4. **Evaluate** a strategy register with a standard error, and **separate** what a backtest measures from what it only estimates.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+How much of a backtest should we believe, and how do we find out where it silently went wrong?
+
+::: {.statement}
+Harvey and Liu (2015) and López de Prado (2018) argue that a backtest is not a simulation of history but a statistical **estimate**: most of the work is establishing how much of it to believe.
+:::
+
+- Running a backtest takes four lines; the failure modes are the reason for a chapter.
+- Every construction chapter of the book ends with a line of out-of-sample evidence. This is where those lines come from.
+- The order here is deliberate: the rule, a backtest that completes and is wrong, the register, and its error bar.
+
+<p class="source">Harvey, C. R. and Liu, Y. (2015). Backtesting. *Journal of Portfolio Management* 42(1), 13–28.</p>
+
+## What a Backtest Estimates
+
+A loop with a rule about what it may see. At each rebalancing date $t$, estimate on data ending strictly before $t$, form a portfolio, hold it one period:
+
+$$
+\hat{\boldsymbol{w}}_t = g\!\left(\boldsymbol{r}_{t-W}, \dots, \boldsymbol{r}_{t-1}\right),
+\qquad
+r^{p}_t = \hat{\boldsymbol{w}}_t' \boldsymbol{r}_t ,
+$$
+
+with $g$ the strategy and $W$ the estimation window.
+
+- The series $\{r^p_t\}$ is a **sample**; every statistic computed from it is an estimate with a standard error.
+- Here: sixteen asset classes, `r nrow(Re)` monthly excess returns, $W = $ `r win` months.
+
+::: {.notes}
+The latest observation the rule may use is $t-1$, never $t$. Violations of that one rule are the most common defect in a backtest, and we list four kinds at the end.
+:::
+
+## A Rolling Backtest {.codesmall}
+
+```{r basic}
+#| echo: true
+```
+
+- `training_period` is the number of observations before the first optimization.
+- `rolling_window` is $W$ thereafter and is **inclusive at both ends**: `rolling_window = 60` yields sixty-one observations. We pass `win - 1L` so that every window holds sixty.
+- An expanding window is `rolling_window = NULL`: more data, and the assumption that the world has not changed.
+
+::: {.notes}
+This detail moves a Sharpe ratio in the third decimal, and almost no published result records which convention it used.
+:::
+
+## A Mandate with a Required Return {.codesmall}
+
+A real mandate contains a return requirement. We add `return_target`, about 4.9% a year over the bill:
+
+```{r mandate}
+#| echo: true
+```
+
+The same number of periods as before. The object has the right class, the right length and the right names.
+
+## Inside the Result {.codesmall}
+
+```{r inside}
+```
+
+Every entry has the class of a solved portfolio, and `r n_bad` of them hold none. The weights are `NA`, the objective is `NA`, and the solver's verdict sits in `$solver_status`, where nothing downstream reads it.
+
+## A Trap: A Failed Period Is Stored, Not Raised
+
+::: {.callout-important}
+## `optimize.portfolio.rebalancing()` reports nothing when a solver fails
+
+When `ROI` reports that no feasible portfolio exists, `optimize.portfolio()` copies its `NA` solution through without reading the status code. When a solver throws, the loop's `foreach(.errorhandling = "pass")` stores the condition object in its place.
+
+Either way the backtest completes, the object is well formed, the length is right, and nothing warns.
+:::
+
+- This is the loop working as written, not a bug in it (issue #45).
+- The book's remedy is a discipline rather than a patch: diagnose every period, and carry the failure count into the result.
+
+::: {.notes}
+Contrast with chapter 9, where an exact budget constraint is itself reported infeasible and the fix is pinned in the package notes. Here the mandate really is infeasible in some months, and no pin can change that.
+:::
+
+## What Downstream Functions Return {.smaller}
+
+```{r downstream}
+```
+
+- `extractWeights()` returns `r sum(!stats::complete.cases(W_hat))` rows of `NA`; `Return.portfolio()` returns `NA` for every month from the first failed period on, `r sum(is.na(pr_hat))` of them.
+- A warning about weights not summing to one reads like a rounding issue.
+- A reader has almost no chance of tracing it back to a mandate infeasible in `r n_bad` months.
+
+## Diagnosing Every Period {.codesmall}
+
+```{r diagnose}
+#| echo: true
+```
+
+`diagnose_rebalancing()` from `tidypm` returns one row per period with its status and the solver's message, carried out of the condition object.
+
+## The Periods That Did Not Solve
+
+```{r tbl-25-failures}
+```
+
+::: {.notes}
+The message column is what a count of failures would not have shown: the solver says why the period was infeasible.
+:::
+
+## The Failures Cluster
+
+```{r clustering}
+```
+
+All `r length(fail)` fall within `r span` months of each other, from `r fmt_model(min(fail))` to `r fmt_model(max(fail))`: the first in the last month of the equity bear market, the rest in the year after, when no long-only combination of the sixteen series had earned 4.9 percent over the bill across the preceding sixty months.
+
+## Where They Fall
+
+```{r fig-25-failures}
+#| fig-alt: "Equal-weighted market index over model years with vertical marks at the rebalancing periods that had no feasible portfolio."
+#| fig-asp: 0.42
+```
+
+A backtest that drops these periods loses precisely the stretch in which the strategy was impossible, and reports the average of the easy months: a survivorship problem, not a rounding error.
+
+## What to Do About a Period That Failed {.codesmall}
+
+No answer preserves the strategy. Carrying the previous weights forward is the least dishonest option, and it is a different strategy: one that stops trading exactly when its mandate becomes infeasible.
+
+```{r report}
+#| echo: true
+```
+
+`pm_backtest()` carries weights forward, warns, and reports `n_failed` in every result row. A table omitting that number is not reporting the backtest that was run.
+
+## The Parallel Loop with No Backend {.smaller}
+
+`optimize.portfolio.rebalancing()` contains a `foreach` `%dopar%` loop but never registers a backend, so it runs sequentially and says so only in a warning that reads like noise.
+
+| | wall clock |
+|---|---:|
+| default, no backend registered | 273 s |
+| eight workers | **61 s** |
+
+- A 4.5-fold speedup on four strategies and `r length(bt$opt_rebalancing)` periods, with identical results; `pm_backtest(workers = 8)` registers the cluster and restores the previous backend.
+- A `message()` or `warning()` on a worker is lost. Diagnose sequentially, then re-run in parallel.
+- `optimize.portfolio.parallel()` is a different function: it parallelizes repeated runs of one optimization.
+
+::: {.notes}
+The timings are the chapter's measured figures, typed in the chapter itself; the deck does not rerun them.
+:::
+
+```{r sweep}
+#| include: false
+```
+
+```{r register-ranking}
+#| include: false
+```
+
+## The Register {.smaller}
+
+```{r tbl-25-register}
+```
+
+Sixty-month window, monthly rebalancing, out of sample from the first month of model year `r model_year(oos_start)`, gross of costs.
+
+## Reading the Register {.smaller}
+
+- The strategy estimating most, a full mean vector followed by a maximization, is last: `r sprintf("%.0f", turn_ratio)` times the turnover of equal weighting and a drawdown `r sprintf("%.1f", dd_ratio)` times as deep as minimum variance's.
+- The order by Sharpe ratio is `r paste(reg$label, collapse = ", ")`. Equal weighting, which estimates nothing, ranks `r rank_of("equal_weight")` of `r nrow(reg)`.
+- At 36 months the tangency portfolio is last, `r sprintf("%.2f", at_w(36, "gap"))` of Sharpe ratio behind the best rule that estimates no mean; at 120 months it ranks `r at_w(120, "rank_tan")` and the gap is `r sprintf("%.2f", at_w(120, "gap"))`.
+- The gap closes as $W$ lengthens, as a sampling error in the mean that shrinks with $W$ predicts (DeMiguel et al., 2009; Jagannathan and Ma, 2003).
+
+::: {.notes}
+The ordering is asserted in the chapter with stopifnot(), so the render fails if the data stop supporting it. We claim nothing in prose beyond what those assertions check.
+:::
+
+## A Backtest Is a Measurement {.smaller}
+
+The Sharpe ratios are point estimates from `r Tn` monthly observations. Under i.i.d. returns, Lo (2002) gives the asymptotic standard error
+
+$$
+\operatorname{se}(\widehat{SR}) \approx
+\sqrt{\frac{1 + \tfrac{1}{2}SR^2}{T}} .
+$$
+
+```{r error-bar}
+```
+
+Every interval overlaps every other: no difference between these five strategies is statistically distinguishable from zero, including best against worst.
+
+## Two Caveats, in Opposite Directions {.smaller}
+
+- **Intervals are, if anything, wider.** The i.i.d. assumption is violated by this market. Ledoit and Wolf (2008) give a bootstrap that does not need it; Jobson and Korkie (1981), corrected by Memmel (2003), test a difference between two Sharpe ratios directly.
+- **Intervals widen little more.** These five strategies were not selected from a large search, so the multiple-testing corrections of White (2000) and Sullivan et al. (1999), and the deflated Sharpe ratio of Bailey and López de Prado (2014), would add little. A study of a hundred specifications needs all of it.
+
+What survives the error bar:
+
+- Turnover and cost differences are arithmetic on observed trades, and they are large.
+- The failure count is not an estimate: a strategy infeasible in `r length(fail)` months of one year has a property no confidence interval averages away.
+
+## Attribution: Where the Return Came From
+
+With portfolio weights $w_i$, benchmark weights $b_i$ and segment returns $r_i$, $\beta_i$ (Brinson et al., 1986; 1991):
+
+$$
+\underbrace{\sum_i (w_i - b_i)\beta_i}_{\text{allocation}}
++ \underbrace{\sum_i b_i (r_i - \beta_i)}_{\text{selection}}
++ \underbrace{\sum_i (w_i - b_i)(r_i - \beta_i)}_{\text{interaction}}
+= \sum_i w_i r_i - \sum_i b_i \beta_i .
+$$
+
+- Allocation is Parts IV and V of the book, selection is Part VI.
+- The "ninety percent" result answers the share of a single fund's variance of returns over time, not the share of differences between funds (Ibbotson and Kaplan, 2000).
+
+## A Taxonomy of Look-Ahead {.smaller}
+
+1. **Misaligned window.** Data through $t$ rather than $t-1$: the only coding error of the four.
+2. **Hindsight universe.** Every asset in the modeled market survives to the end of the sample, a survivorship bias by construction.
+3. **Tuned parameters.** Choosing a window, a shrinkage intensity or a frequency by its out-of-sample result makes that result in-sample. The sweep reports all nine configurations for this reason.
+4. **Revised data.** Macroeconomic series are restated for years; the current vintage is numbers nobody had.
+
+A rule fitted to one regime and tested on the same history measures the regime rather than the rule (Lo, 2004).
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** A backtest is an estimate produced by a rule that may see only the past; every statistic from it carries a standard error.
+- **Outcome 1.** `rolling_window` is inclusive at both ends: asking for 60 gives 61 observations.
+- **Outcome 2.** `optimize.portfolio.rebalancing()` stores a failed period, as `NA` weights or a condition object, and completes normally with the right class, length and names.
+- **Outcome 3.** The failures are not random: all `r length(fail)` fall within one year, where the mandate was impossible. Dropping them reports the average of the easy months.
+- **Outcome 2.** Diagnose every period and carry the failure count into the result table. The loop also registers no backend: eight workers cut 273 seconds to 61.
+- **Outcome 4.** Every confidence interval in the register overlaps every other; turnover, cost and feasibility differences are not estimates and do not overlap.
+
+## Exercises {.smaller}
+
+Work these in `code/25-backtesting-exercises.R`; solutions to follow.
+
+1. Rerun the mandate backtest with `return_target` at 0.002 and 0.005 monthly. Report the number of failed periods and when they occur. At which target does the strategy stop being a strategy?
+2. Replace `rolling_window = win - 1L` with `rolling_window = win`, confirm the windows hold sixty-one observations, and measure how far the Sharpe ratio of minimum variance moves.
+3. Run the backtest with an expanding window. Does it do better or worse, and is the difference larger than the error bar?
+4. Take the failed periods and ask what a manager would have done. Implement one answer, rerun, and say how it differs from the specified strategy.

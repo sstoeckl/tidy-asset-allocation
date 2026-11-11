@@ -1,0 +1,490 @@
+---
+title: "Portfolio Constraints"
+subtitle: "Tidy Asset Allocation in R, Chapter 12"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 12"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/12-constraints.R to the chunks below,
+# so no line of analysis is maintained twice. root.dir takes effect after this
+# chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("12-constraints.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** how a constraint defines the feasible set, which families keep it convex, and what a binding constraint is worth.
+2. **Explain** the Jagannathan--Ma result: a binding long-only constraint is a shrinkage of the covariance matrix.
+3. **Implement** box, group, weight-sum, return, exposure, leverage, position and diversification constraints in `PortfolioAnalytics`.
+4. **Audit** a returned weight vector against its specification, and know which solver silently drops which line.
+5. **Price** the lines of a mandate by finite differences and read what the mandate costs.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these five outcomes in the Key Takeaways. The exercises at the end practice outcomes 1, 2 and 5.
+:::
+
+## The Question {.smaller}
+
+How does an investment policy statement, written in prose by a committee, become something a solver can read?
+
+::: {.statement}
+Jagannathan and Ma (2003) showed that the answer is less mechanical than it looks: a no-short-sale constraint on a minimum-variance problem is mathematically the same as shrinking the covariance matrix.
+:::
+
+- A constraint that binds is not a nuisance the optimizer works around; it is information about which estimates not to trust.
+- Frost and Savarino (1988) found earlier that bounding weights improved out-of-sample performance, because it capped how much of an estimation error one position could express.
+- This chapter is about **strategic allocation**: the constraints are the policy, set once from long-run beliefs.
+
+<p class="source">Jagannathan, R. and Ma, T. (2003). Risk Reduction in Large Portfolios. *Journal of Finance* 58(4), 1651–1683.</p>
+
+## From Policy Statement to Feasible Set {.smaller}
+
+A mandate replaces $\mathbb{R}^N$ by a feasible set $\mathcal{C}$, and the constrained problem is
+
+$$
+\min_{\boldsymbol{w} \in \mathcal{C}} \; \boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}
+\qquad \text{or} \qquad
+\max_{\boldsymbol{w} \in \mathcal{C}} \;
+\frac{\boldsymbol{w}'\boldsymbol{\mu}}{\sqrt{\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}}} .
+$$
+
+| Constraint | Feasible set | Convex |
+|---|---|---|
+| weight sum | $l_s \le \boldsymbol{\iota}'\boldsymbol{w} \le u_s$ | yes |
+| box | $l_i \le w_i \le u_i$ | yes |
+| group | $l_g \le \sum_{i \in G_g} w_i \le u_g$ | yes |
+| target return | $\boldsymbol{\mu}'\boldsymbol{w} = \bar{\mu}$ | yes |
+| linear exposure | $\boldsymbol{l} \le \boldsymbol{B}'\boldsymbol{w} \le \boldsymbol{u}$ | yes |
+| leverage | $\lVert \boldsymbol{w} \rVert_1 \le L$ | yes |
+| turnover, costs | $\lVert \boldsymbol{w} - \boldsymbol{w}_0 \rVert_1 \le \tau$ | yes |
+| diversification | $1 - \boldsymbol{w}'\boldsymbol{w} \ge d$ | yes |
+| position limit | $\sum_i \mathbf{1}\{w_i \neq 0\} \le k$ | **no** |
+
+::: {.notes}
+Any number of convex constraints together leave a convex set, so the problem stays a quadratic program with a unique answer. Only the cardinality limit breaks this, and that is what drives the solver choice later.
+:::
+
+## What a Binding Constraint Is Worth {.smaller}
+
+With linear constraints $\boldsymbol{A}\boldsymbol{w} \le \boldsymbol{b}$ and the budget kept separate, the Lagrangian of minimum variance is
+
+$$
+\mathcal{L}(\boldsymbol{w}, \lambda_0, \boldsymbol{\lambda})
+= \tfrac{1}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}
+- \lambda_0\left(\boldsymbol{w}'\boldsymbol{\iota} - 1\right)
++ \boldsymbol{\lambda}'\left(\boldsymbol{A}\boldsymbol{w} - \boldsymbol{b}\right).
+$$
+
+At the optimum $\boldsymbol{\Sigma}\boldsymbol{w} = \lambda_0\boldsymbol{\iota} - \boldsymbol{A}'\boldsymbol{\lambda}$, every $\lambda_k \ge 0$, and $\lambda_k(\boldsymbol{a}_k'\boldsymbol{w} - b_k) = 0$ (Kuhn and Tucker, 1951).
+
+- Complementary slackness: a slack constraint has a multiplier of zero and could have been left out.
+- A binding constraint has a positive multiplier, its **shadow price**:
+
+$$
+\lambda_k = -\,\frac{\partial\, \sigma^{2}_{*}/2}{\partial b_k}.
+$$
+
+- Solvers rarely return the multipliers; we recover them by perturbing a bound and re-solving.
+
+## The Jagannathan--Ma Covariance {.smaller}
+
+For $\boldsymbol{w} \ge \boldsymbol{0}$ with multipliers $\boldsymbol{\delta} \ge \boldsymbol{0}$, the first-order condition is $\boldsymbol{\Sigma}\boldsymbol{w} = \lambda_0\boldsymbol{\iota} + \boldsymbol{\delta}$, and the constrained solution is the *unconstrained* minimum-variance portfolio on a modified matrix:
+
+$$
+\tilde{\boldsymbol{\Sigma}}
+= \boldsymbol{\Sigma} - \left(\boldsymbol{\delta}\boldsymbol{\iota}' + \boldsymbol{\iota}\boldsymbol{\delta}'\right),
+\qquad
+\boldsymbol{w}_{\text{long-only}}
+= \frac{\tilde{\boldsymbol{\Sigma}}^{-1}\boldsymbol{\iota}}
+       {\boldsymbol{\iota}'\tilde{\boldsymbol{\Sigma}}^{-1}\boldsymbol{\iota}} .
+$$
+
+Element by element, $\tilde{\sigma}_{ij} = \sigma_{ij} - \delta_i - \delta_j$.
+
+- Every covariance involving an excluded asset is reduced by that asset's shadow price.
+- The assets an unconstrained optimizer shorts are those with high estimated covariance to the rest; the constraint shrinks exactly those.
+- DeMiguel et al. (2009): a bound on the norm of the weights is a family of shrinkage estimators, long-only being one member.
+
+::: {.notes}
+The proof is two lines: multiply the modified matrix by w and use the budget and complementary slackness. On this reading a binding constraint is the mandate correcting the estimator.
+:::
+
+## Two Anchors and a Bookkeeping Function {.codesmall}
+
+Everything is measured against the two anchor portfolios of chapter 9, recomputed rather than retyped.
+
+```{r helpers}
+#| echo: true
+#| output: false
+```
+
+```{r deck-anchors}
+anchors |>
+  dplyr::mutate(dplyr::across(c(vol, ret), ~ sprintf("%.2f%%", 100 * .x)),
+                sharpe = sprintf("%.3f", sharpe), largest = sprintf("%.0f%%", 100 * largest)) |>
+  kable(align = "lrrrrrl", col.names = c("", "volatility", "excess return", "Sharpe", "held", "largest", "in"))
+```
+
+The minimum-variance anchor places `r sprintf("%.0f%%", 100 * max(w_gmv))` in `r paste0("\x60", names(which.max(w_gmv)), "\x60")`: that number is the reason this chapter exists.
+
+## The Long-Only Constraint, Priced {.smaller}
+
+```{r jm-check}
+#| include: false
+```
+
+The multipliers follow from the first-order condition, $\boldsymbol{\delta} = \boldsymbol{\Sigma}\boldsymbol{w} - \lambda_0\boldsymbol{\iota}$ with $\lambda_0 = \boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$.
+
+- They are zero on every held series and positive on every excluded one: complementary slackness.
+- The unconstrained formula on $\tilde{\boldsymbol{\Sigma}}$ reproduces the solver's weights to `r sprintf("%.0e", max(abs(w_jm - w_gmv)))`.
+- The largest shadow prices belong to `r paste0("\x60", names(sort(delta, decreasing = TRUE))[1:3], "\x60", collapse = ", ")`, the series that covary most with what is held.
+- The modified matrix stays positive definite: its smallest eigenvalue is within `r sprintf("%.2f%%", 100 * abs(min(eigen(S_tilde)$values) / min(eigen(S)$values) - 1))` of that of $\boldsymbol{\Sigma}$.
+
+::: {.notes}
+This is the numerical check of the theory slide: the solver and the algebra give the same portfolio, so the shrinkage reading is not a metaphor.
+:::
+
+## Box Constraints {.codesmall}
+
+`min` and `max` take a scalar or a vector named by asset; a later box constraint replaces an earlier one.
+
+```{r box}
+#| echo: true
+#| output: false
+```
+
+```{r deck-box}
+dplyr::bind_rows(stats_of("minimum variance, 25% cap", w_gmv_box),
+                 stats_of("tangency, 25% cap", w_tan_box)) |>
+  dplyr::mutate(dplyr::across(c(vol, ret), ~ sprintf("%.2f%%", 100 * .x)),
+                sharpe = sprintf("%.3f", sharpe), largest = sprintf("%.0f%%", 100 * largest)) |>
+  kable(align = "lrrrrrl", col.names = c("", "volatility", "excess return", "Sharpe", "held", "largest", "in"))
+```
+
+The cap binds hard on the minimum-variance side: `r sprintf("%.0f%%", 100 * max(w_gmv))` in one series becomes `r sum(abs(w_gmv_box - 0.25) < 1e-6)` positions at exactly 25%, and volatility rises from `r sprintf("%.2f%%", 100 * p_vol(w_gmv))` to `r sprintf("%.2f%%", 100 * p_vol(w_gmv_box))`. The tangency Sharpe ratio falls from `r sprintf("%.3f", p_sr(w_tan))` to `r sprintf("%.3f", p_sr(w_tan_box))`.
+
+## Group Constraints {.codesmall}
+
+The limits are built by name and the order is asserted, because `split()` returns its groups alphabetically.
+
+```{r group}
+#| echo: true
+#| output: false
+```
+
+::: {.callout-note}
+## One group constraint per specification
+
+`get_constraints()` keeps only the *last* group constraint, and likewise the last box constraint. A second grouping goes in as a linear exposure constraint.
+:::
+
+## Groups Against Their Limits
+
+```{r fig-12-group-weights}
+#| fig-alt: "The package's group chart for the tangency portfolio: each class group's weight against its bounds."
+#| fig-asp: 0.5
+```
+
+```{r group-binding}
+#| include: false
+```
+
+```{r deck-group-binding}
+# reshape the chapter's objects (g_gmv, g_tan, gmin, gmax) into the display table
+tibble::tibble(group = names(grp), lower = gmin[names(grp)], upper = gmax[names(grp)],
+               min_variance = g_gmv[names(grp)], tangency = g_tan[names(grp)]) |>
+  dplyr::mutate(dplyr::across(-group, ~ sprintf("%.0f%%", 100 * .x))) |>
+  kable(align = "lrrrr")
+```
+
+## Weight-Sum and Return Constraints {.smaller}
+
+```{r weight-sum}
+#| include: false
+```
+
+```{r weight-sum-default}
+#| include: false
+```
+
+```{r return-target}
+#| include: false
+```
+
+- `full_investment` is `weight_sum` with both bounds at one; `dollar_neutral` sets both to zero. The dollar-neutral example holds `r sum(w_dn > 1e-6)` longs and `r sum(w_dn < -1e-6)` shorts at gross exposure `r sprintf("%.2f", sum(abs(w_dn)))`.
+
+::: {.callout-warning}
+## `weight_sum` with no arguments leaves one percent uninvested
+
+The defaults are `min_sum = 0.99` and `max_sum = 1.01`. Under a variance objective the solver uses that room: the weights sum to `r sprintf("%.2f", sum(w_loose))`, a cash position nobody asked for.
+:::
+
+- A target return is an equality under ROI. A 2.5% target delivers *less* return than minimum variance at `r sprintf("%.2f%%", 100 * ret_tbl$vol[2])` volatility against `r sprintf("%.2f%%", 100 * ret_tbl$vol[1])`: a portfolio the minimum-variance anchor dominates.
+- `maxSR = TRUE` ignores the target altogether: requested 8%, achieved `r sprintf("%.2f%%", 100 * p_ret(w_tan_8))`.
+
+::: {.notes}
+A mandate that says "at least" is a floor, and a floor should be imposed only when it binds. The audit at the end of the application checks that.
+:::
+
+## Position Limits Need a Mixed-Integer Formulation {.smaller}
+
+```{r poslimit-roi}
+#| include: false
+```
+
+```{r poslimit-milp}
+#| include: false
+```
+
+```{r poslimit-deoptim}
+#| include: false
+```
+
+At most $k$ nonzero weights is the one nonconvex row (Bienstock, 1996). `PortfolioAnalytics` accepts it everywhere and honors it in three places.
+
+::: {.callout-important}
+## A position limit on the quadratic path is dropped without a message
+
+Under a variance objective ROI has no integer formulation: `r sum(w_pos_roi > 1e-6)` positions come back under a limit of five, and the weights equal the unconstrained ones. No error, no warning.
+:::
+
+- ROI honors the limit only on its two mixed-integer paths. Under minimum ES, `r sum(w_es > 1e-6)` held without the limit and `r sum(w_pos_es > 1e-6)` with it.
+- Under variance, `DEoptim` repairs candidates and honors the limit: volatility `r sprintf("%.2f%%", 100 * p_vol(w_pos_de))`.
+- The screen of Chang et al. (2000), keep the $k$ largest holdings and re-solve, reaches `r sprintf("%.2f%%", 100 * p_vol(w_screen))`: two lines, and the search is `r sprintf("%.1f%%", 100 * (p_vol(w_pos_de) / p_vol(w_screen) - 1))` worse.
+
+## Leverage Exposure Under ROI {.smaller}
+
+```{r leverage-roi}
+#| include: false
+```
+
+A bound on $\lVert \boldsymbol{w} \rVert_1$ defines a 130/30 portfolio. It is convex, but:
+
+```r
+spec_ls  <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "box", min = -0.3, max = 1)
+spec_lev <- spec_ls |> add.constraint(type = "leverage_exposure", leverage = 1.6)
+```
+
+```{r deck-lev}
+lev_tbl |>
+  dplyr::mutate(gross = sprintf("%.2f", gross), vol = sprintf("%.2f%%", 100 * vol)) |>
+  kable(align = "lrrr")
+```
+
+::: {.callout-important}
+## Under ROI the leverage constraint returns a long-only portfolio
+
+`gmv_opt_leverage()` builds its `ROI::OP()` without a `bounds` argument, and ROI's default is $x \ge 0$: the box minimum of $-0.3$ is overruled. Under `CVXR` the constraint is not written at all. A leverage bound under a variance objective is, for now, a problem to write by hand.
+:::
+
+## Linear Exposures {.smaller}
+
+```{r factor-region}
+#| include: false
+```
+
+```{r factor-beta}
+#| include: false
+```
+
+`factor_exposure_constraint()` bounds $\boldsymbol{B}'\boldsymbol{w}$ for any matrix $\boldsymbol{B}$ with one row per asset: betas, or an indicator matrix for a second grouping.
+
+- A region matrix `B_region` caps each currency region at 40%; the minimum-variance exposures are `r paste0(colnames(B_region), " ", sprintf("%.0f%%", 100 * as.numeric(t(B_region) %*% w_gmv_region)), collapse = ", ")`.
+- With betas to an equal-weighted equity composite, the unconstrained minimum-variance beta is `r sprintf("%.2f", sum(betas * w_gmv))`. Asking for at least 0.3 forces the solver to buy equity it did not want, and the bound binds exactly: beta `r sprintf("%.2f", sum(betas * w_gmv_beta))` at volatility `r sprintf("%.2f%%", 100 * p_vol(w_gmv_beta))`, up from `r sprintf("%.2f%%", 100 * p_vol(w_gmv))`.
+
+## Diversification Exists Only Under the Searches {.smaller}
+
+```{r div-roi}
+#| include: false
+```
+
+```{r div-deoptim}
+#| include: false
+```
+
+The floor $1 - \boldsymbol{w}'\boldsymbol{w} \ge d$ is convex, but the package routes it only to the search-based solvers.
+
+::: {.callout-note}
+## Under ROI the constraint is ignored; under the searches it is a band
+
+ROI never reads `div_target`. The search path penalizes only when the value leaves $[0.95\,d,\; 1.05\,d]$, and a portfolio *more* diversified than the target is penalized too. It is a target, not a floor.
+:::
+
+```{r deck-div}
+tibble::tibble(route = c("DEoptim, target 0.7", "CVXR, floor 0.7"),
+               diversification = c(diversification(w_div_de), diversification(w_div_cvx)),
+               vol = c(p_vol(w_div_de), p_vol(w_div_cvx))) |>
+  dplyr::mutate(diversification = sprintf("%.3f", diversification), vol = sprintf("%.2f%%", 100 * vol)) |>
+  kable(align = "lrr")
+```
+
+The search is `r sprintf("%.0f%%", 100 * (p_vol(w_div_de) / p_vol(w_div_cvx) - 1))` worse on the objective: a penalized heuristic solves a different problem from the one written down (Gilli et al., 2019).
+
+## Auditing a Weight Vector {.codesmall}
+
+Every failure so far has one shape: the constraint is in the object and absent from the answer. `audit_spec()` reads the specification and checks each line.
+
+```{r audit-spec}
+#| include: false
+```
+
+```{r deck-audit-call}
+#| echo: true
+audit_spec(w_pos_roi, spec_pos) |> kable()   # the ROI answer under max_pos = 5
+```
+
+The dropped limit is now a `FALSE` in a table rather than a portfolio that looks finished.
+
+::: {.notes}
+The function is in the chapter and in code/12-constraints.R. It switches on the constraint type and reads the return line as a floor.
+:::
+
+## The Policy Statement {.smaller}
+
+An endowment's committee: fully invested and long only; equities between 40 and 60 percent; government bonds at least 10 percent; credit at most 40 percent; commodities at most 15 percent; no series above 35 percent; expected excess return at least 6 percent; at most eight positions.
+
+```{r mandate-spec}
+#| echo: true
+#| output: false
+```
+
+The first six lines are linear. The seventh is a floor, imposed only where it binds: without it the minimum-variance portfolio earns `r sprintf("%.2f%%", 100 * p_ret(w_m_gmv0))`, below `r sprintf("%.0f%%", 100 * floor_ann)`, so it does. The eighth is the nonconvex line.
+
+## The Mandate Audited, Then Repaired {.smaller}
+
+```{r mandate-solve}
+#| include: false
+```
+
+```{r mandate-repair}
+#| include: false
+```
+
+```{r deck-audit-mandate}
+tidyr::pivot_wider(audit, names_from = objective, values_from = satisfied) |>
+  kable(align = "lrr")
+```
+
+- The tangency portfolio passes every line, including the two the solver never read: it earns `r sprintf("%.2f%%", 100 * p_ret(w_m_tan))` and holds `r sum(w_m_tan > 1e-6)` positions.
+- The minimum-variance portfolio holds `r sum(w_m_qp > 1e-6)` positions: the quadratic path dropped the limit.
+- Repair by screening: keep the eight largest holdings and re-solve the other seven lines on them. The eighth line costs `r sprintf("%.3f", 100 * (p_vol(w_m_gmv) - p_vol(w_m_qp)))` percentage points of volatility, an upper bound on its price.
+
+## What the Mandate Costs {.smaller}
+
+```{r tbl-12-mandate}
+```
+
+```{r cost}
+#| include: false
+```
+
+The Sharpe ratio falls by `r sprintf("%.3f", p_sr(w_tan) - p_sr(w_m_tan))`, keeping `r sprintf("%.0f%%", 100 * p_sr(w_m_tan) / p_sr(w_tan))`, with a transfer coefficient (Clarke et al., 2002)
+
+$$
+\text{TC} = \operatorname{corr}\!\left(\sigma_i\, w^{c}_i,\; \sigma_i\, w^{u}_i\right) = `r sprintf("%.2f", tc)` .
+$$
+
+What the mandate buys is a portfolio: the unconstrained tangency held `r sprintf("%.0f%%", 100 * max(w_tan))` in `r paste0("\x60", names(which.max(w_tan)), "\x60")`; the mandate caps that at `r sprintf("%.0f%%", 100 * max(w_m_tan))`.
+
+::: {.notes}
+The in-sample cost is measured against a tangency portfolio whose Sharpe ratio is inflated by estimation error, so part of the cost is noise the constraint refused to buy. That is the Jagannathan--Ma point in Sharpe units.
+:::
+
+## Which Lines Bind
+
+```{r shadow}
+#| include: false
+```
+
+```{r tbl-12-shadow}
+```
+
+```{r shadow-reading}
+#| include: false
+```
+
+`r length(bind_mv)` of seven lines bind for minimum variance and `r length(bind_tan)` for the tangency portfolio; the dearest line for minimum variance is `r top_mv`. A slack line costs nothing in sample, but it is insurance against a future estimate that would make it bind.
+
+## The Ladder of the Mandate
+
+```{r ladder}
+#| include: false
+```
+
+```{r fig-12-ladder}
+#| fig-alt: "Stacked weights by class across five rungs of the mandate, for minimum variance and maximum Sharpe."
+#| fig-asp: 0.5
+```
+
+Unconstrained minimum variance puts `r sprintf("%.0f%%", 100 * max(w_gmv))` into `r paste0("\x60", names(which.max(w_gmv)), "\x60")`. Only the class limits produce a portfolio a committee would recognize.
+
+::: {.notes}
+The tangency column stops changing after the third rung because the last two lines are slack for it. The minimum-variance column gives up its smallest positions at the fifth rung to meet the limit.
+:::
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** A constraint defines the feasible set, and every family except the position limit keeps it convex. A position limit needs a mixed-integer formulation or a heuristic.
+- **Outcome 2.** A binding long-only constraint shrinks the covariance matrix by its own shadow prices: the mandate corrects the estimator rather than imposing a cost to be minimized.
+- **Outcome 5.** Shadow prices are recovered by tightening each line and re-solving. Most lines of the mandate are slack in sample; the equity floor and the 35% cap bind on both objectives.
+- **Outcome 4.** `PortfolioAnalytics` accepts every constraint on every solver and honors only some: the ROI quadratic path drops a position limit and a diversification target, `maxSR = TRUE` ignores a return target, and a leverage bound returns a long-only portfolio.
+- **Outcome 4.** Audit every returned weight vector against its specification with `audit_spec()`, `pos_limit_fail()`, `diversification()` and the sum of weights.
+- **Outcome 3.** Group limits are the precondition for a portfolio anyone would hold on this universe.
+
+## Exercises {.smaller}
+
+Work these in `code/12-constraints-exercises.R`; solutions are in appendix G of the book.
+
+1. Replace the 35% cap in the mandate with 25% and re-solve both objectives. Which lines bind now, and what does the equity floor cost in volatility? Rebuild the shadow-price table.
+2. Recover $\boldsymbol{\delta}$ and $\boldsymbol{\lambda}$ from the first-order condition of the 25%-capped minimum-variance portfolio `w_gmv_box` and verify that the unconstrained portfolio on the modified matrix reproduces it.
+3. Add a regional cap of 40% per currency region to the mandate through `factor_exposure_constraint()` with `B_region`, and solve both objectives. Which region binds, and by how much does the Sharpe ratio move?
+4. Solve the exact diversification floor with CVXR at $d = 0.5, 0.6, 0.7, 0.8$ and plot volatility against the floor. Place a single `DEoptim` run at $d = 0.6$ on the same chart.

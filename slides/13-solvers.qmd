@@ -1,0 +1,313 @@
+---
+title: "Numerical Optimization and Solvers"
+subtitle: "Tidy Asset Allocation in R, Chapter 13"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 13"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/13-solvers.R to the chunks below,
+# so no line of analysis is maintained twice. root.dir takes effect after this
+# chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("13-solvers.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **Explain** why convexity, not speed, separates the two solver families, and name the constraint that destroys it.
+2. **Implement** a race of convex and search-based solvers in `PortfolioAnalytics` against a benchmark computed outside the package.
+3. **Evaluate** what a search method costs: its accuracy, its running time, what a larger budget buys, and why one run is one draw.
+4. **Audit** a returned weight vector against the constraints that were requested.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+`PortfolioAnalytics` hands the same portfolio problem to a quadratic program, a differential-evolution search, a particle swarm, simulated annealing, or random draws. All of them return a weight vector. Which of them returns the answer?
+
+::: {.statement}
+Convex programming settles the matter when it applies (Boyd and Vandenberghe, 2004); where it does not, heuristics enter the package for exactly that case (Ardia et al., 2011).
+:::
+
+- We first separate the two families by a property of the problem, convexity.
+- We then measure the solvers against a problem with a known answer.
+- We finally ask which solver **honors** a constraint, not which one **accepts** it.
+
+<p class="source">Boyd, S. and Vandenberghe, L. (2004). *Convex Optimization*. Cambridge University Press. Ardia, D. et al. (2011). *The R Journal* 3(1), 27–34.</p>
+
+## Convexity
+
+A set $\mathcal{C}$ is convex if the segment between any two of its points stays inside it. A function $f$ is convex on $\mathcal{C}$ if
+
+$$
+f\!\left(\theta \boldsymbol{x} + (1-\theta)\boldsymbol{y}\right)
+\leq \theta f(\boldsymbol{x}) + (1-\theta) f(\boldsymbol{y})
+\qquad \text{for all } \theta \in [0,1] .
+$$
+
+- The objective $\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$ is convex because $\boldsymbol{\Sigma}$ is positive semi-definite.
+- The feasible set is the unit simplex, an intersection of half-spaces with a hyperplane:
+
+$$
+\mathcal{C} = \left\{\boldsymbol{w} :
+  \boldsymbol{w}'\boldsymbol{\iota} = 1,\;
+  \boldsymbol{w} \geq \boldsymbol{0}\right\}.
+$$
+
+## What Convexity Buys
+
+On a convex problem **every local minimum is the global minimum** (Boyd and Vandenberghe, 2004).
+
+- A routine that walks downhill and stops cannot stop in the wrong place: "converged" and "correct" are the same statement.
+- This holds however badly $\boldsymbol{\Sigma}$ is estimated. A solver can return the exact optimum of a problem posed on a singular matrix. Convergence is a statement about the arithmetic, never about the inputs.
+- Quadratic programs of this shape are solved by the dual active-set method of Goldfarb and Idnani (1983), which `quadprog` implements and `ROI` calls, or by operator splitting (Stellato et al., 2020), which `OSQP` uses behind `CVXR`.
+
+::: {.notes}
+The point of the family is the guarantee, not the speed. Nocedal and Wright (2006) is the standard account of both algorithms.
+:::
+
+## Where Convexity Is Lost
+
+A cardinality constraint, holding at most $k$ positions, is
+
+$$
+\sum_{i=1}^{N} \mathbf{1}\{w_i > 0\} \leq k .
+$$
+
+- The set it defines is a union of faces of the simplex, not a convex body: the midpoint of two portfolios each holding five different names holds ten.
+- No quadratic program expresses it. Written exactly, it needs binary variables and becomes a mixed-integer quadratic program, NP-hard in general (Bienstock, 1996).
+- Differential evolution (Storn and Price, 1997), particle swarm (Kennedy and Eberhart, 1995) and simulated annealing (Kirkpatrick et al., 1983) assume no convexity, offer no optimality guarantee, and substitute coverage of the search space for certainty.
+
+The trap is that nothing stops a user from applying the second family to a problem in the first.
+
+## A Problem Whose Answer We Already Know {.codesmall}
+
+Claims about accuracy need a benchmark computed outside the system being tested. Fix $\boldsymbol{\mu}'\boldsymbol{w} = 1$, minimize variance, rescale: the Sharpe ratio is scale-invariant, so the rescaled solution maximizes it.
+
+```{r truth}
+#| echo: true
+```
+
+No `PortfolioAnalytics` in the loop, so the benchmark cannot inherit any of its mistakes.
+
+## Specifying and Racing the Solvers {.codesmall}
+
+```{r race}
+#| echo: true
+#| output: false
+```
+
+::: {.notes}
+Six solvers, one specification, one seed. The package default `random` draws 20,000 portfolios. This chunk is the slow one in the deck, which is itself the result of the next slides.
+:::
+
+## The Race
+
+```{r tbl-13-race}
+```
+
+```{r race-claims}
+#| include: false
+```
+
+- `ROI` and `CVXR` reach the answer exactly, as convexity guarantees.
+- Every search-based method lands between `r sprintf("%.0f%%", 100 * rng[1])` and `r sprintf("%.0f%%", 100 * rng[2])` of the attainable Sharpe ratio, and takes at least an order of magnitude longer than `ROI`.
+
+::: {.notes}
+The seconds depend on the machine; the order of magnitude does not. This is not a criticism of the searches: they solve a harder problem than they were given.
+:::
+
+## Accuracy Against Cost
+
+```{r fig-13-race}
+#| fig-alt: "Share of the attainable Sharpe ratio against time relative to ROI on a log axis, for six solvers; the two convex solvers sit alone at the top left."
+#| fig-asp: 0.5
+```
+
+The two convex solvers sit alone in the top-left corner; nothing buys its way out of the bottom-right.
+
+## A Complaint About the Budget Constraint
+
+::: {.callout-note}
+## The searches complain about the budget constraint, and the complaint is informative
+
+The sampling methods print: *Leverage constraint min_sum and max_sum are restrictive, consider relaxing; e.g. 'full_investment' constraint should be min_sum=0.99 and max_sum=1.01.*
+:::
+
+- A random draw almost never sums to one and must be rescaled onto the simplex, so an exact budget is awkward for a sampler.
+- The suggested fix is the encoding that breaks the quadratic path in chapter 9: there `quadprog` reports infeasibility, here the searches report restrictiveness.
+- Both react to a degeneracy in how the constraint is written, not to anything about the portfolio.
+
+## Adding a Cardinality Limit {.codesmall}
+
+One position fewer than the unconstrained answer holds, so the limit binds.
+
+```{r poslimit}
+#| echo: true
+#| output: false
+```
+
+::: {.notes}
+Any solver that honors the constraint must hold fewer positions than the benchmark. The check is on the weight vector, not on the specification.
+:::
+
+## Accepting Is Not Honoring
+
+```{r deck-feasible}
+# Reshapes the chapter's `feasible` tibble for display; no new analysis.
+kable(feasible, align = "lrl",
+      col.names = c("solver", "holdings", "verdict"))
+```
+
+```{r poslimit-claims}
+#| include: false
+```
+
+- Read the holdings against a limit of `r k_lim`. `r paste(respect, collapse = " and ")` respect it.
+- `r paste(ignore, collapse = " and ")` accept the constraint, ignore it, and return all or nearly all of the universe, with no warning. They converge to something that is not a solution to the stated problem.
+
+## A Position Limit Is Dropped Silently
+
+::: {.callout-important}
+## A position limit on the quadratic path is dropped silently
+
+The quadratic programs in `PortfolioAnalytics` carry no cardinality formulation. The call returns `r feasible$holdings[feasible$solver == "ROI"]` holdings under a limit of `r k_lim`, with weights identical to the unconstrained answer, and nothing is raised.
+:::
+
+- Making the call fail would stop code that ran before, so it is proposed separately; the build the book pins does not carry it. Appendix 93 records which patches are in which state.
+- Of `r nrow(feasible)` solvers, `r n_viol` return an infeasible portfolio and none says so. The constraint is in the specification object and can be printed; it simply has no effect.
+
+## Auditing the Answer {.codesmall}
+
+Never accept a weight vector without asking whether it satisfies what was requested.
+
+```{r audit}
+#| echo: true
+```
+
+`HHI()` and `diversification()` cover the concentration side of the same question (chapter 14).
+
+## Comparing Specifications as One Object {.codesmall}
+
+```{r combine}
+#| echo: true
+```
+
+`extractWeights()` on a combined object returns one row per optimization; `extractObjectiveMeasures()` and `chart.RiskReward()` compare them on shared axes.
+
+## Why the Searches Fall Short
+
+A search draws candidates, keeps the good ones and perturbs them. Whether it finds the optimum depends on how much of the space it saw.
+
+- The simplex in $N$ dimensions has volume that shrinks with dimension while the number of directions grows.
+- The fraction any finite sample covers falls roughly geometrically in $N$, and each additional draw buys less than the one before.
+- Here $N = 16$: a random sample covers it the way a handful of darts covers a wall.
+
+```{r budget}
+#| output: false
+```
+
+```{r budget-claims}
+#| include: false
+```
+
+## Raising the Search Budget
+
+```{r deck-budget}
+# Reshapes the chapter's `budget` tibble for display; no new analysis.
+budget |>
+  dplyr::mutate(search_size = format(search_size, big.mark = ","),
+                share = sprintf("%.1f%%", 100 * share),
+                rel_time = sprintf("%.0fx", rel_time)) |>
+  kable(align = "rrr",
+        col.names = c("random draws", "share of the attainable Sharpe", "time, relative to 20,000 draws"))
+```
+
+Five times the draws: `r sprintf("%.0f", budget$rel_time[2])` times the time, `r sprintf("%.0f", closed)` percentage points of the gap closed, `r sprintf("%.0f", open)` still open.
+
+::: {.notes}
+The starting cost was already about two orders of magnitude above the quadratic program's. Risk budgeting in chapter 14 has no convex formulation in this package, so its numbers inherit this accuracy.
+:::
+
+## A Heuristic's Answer Is a Random Variable
+
+The convex solvers are deterministic. `DEoptim`, `pso` and `GenSA` start from a random population, so the race table is one draw from a distribution (Gilli et al., 2019).
+
+- **Set the seed** and record it with the result.
+- **Report the spread**, not the best draw: the best of twenty runs is the selection bias of strategy backtests, applied to solver runs.
+- **Seed the search** with the convex answer when one exists, which turns a global hunt into a local refinement.
+
+If the range across seeds is wider than the difference being argued about, there is no difference being argued about.
+
+## Choosing, in Three Questions
+
+1. Is the objective convex and the feasible set convex? Use `ROI` for quadratic objectives and `CVXR` for anything in disciplined convex form. The answer is exact.
+2. If not, is the non-convexity in the objective or in the constraints? A non-convex constraint set such as cardinality can be handled exactly by a mixed-integer solver through `Rglpk`, which certifies optimality. A non-convex objective leaves the heuristics.
+3. If a heuristic is unavoidable, what is the answer worth? Between `r sprintf("%.0f%%", 100 * rng[1])` and `r sprintf("%.0f%%", 100 * rng[2])` of the attainable optimum here, with a spread across seeds to be measured. Often good enough; never the same as solved.
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** Convexity, not speed, separates the solver families: on a convex problem every local minimum is global, so `ROI` and `CVXR` reach the exact answer and a search can only approach it.
+- **Outcome 1.** Cardinality constraints are genuinely non-convex and are the legitimate reason to use a heuristic.
+- **Outcome 2.** Against an independent benchmark, the search methods reach between `r sprintf("%.0f%%", 100 * rng[1])` and `r sprintf("%.0f%%", 100 * rng[2])` of the attainable Sharpe ratio, an order of magnitude more slowly than the convex solvers.
+- **Outcome 3.** A fivefold search budget closed `r sprintf("%.0f", closed)` points of the gap at `r sprintf("%.0f", budget$rel_time[2])` times the cost and left `r sprintf("%.0f", open)` open; a heuristic's answer is one draw.
+- **Outcome 4.** Of `r nrow(feasible)` solvers, `r n_viol` return a portfolio violating a position limit they accepted, and none warns. Accepting and honoring differ, and only honoring can be verified from the weight vector.
+- **Outcome 4.** Audit every result against the constraints that were requested; four lines of checking are all that stand between a specification and a portfolio that ignores it.
+
+## Exercises {.smaller}
+
+Work these in `code/13-solvers-exercises.R`; solutions to follow.
+
+1. Repeat the race with a box constraint capping every weight at 20 percent. Does the convex advantage survive a constraint that makes the answer less extreme? Does the gap between the searches narrow?
+2. `optimize.portfolio.parallel()` takes a `nodes` argument. Read its help page and say what it parallelizes.
+3. Run `pso` on the position-limited problem ten times with different seeds and record the number of holdings each time. Is the violation deterministic?
+4. Run `DEoptim` on the convex problem twenty times with different seeds and report the distribution of the achieved Sharpe ratio. How wide is it relative to the gap to the true optimum?
+5. Write the `audit()` function into your own workflow and apply it to the last optimization you ran in earnest. Report what you find.

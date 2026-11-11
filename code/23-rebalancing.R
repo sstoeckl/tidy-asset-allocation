@@ -15,9 +15,8 @@ library(knitr)
 sweep <- readr::read_csv("tables/oos-sweep.csv", show_col_types = FALSE)
 R <- as_xts_pm(sim_class_returns_monthly, date, class, return)
 
-# ===== Turnover =====
-
 ## ---- turnover-def ----
+# ===== Turnover =====
 # Half the L1 distance between the weights you drifted into and the weights you
 # want. Halved because selling one asset to buy another is one trade, counted
 # once, not twice.
@@ -27,9 +26,8 @@ turnover <- function(w_before, w_after) sum(abs(w_after - w_before)) / 2
 w0 <- rep(1 / ncol(R), ncol(R)); w1 <- replace(w0, 1, w0[1] + 0.1)
 stopifnot(all.equal(PortfolioAnalytics::turnover(w1, w0) * ncol(R) / 2, turnover(w0, w1)))
 
-# ===== Costs are not a single number =====
-
 ## ---- costs ----
+# ===== Costs are not a single number =====
 pm_costs_default()
 
 ## ---- credit-rank ----
@@ -37,9 +35,8 @@ sr_rank <- rank(-apply(R - sim_riskfree_monthly$return, 2, function(x) mean(x) /
 costs   <- pm_costs_default()
 stopifnot(sr_rank["US_credit"] <= 3, names(which.max(costs[names(costs) != ".default"])) == "credit")
 
-# ===== The accounting that rewrites the start of a backtest =====
-
 ## ---- backfill ----
+# ===== The accounting that rewrites the start of a backtest =====
 Rs <- R[1:24, ]
 
 # Weights that begin deliberately late -- as they must, since the first ones
@@ -59,9 +56,8 @@ tibble::tibble(
 ) |>
   dplyr::slice(c(1:3, 11:14))
 
-# ===== What `verbose = TRUE` returns =====
-
 ## ---- verbose ----
+# ===== What `verbose = TRUE` returns =====
 detail <- Return.portfolio(Rs, weights = w, verbose = TRUE)
 names(detail)
 
@@ -70,9 +66,8 @@ drift <- rowSums(abs(zoo::coredata(detail$BOP.Weight) -
                      zoo::coredata(detail$EOP.Weight))) / 2
 round(utils::head(drift[drift > 0], 5), 4)
 
-# ===== What rebalancing less often does to rules and to optimizers =====
-
 ## ---- frequency ----
+# ===== What rebalancing less often does to rules and to optimizers =====
 freq <- sweep |>
   dplyr::filter(window == 60, basis == "gross") |>
   dplyr::select(strategy, frequency, sharpe, ann_turnover) |>
@@ -105,9 +100,8 @@ freq |>
         col.names = c("", "monthly", "quarterly", "annual",
                       "monthly", "quarterly", "annual"))
 
-# ===== And the cost falls hardest on the strategies that can least afford it =====
-
 ## ---- bite ----
+# ===== And the cost falls hardest on the strategies that can least afford it =====
 cfg <- sweep |>
   dplyr::select(window, frequency, strategy, basis, sharpe, ann_turnover) |>
   tidyr::pivot_wider(names_from = basis, values_from = sharpe) |>

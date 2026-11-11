@@ -1,0 +1,453 @@
+---
+title: "Robustness and Model Uncertainty"
+subtitle: "Tidy Asset Allocation in R, Chapter 28"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 28"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/28-robustness.R to the chunks below,
+# so no line of analysis is maintained twice. root.dir takes effect after this
+# chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("28-robustness.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** the difference between parameter uncertainty and model uncertainty, and the worst-case rule the second calls for.
+2. **Derive** the multi-prior portfolio and the Kullback–Leibler worst case, and **show** that each raises the effective risk aversion.
+3. **Implement** the devices (multi-prior, robust ball, resampling, random portfolios) on the sixteen classes, and **audit** what `random_portfolios()` does with a factor-exposure bound.
+4. **Evaluate** the robust portfolios out of sample against the register.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+What should an investor do when the doubt is not about the values of $\boldsymbol{\mu}$ and $\boldsymbol{\Sigma}$, but about whether the model that produced them is the right one?
+
+::: {.statement}
+Garlappi, Uppal and Wang (2007) posed the question for the mean-variance investor and answered it with the decision rule of Gilboa and Schmeidler (1989): hold on to every model the data cannot rule out, and choose the portfolio whose **worst case** over that set is best.
+:::
+
+- The answer is a shrinkage toward the minimum-variance portfolio.
+- A robust policy is still a **strategic** policy: set once from unconditional beliefs, with the ambiguity built into the weights rather than into a signal.
+
+<p class="source">Garlappi, L., Uppal, R. and Wang, T. (2007). Portfolio Selection with Parameter and Model Uncertainty. *Review of Financial Studies*.</p>
+
+## Two Kinds of Not Knowing {.smaller}
+
+::: {.columns}
+::: {.column width="50%"}
+**Parameter uncertainty**
+
+The model is taken as true; a vector of numbers inside it is unknown, and the investor holds a *distribution* over it.
+
+- Tool: **average**, as the Bayesian does.
+- Shrinks the *estimate* toward a prior center (Jorion, 1986) or scales down the risky position (Kan and Zhou, 2007).
+:::
+::: {.column width="50%"}
+**Model uncertainty**
+
+The investor entertains a *set* of models and has no distribution over it, not because the prior is diffuse but because there is none (Knight, 1921; Ellsberg, 1961).
+
+- Tool: **worst case** over the set.
+- Shrinks the *portfolio* toward minimum variance.
+:::
+:::
+
+A distribution has a mean; a set has a **boundary**, on which the worst case sits. What follows derives what the boundary does to the weights.
+
+::: {.notes}
+Averaging needs exactly the weights the investor does not have. That is why Gilboa and Schmeidler replace the average with the minimum.
+:::
+
+## The Multi-Prior Problem {.smaller}
+
+The ambiguity sits in the mean; the covariance matrix is kept. The set of models is a confidence ellipsoid around the sample mean:
+
+$$
+\max_{\boldsymbol{w}} \; \min_{\boldsymbol{\mu} \in \mathcal{E}(\varepsilon)}
+\; \boldsymbol{w}'\boldsymbol{\mu} - \frac{\gamma}{2}\,\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w},
+\qquad
+\mathcal{E}(\varepsilon) = \left\{\boldsymbol{\mu} :
+(\hat{\boldsymbol{\mu}} - \boldsymbol{\mu})'\boldsymbol{\Sigma}^{-1}
+(\hat{\boldsymbol{\mu}} - \boldsymbol{\mu}) \leq \varepsilon \right\}.
+$$
+
+The inner problem has a closed form. The first-order condition of its Lagrangian is $\boldsymbol{w} = 2\lambda\boldsymbol{\Sigma}^{-1}(\hat{\boldsymbol{\mu}} - \boldsymbol{\mu})$, so the worst mean lies in the direction of $\boldsymbol{\Sigma}\boldsymbol{w}$, and the binding constraint fixes the distance:
+
+$$
+\boldsymbol{\mu}^{*}(\boldsymbol{w})
+= \hat{\boldsymbol{\mu}} - \sqrt{\frac{\varepsilon}{\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}}}\;\boldsymbol{\Sigma}\boldsymbol{w},
+\qquad
+\boldsymbol{w}'\boldsymbol{\mu}^{*}(\boldsymbol{w})
+= \boldsymbol{w}'\hat{\boldsymbol{\mu}} - \sqrt{\varepsilon}\,\sigma_{\boldsymbol{w}} .
+$$
+
+Nature marks the portfolio's expected return down by $\sqrt{\varepsilon}$ standard deviations.
+
+## The Robust Objective {.smaller}
+
+The outer problem becomes a mean-variance objective with a second, linear penalty on volatility:
+
+$$
+\max_{\boldsymbol{w}} \;
+\boldsymbol{w}'\hat{\boldsymbol{\mu}}
+- \sqrt{\varepsilon}\,\sigma_{\boldsymbol{w}}
+- \frac{\gamma}{2}\,\sigma^2_{\boldsymbol{w}} .
+$$
+
+With a risk-free asset and no budget constraint, write $\boldsymbol{w} = k\,\boldsymbol{\Sigma}^{-1}\hat{\boldsymbol{\mu}}$ and $C = \hat{\boldsymbol{\mu}}'\boldsymbol{\Sigma}^{-1}\hat{\boldsymbol{\mu}}$. The objective is $kC - \sqrt{\varepsilon C}\,k - \tfrac{\gamma}{2}k^2 C$, and the first-order condition gives
+
+$$
+\boldsymbol{w}^{*} = \frac{1}{\gamma}
+\left(1 - \sqrt{\frac{\varepsilon}{C}}\right)^{+}
+\boldsymbol{\Sigma}^{-1}\hat{\boldsymbol{\mu}} .
+$$
+
+- $\sqrt{C}$ is the maximum attainable Sharpe ratio: the investor holds the plug-in risky portfolio, scaled down by one minus $\sqrt{\varepsilon}$ over that Sharpe ratio.
+- Once the ellipsoid contains a mean at which the best Sharpe ratio is zero, nothing risky is held.
+
+## Fully Invested: Effective Risk Aversion {.smaller}
+
+With $\boldsymbol{\iota}'\boldsymbol{w} = 1$ the first-order condition reads $\hat{\boldsymbol{\mu}} - (\gamma + \sqrt{\varepsilon}/\sigma_{\boldsymbol{w}})\boldsymbol{\Sigma}\boldsymbol{w} = \lambda\boldsymbol{\iota}$. Eliminating $\lambda$ with the budget, and with $A$, $B$, $C$ the scalars of chapter 9:
+
+$$
+\boldsymbol{w}^{*} = \boldsymbol{w}_{\text{mv}} + \frac{1}{\gamma^{*}}\,
+\boldsymbol{\Sigma}^{-1}\!\left(\hat{\boldsymbol{\mu}} - \frac{B}{A}\boldsymbol{\iota}\right),
+\qquad
+\gamma^{*} = \gamma + \frac{\sqrt{\varepsilon}}{\sigma_{\boldsymbol{w}^{*}}} .
+$$
+
+- The robust portfolio is the ordinary mean-variance portfolio of an investor whose risk aversion has been raised from $\gamma$ to $\gamma^{*}$.
+- The speculative component carries no net weight, and its **shrinkage factor** is $\gamma/\gamma^{*} = 1 / (1 + \sqrt{\varepsilon}/(\gamma\sigma_{\boldsymbol{w}^{*}}))$.
+- As $\varepsilon \to \infty$ the factor goes to zero and $\boldsymbol{w}^{*} \to \boldsymbol{w}_{\text{mv}}$: whoever trusts nothing about the means holds the one portfolio that needs none.
+- $\sigma_{\boldsymbol{w}^{*}}$ depends on the answer, so this is a fixed point: $\sigma^2_{\boldsymbol{w}^{*}} = 1/A + D/\gamma^{*2}$ with $D = C - B^2/A$, one scalar equation.
+
+## The Size of the Ellipsoid {.smaller}
+
+Under normality, $T(T-N)/((T-1)N)$ times the quadratic form, with $\hat{\boldsymbol{\Sigma}}$ in place of $\boldsymbol{\Sigma}$, follows an $F$ distribution with $N$ and $T-N$ degrees of freedom. Hence
+
+$$
+\varepsilon(p) = \frac{N\,(T-1)}{T\,(T-N)}\; F^{-1}_{N,\,T-N}(p)
+$$
+
+is the radius of the ellipsoid that contains the true mean with probability $p$.
+
+- The set of models is a **confidence region**: a sampling object. The radius grows with $N$ and shrinks with $T$, as the standard error of the mean does.
+- The multi-prior portfolio is therefore a parameter-uncertainty device that uses a worst case where the Bayesian uses an average.
+- Bayes–Stein moves the *estimate* toward a common mean; the multi-prior rule moves the *portfolio* toward minimum variance. Both end in the same place as the sample shrinks.
+
+::: {.notes}
+Robust optimization more generally specifies a set for the inputs: a factor-model set gives a second-order cone program (Goldfarb and Iyengar, 2003), and box sets give a per-asset haircut (Tütüncü and Koenig, 2004). The ellipsoid gives the volatility penalty above.
+:::
+
+## The Kullback–Leibler Ball {.smaller}
+
+Robust control (Hansen and Sargent, 2008) widens the set to every distribution within a fixed relative entropy of a reference model $p$:
+
+$$
+\mathcal{Q}(\eta) = \left\{ q : \mathrm{KL}(q \,\|\, p)
+= \sum_t q_t \log\frac{q_t}{p_t} \leq \eta \right\}.
+$$
+
+An alternative may move tails, correlations and skewness as well as means. For $x_t = \boldsymbol{w}'\boldsymbol{r}_t$, minimizing $\sum_t q_t x_t$ under the entropy constraint gives $x_t + \tfrac{1}{\theta}(\log(q_t/p_t) + 1) = \lambda$, the **exponential tilt**:
+
+$$
+q_t^{*} = \frac{p_t\, e^{-\theta x_t}}{\sum_s p_s\, e^{-\theta x_s}},
+\qquad \mathrm{KL}(q^{*}\,\|\,p) = \eta .
+$$
+
+Nature reweights the sample toward the months in which the portfolio did badly, with an intensity $\theta$ that rises with the radius.
+
+## Robustness as Risk Aversion {.smaller}
+
+The tilt expressed through its multiplier is the multiplier preference of Anderson, Hansen and Sargent (2003):
+
+$$
+\min_{q \in \mathcal{Q}(\eta)} \mathbb{E}_q[x]
+= \max_{\theta > 0}\left\{ -\frac{1}{\theta}\log \mathbb{E}_p\!\left[e^{-\theta x}\right]
+- \frac{\eta}{\theta} \right\}.
+$$
+
+- The first term is the certainty equivalent of an investor with exponential utility and absolute risk aversion $\theta$: robustness and risk aversion are nearly indistinguishable from outside (Maenhout, 2004).
+- For a Gaussian reference, the relative entropy of a shift in the mean is $\tfrac{1}{2}(\boldsymbol{\mu} - \hat{\boldsymbol{\mu}})'\boldsymbol{\Sigma}^{-1}(\boldsymbol{\mu} - \hat{\boldsymbol{\mu}})$, so a ball restricted to mean shifts is the ellipsoid with $\varepsilon = 2\eta$.
+- On the empirical distribution the ball is larger, and the extra room is what the application measures.
+- Between the average and the worst case lies the smooth ambiguity model (Klibanoff, Marinacci and Mukerji, 2005): ambiguity aversion becomes a parameter rather than a switch.
+
+## Resampling {.smaller}
+
+Michaud (1989) replaces the frontier by its average over resampled inputs: draw $(\hat{\boldsymbol{\mu}}_b, \hat{\boldsymbol{\Sigma}}_b)$, solve the frontier on each draw, and average the weights rank by rank,
+
+$$
+\bar{\boldsymbol{w}}_k = \frac{1}{B}\sum_{b=1}^{B}
+\boldsymbol{w}_k\!\left(\hat{\boldsymbol{\mu}}_b, \hat{\boldsymbol{\Sigma}}_b\right),
+\qquad k = 1, \dots, K ,
+$$
+
+where $k$ indexes the frontier portfolios from minimum variance to maximum return.
+
+- The result is a frontier of more diversified portfolios that move less when the sample changes.
+- It is an average over parameter draws, hence a parameter-uncertainty device: every draw comes from the same model, and none asks what happens if that model is wrong.
+- Scherer (2002) adds that the expectation of an optimizer is not the optimizer of an expectation.
+
+```{r helpers}
+#| include: false
+```
+
+## The Sixteen Classes {.smaller}
+
+The modeled market: `r N` risky classes, `r Tn` monthly returns each, in excess of the Treasury bill. Risk aversion is $\gamma = 3$ throughout, and every number is annualized from monthly moments.
+
+- The quadratic programs are written out with `quadprog`, so that the loops of this chapter run in seconds; the `PortfolioAnalytics` specification is kept beside them as a check.
+- The check is an assertion: the package's minimum-variance weights match ours to $10^{-4}$.
+- Each bootstrap draw resamples the months in twelve-month blocks, which keeps the serial dependence a naive bootstrap would destroy.
+- On each draw we solve the long-only frontier at 25 equally spaced targets and average by rank.
+
+```{r resample}
+#| include: false
+```
+
+## The Resampled Frontier
+
+```{r fig-28-resampled}
+#| fig-alt: "Sample frontier, two hundred block-bootstrap frontiers and their rank-by-rank average, the resampled frontier, in the volatility-return plane."
+#| fig-asp: 0.52
+```
+
+The resampled frontier lies inside the sample frontier: averaging long-only weights diversifies them. Every point is evaluated at the full-sample moments.
+
+```{r resample-claims}
+#| include: false
+```
+
+## The Resampled Tangency Portfolio
+
+```{r tbl-28-resampled-weights}
+```
+
+- The resampled tangency holds `r held(w_res_tan)` classes where the sample tangency holds `r held(w_tan)`; the two are `r sprintf("%.0f%%", 100 * turnover(w_res_tan, w_tan))` of the portfolio apart.
+- A draw's tangency portfolio lies `r sprintf("%.0f%%", 100 * dist_tan)` from the sample tangency and `r sprintf("%.0f%%", 100 * dist_res)` from the resampled one: the average is not a point the draws cluster around any more tightly.
+- It pays `r sprintf("%.1f%%", 100 * (1 - p_sr(w_res_tan) / p_sr(w_tan)))` of the in-sample Sharpe ratio for diversifying, and no point on the resampled frontier reaches the sample tangency's ratio.
+
+::: {.notes}
+This is Scherer's point: the averaged frontier is dominated at the moments it was averaged under. Whether it is dominated at the moments that follow is the out-of-sample question at the end.
+:::
+
+```{r random-portfolios}
+#| include: false
+```
+
+```{r clouds}
+#| include: false
+```
+
+## Random Portfolios as a Picture {.smaller}
+
+`random_portfolios()` is used here not as a solver but as a sample of the feasible set, drawn three ways, so that the frontier can be seen against the set it is the edge of.
+
+```{r tbl-28-random}
+```
+
+- `rp_sample()` perturbs weights one at a time under the full constraint list.
+- `rp_simplex()` draws uniformly on the simplex and biases toward faces, edges and vertices through `fev`, with $q = 2^{\text{fev}}$.
+- `rp_grid()` lays a grid over the box and normalizes: in sixteen dimensions its `r format(nrow(rp_g), big.mark = ",")` portfolios are the equal-weighted subsets of the classes.
+
+## Three Clouds, One Feasible Set
+
+```{r fig-28-random}
+#| fig-alt: "Three panels of random portfolios in the volatility-return plane, with the long-only frontier drawn over each cloud and the member nearest to the tangency portfolio marked."
+#| fig-asp: 0.45
+```
+
+```{r random-claims}
+#| include: false
+```
+
+Nothing a cloud contains comes within `r sprintf("%.0f%%", 100 * min(rp_tab$nearest))` of the tangency portfolio in trading distance; the best member reaches `r sprintf("%.0f%%", 100 * max(rp_tab$best_share))` of its Sharpe ratio. The frontier is the edge of the set, and a sample of the set does not reach its edge.
+
+```{r factor-exposure}
+#| include: false
+```
+
+## A Trap: Factor-Exposure Bounds {.smaller}
+
+::: {.callout-note}
+## `random_portfolios()` ignores a factor-exposure constraint
+
+We take the betas of the sixteen classes on their equal-weighted average and bound the portfolio beta to $[0.2, 0.4]$, below the tangency portfolio's `r sprintf("%.2f", beta_tan)`.
+
+Of the `r nrow(rp_fe)` portfolios the default call keeps, **`r sprintf("%.0f%%", 100 * violates(rp_fe))` breach the bound**, as do `r sprintf("%.0f%%", 100 * violates(rp_fe_x))` of the simplex draws. The documentation lists the constraints the generators check, and factor exposure is not among them.
+:::
+
+```{r factor-exposure-optimizer}
+#| echo: true
+```
+
+```{r factor-exposure-claims}
+#| include: false
+```
+
+- `constrained_objective()` has no term for factor exposure, so `optimize_method = "random"` returns the breach **without a warning**; `ROI` returns the cap exactly.
+- A factor-exposure constraint is linear and belongs on the convex path.
+
+```{r multi-prior-closed}
+#| include: false
+```
+
+```{r multi-prior-checks}
+#| include: false
+```
+
+## The Multi-Prior Portfolio, Checked
+
+We write the fully invested solution out, check it against a direct maximization of the robust objective, and compare it with `glPF()` of the `uncertaintymeasures` package.
+
+- At the median radius $\varepsilon(0.5) = `r sprintf("%.3f", eps_half)`$ the shrinkage factor $\gamma/\gamma^{*}$ is `r sprintf("%.2f", mp$shrink)`: the speculative component is cut to about a fifth before the ellipsoid has even odds of containing the true mean.
+- The derived weights agree with the direct maximization to `r sprintf("%.0e", max(abs(mp$w - w_brute)))`.
+- `glPF()` agrees at $\varepsilon = 0$; at this radius its weights differ by up to `r sprintf("%.3f", max(abs(mp$w - w_glpf)))` and attain a lower value of the objective, so the chapter keeps the derived solution.
+
+::: {.notes}
+Under the long-only constraint the closed form is gone and the fixed point remains: solve the quadratic program at the current effective risk aversion, read off the volatility, update, repeat.
+:::
+
+```{r multi-prior-long-only}
+#| include: false
+```
+
+## The Long-Only Multi-Prior Portfolio
+
+```{r fig-28-multiprior}
+#| fig-alt: "Stacked areas of the long-only multi-prior weights as the radius of the ellipsoid grows from zero."
+#| fig-asp: 0.5
+```
+
+```{r multi-prior-claims}
+#| include: false
+```
+
+- The distance to minimum variance falls from `r sprintf("%.0f%%", 100 * mp_tab$to_gmv[1])` at the plug-in solution to `r sprintf("%.0f%%", 100 * mp_tab$to_gmv[nrow(mp_tab)])` at $p = `r p_grid[length(p_grid)]`$, where $\gamma^{*}$ has reached `r sprintf("%.0f", mp_tab$gamma_star[nrow(mp_tab)])` from `r gamma`.
+- The largest move comes first: `r sprintf("%.0f%%", 100 * mp_tab$to_plugin[2])` of the weight between $p = 0$ and $p = 0.5$, since the plug-in portfolio is all equity.
+
+```{r ambiguity-measure}
+#| include: false
+```
+
+```{r ambiguity-claims}
+#| include: false
+```
+
+## A Time-Varying Radius {.smaller}
+
+Stöckl (2022) turns $\varepsilon(p)$ into a time series: the confidence level is replaced by the $p$-value of the month's turbulence, so a month far from the estimated mean in the metric of $\hat{\boldsymbol{\Sigma}}^{-1}$ widens the ellipsoid. `OSminimax_one()` computes the radius out of sample on sixty-month windows.
+
+- The radius is a monotone transform of turbulence: rank correlation `r sprintf("%.2f", amb[["rank_cor_turbulence"]])`.
+- `r sprintf("%.0f%%", 100 * amb[["r2_log_dispersion"]])` of the variation in its logarithm is the logarithm of the month's cross-sectional dispersion alone.
+- In `r sprintf("%.0f%%", 100 * amb[["share_nothing_risky"]])` of the months the radius exceeds the squared Sharpe ratio, and the rule holds nothing risky.
+
+Time-varying ambiguity of this kind is largely a volatility-timing rule (Kritzman and Li, 2010). Whether it measures something volatility does not cannot be settled on a modeled market.
+
+```{r kl-tilt}
+#| include: false
+```
+
+## The Kullback–Leibler Robust Portfolio
+
+```{r tbl-28-kl}
+```
+
+```{r kl-claims}
+#| include: false
+```
+
+- Distance to minimum variance falls with the radius, to `r sprintf("%.0f%%", 100 * kl_tab$to_gmv[nrow(kl_tab)])` at $\eta = `r etas[length(etas)]`$, but by a different route: the mark-down follows each class's covariance with the months in which the portfolio lost most.
+- `r kl_tab$worst_class[2]`, which the plug-in portfolio holds, is marked down by `r sprintf("%.0f", -100 * kl_tab$mark_down[2])` percentage points a year at $\eta = `r etas[2]`$.
+- Even the smallest radius moves more than half the portfolio: the plug-in portfolio at $\gamma = `r gamma`$ is the all-equity corner.
+
+```{r rolling}
+#| include: false
+```
+
+## Out of Sample
+
+Six portfolios, re-estimated on every sixty-month window and held one month, from model year `r model_year(oos_start)`. The multi-prior radius is $\varepsilon(0.5)$ at $T = 60$, and the ball is $\eta = \varepsilon(0.5)/2$.
+
+```{r tbl-28-oos}
+```
+
+```{r oos-claims}
+#| include: false
+```
+
+- By Sharpe ratio the order is `r paste(labels[rank_sr], collapse = ", ")`.
+- Multi-prior raises the Sharpe ratio from `r sprintf("%.2f", sr[["max_sharpe"]])` to `r sprintf("%.2f", sr[["multi_prior"]])`, and cuts turnover from `r sprintf("%.2f", to[["max_sharpe"]])` to `r sprintf("%.2f", to[["multi_prior"]])` and the drawdown from `r sprintf("%.0f%%", 100 * dd[["max_sharpe"]])` to `r sprintf("%.0f%%", 100 * dd[["multi_prior"]])`; the ball does slightly less of each.
+- The resampled tangency moves weight away from `US_government`, from `r sprintf("%.0f%%", 100 * gov[["max_sharpe"]])` to `r sprintf("%.0f%%", 100 * gov[["resampled"]])`, and is more volatile with a lower Sharpe ratio than the portfolio it was meant to stabilize.
+
+::: {.notes}
+Equal weighting has the highest certainty equivalent at gamma equal to 3 and the lowest turnover, as DeMiguel, Garlappi and Uppal (2009) would predict: it guards against model uncertainty by holding no model. Minimum variance needs no mean and finishes first of the six.
+:::
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** Parameter uncertainty is a distribution over the inputs, treated by averaging; model uncertainty is a set of models with no distribution, treated by a worst case. The first shrinks the estimate, the second the portfolio.
+- **Outcome 2.** The multi-prior investor holds the mean-variance portfolio at effective risk aversion $\gamma^{*} = \gamma + \sqrt{\varepsilon}/\sigma_{\boldsymbol{w}}$ and converges to minimum variance as the ellipsoid grows. Its radius is a confidence level, a parameter-uncertainty device in a model-uncertainty frame.
+- **Outcome 2.** A Kullback–Leibler ball reweights the sample toward the portfolio's bad months; with a Gaussian reference it is the ellipsoid with $\varepsilon = 2\eta$. The worst case marks down the classes with the worst tails.
+- **Outcome 4.** Resampling averages over parameter draws. On this market the resampled tangency is more diversified in sample and dominated out of sample; it is not a robust portfolio in this chapter's sense.
+- **Outcome 3.** `random_portfolios()` is a picture of the feasible set, not a search of it, and it ignores a factor-exposure constraint at generation and in the objective; such a bound belongs on the convex path.
+
+## Exercises {.smaller}
+
+Work these in `code/28-robustness-exercises.R`; solutions are in appendix G of the book.
+
+1. Rerun the rolling exercise with the multi-prior portfolio at $p = 0.1$, $0.5$ and $0.9$. Report the Sharpe ratio, the turnover and the mean trading distance from minimum variance. At which level is it indistinguishable from minimum variance?
+2. Compute the expected return of the resampled frontier's highest-ranked portfolio and compare it with the highest sample mean. Explain, using the long-only constraint, why they differ, and what that implies for the right end of a resampled frontier.
+3. Fix the trap by hand: generate two thousand portfolios with `rp_sample()` under `spec_fe`, discard those with beta outside $[0.2, 0.4]$, and compare the best survivor's Sharpe ratio with the `ROI` solution.
+4. Compute the Gaussian worst-case mean at $\varepsilon = 2\eta$ for the plug-in portfolio and compare it class by class with the tilted mean at $\eta = 0.05$. Which classes does the tilt mark down more, and what feature of their distribution explains it?

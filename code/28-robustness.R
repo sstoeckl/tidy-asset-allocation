@@ -19,9 +19,8 @@ stopifnot(ncol(Re) == 16L, !anyNA(Re))
 N  <- ncol(Re); Tn <- nrow(Re); d <- zoo::index(R)
 mu <- colMeans(Re); S <- stats::cov(Re)
 
-# ===== Four Robustifications on the Sixteen Classes =====
-
 ## ---- helpers ----
+# ===== Four Robustifications on the Sixteen Classes =====
 qp_simplex <- function(Dmat, dvec, nm) {       # max d'w - w'Dw/2 on the simplex
   n <- length(dvec)
   sol <- quadprog::solve.QP(Dmat = Dmat * 1e4, dvec = dvec * 1e4,
@@ -62,9 +61,8 @@ w_pa <- extractWeights(optimize.portfolio(
   Re, add.objective(base_spec, type = "risk", name = "var"), optimize_method = "ROI"))
 stopifnot(max(abs(w_pa[colnames(Re)] - w_gmv)) < 1e-4)
 
-# ===== The resampled frontier =====
-
 ## ---- resample ----
+# ===== The resampled frontier =====
 set.seed(1602)
 block_index <- function(n, block = 12L) {
   starts <- sample.int(n - block + 1L, ceiling(n / block), replace = TRUE)
@@ -134,9 +132,8 @@ tibble::tibble(class = c(show, "Sharpe ratio", "positions"),
                resampled = c(sprintf("%.3f", w_res_tan[show]), sprintf("%.3f", p_sr(w_res_tan)), held(w_res_tan))) |>
   kable(align = "lrr")
 
-# ===== Random portfolios as a picture of the feasible set =====
-
 ## ---- random-portfolios ----
+# ===== Random portfolios as a picture of the feasible set =====
 set.seed(1602)
 rp_s <- rp_sample(base_spec, permutations = 2000)
 rp_x <- rp_simplex(base_spec, permutations = 2000, fev = 0:5)
@@ -212,9 +209,8 @@ stopifnot(rp_tab$kind[1] == "sample", all(rp_tab$best_share < 1),
           all(diff(fev_pos) <= 0), fev_pos[["0"]] == N,
           nrow(rp_g) == 2^N - 1L, all(rp_tab$nearest > 0.1))
 
-# ===== `random_portfolios()` ignores a factor-exposure constraint =====
-
 ## ---- factor-exposure ----
+# ===== `random_portfolios()` ignores a factor-exposure constraint =====
 mkt  <- rowMeans(zoo::coredata(Re))
 beta <- apply(zoo::coredata(Re), 2, function(x) stats::cov(x, mkt) / stats::var(mkt))
 beta_tan <- sum(w_tan * beta)
@@ -243,9 +239,8 @@ stopifnot(beta_tan > 0.4, violates(rp_fe) == 1, violates(rp_fe_x) > 0.9,
           abs(sum(w_fe_roi[colnames(Re)] * beta) - 0.4) < 1e-6,
           sum(w_fe_random[colnames(Re)] * beta) > 0.4, !penalized)
 
-# ===== The multi-prior portfolio =====
-
 ## ---- multi-prior-closed ----
+# ===== The multi-prior portfolio =====
 gamma <- 3
 A <- as.numeric(t(rep(1, N)) %*% solve(S, rep(1, N)))
 Bs <- as.numeric(t(rep(1, N)) %*% solve(S, mu))
@@ -342,9 +337,8 @@ round(amb, 3)
 stopifnot(amb[["rank_cor_turbulence"]] > 0.99, amb[["r2_log_dispersion"]] > 0.4,
           amb[["share_nothing_risky"]] > 0.25)
 
-# ===== The Kullback–Leibler ball =====
-
 ## ---- kl-tilt ----
+# ===== The Kullback–Leibler ball =====
 Xm <- zoo::coredata(Re)
 kl_tilt <- function(w, eta, X = Xm) {
   x <- as.numeric(X %*% w)
@@ -411,9 +405,8 @@ stopifnot(all(diff(kl_tab$theta) > 0), all(diff(kl_tab$to_gmv) < 0),
           w_plugin[[kl_tab$worst_class[2]]] > 0.1)
 eta_half <- eps_half / 2
 
-# ===== Robustness Out of Sample =====
-
 ## ---- rolling ----
+# ===== Robustness Out of Sample =====
 win <- 60L
 ends <- seq.int(120L, Tn - 1L)
 oos_start <- d[121]

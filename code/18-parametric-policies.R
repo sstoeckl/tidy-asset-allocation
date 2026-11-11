@@ -22,9 +22,8 @@ stopifnot(ncol(R) == 16L, ncol(Ra) == 123L, !anyNA(Ra),
           identical(zoo::index(Ra), dates), all(sim_riskfree_monthly$date == dates))
 gamma <- 5
 
-# ===== The equity panel =====
-
 ## ---- characteristics ----
+# ===== The equity panel =====
 held  <- 14:Tn          # the months whose return the policy earns
 known <- held - 1L      # the month end at which their weights are set
 
@@ -80,9 +79,8 @@ stopifnot(
   identical(dimnames(X_eq)[1:2], dimnames(wbar_eq)), identical(dimnames(wbar_eq), dimnames(Rn_eq)))
 dim(X_eq)
 
-# ===== The policy in forty lines =====
-
 ## ---- policy ----
+# ===== The policy in forty lines =====
 ppp_weights <- function(theta, X, wbar, long_only = FALSE) {
   stopifnot(length(theta) == dim(X)[3], identical(dimnames(X)[1:2], dimnames(wbar)))
   tilt <- 0
@@ -134,9 +132,8 @@ theta_nl <- stats::nlminb(c(2, 2), function(th) -ppp_utility(th, X_eq, wbar_eq, 
 stopifnot(max(abs(theta_eq - theta_nl)) < 0.01)
 rbind(optim_from_zero = theta_eq, nlminb_from_2_2 = theta_nl)
 
-# ===== Standard errors two ways =====
-
 ## ---- inference ----
+# ===== Standard errors two ways =====
 u_t <- function(th) crra(rowSums(ppp_weights(th, X_eq, wbar_eq) * Rn_eq), gamma)
 H   <- numDeriv::jacobian(u_t, theta_eq)                       # T x K scores, @eq-18-foc
 G   <- numDeriv::hessian(function(th) mean(u_t(th)), theta_eq)
@@ -194,9 +191,8 @@ ce_crra    <- function(r) mean((1 + r)^(1 - gamma))^(12 / (1 - gamma)) - 1   # a
 stopifnot(tt("size", "theta") < 0, tt("momentum", "theta") > 0, abs(tt("size", "t")) > 2,
           abs(tt("momentum", "premium_t")) < 2, mom_priced > tt("momentum", "premium"))
 
-# ===== Worked: the ten largest names in one month =====
-
 ## ---- worked ----
+# ===== Worked: the ten largest names in one month =====
 last <- dimnames(X_eq)[[1]][dim(X_eq)[1]]                # the last month of the sample
 top  <- names(sort(wbar_eq[last, ], decreasing = TRUE))[1:10]
 worked <- tibble::tibble(name = top, benchmark = unname(wbar_eq[last, top]),
@@ -216,9 +212,8 @@ worked |>
   kable(align = "lrrrrr",
         col.names = c("", "benchmark", "size", "momentum", "tilt", "policy weight"))
 
-# ===== The timing policy across sixteen classes =====
-
 ## ---- class-panel ----
+# ===== The timing policy across sixteen classes =====
 grp <- sub(".*_", "", colnames(R))               # government, credit, equity, commodity
 cv <- sim_curve_weekly |>
   dplyr::filter(series %in% c("US_Slope", "US_IG_Spread")) |>
@@ -264,9 +259,8 @@ stopifnot(all(theta_cl > 0), names(which.max(theta_cl)) == "momentum",
 round(rbind(free    = c(theta_free, lowest_weight = min(W_free)),
             simplex = c(theta_cl,   lowest_weight = min(W_ins))), 3)
 
-# ===== The policy itself is outside `PortfolioAnalytics` =====
-
 ## ---- pa-reuse ----
+# ===== The policy itself is outside `PortfolioAnalytics` =====
 acc_ins <- path_returns(W_ins, Rn_cl[ins, ], cost_cl)
 W_xts   <- xts::xts(W_ins, order.by = dates[known[ins]])       # dated when they are set
 
@@ -283,9 +277,8 @@ stopifnot(all.equal(to_pa * ncol(W_ins) / 2, unname(acc_ins[2, "turnover"])))
 c(months_with_weights = nrow(rp), months_returned = nrow(rp_all),
   turnover_package = to_pa, turnover_eq_23 = unname(acc_ins[2, "turnover"]))
 
-# ===== The coefficients through time =====
-
 ## ---- oos-estimates ----
+# ===== The coefficients through time =====
 refit <- seq(burn, Tn - 1L, by = 12L)      # month ends at which theta is re-estimated
 oos   <- held > burn
 stopifnot(held[oos][1] == burn + 1L, all(model_year(dates[refit + 1L]) == 11:31))
@@ -334,9 +327,8 @@ shrink  <- function(k) mean(abs(th("equity sleeve.net returns", k))) / mean(abs(
 stopifnot(all(th(eq_g, "size") < 0), all(TH[[cl_g]] > 0), mom_neg > 0,
           th(eq_g, "momentum")[1] < 0, shrink("momentum") < shrink("size"))
 
-# ===== Performance against the benchmarks =====
-
 ## ---- oos-performance ----
+# ===== Performance against the benchmarks =====
 policy_path <- function(TH, X, wbar, long_only = FALSE) {
   j <- findInterval(held[oos] - 1L, refit)          # the latest estimate before each month
   W <- wbar[oos, ]

@@ -1,0 +1,438 @@
+---
+title: "Return, Risk, and the Investor's Problem"
+subtitle: "Tidy Asset Allocation in R, Chapter 3"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 3"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/03-return-risk-and-the-investor.R to the
+# chunks below, so no line of analysis is maintained twice. root.dir takes
+# effect after this chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("03-return-risk-and-the-investor.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+```
+
+```{r data}
+#| include: false
+```
+
+```{r bill-path}
+#| include: false
+```
+
+```{r means}
+#| include: false
+```
+
+```{r annualized}
+#| include: false
+```
+
+```{r excess}
+#| include: false
+```
+
+```{r sharpe-rank}
+#| include: false
+```
+
+```{r sharpe-horizon}
+#| include: false
+```
+
+```{r lo-correction}
+#| include: false
+```
+
+```{r implied-gamma}
+#| include: false
+```
+
+```{r bill-column}
+#| include: false
+```
+
+```{r hedge}
+#| include: false
+```
+
+```{r moments}
+#| include: false
+```
+
+```{r basis-dominance}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** the return conventions (simple and log, arithmetic and geometric, annualization, the Sharpe ratio over a horizon) and **compute** them in `PerformanceAnalytics`.
+2. **Explain** why every optimization in the book runs on excess returns, and what an optimizer does when it is handed total returns.
+3. **Derive** the mean-variance criterion from expected utility and **read** the risk-aversion parameter $\gamma$ in basis points.
+4. **Apply** the northwest rule to the sixteen series, and **predict** what a rising $\gamma$ does under full investment and with the budget relaxed.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 1, 3 and 4.
+:::
+
+## The Question {.smaller}
+
+What does an investor want from a portfolio, and in which units should the answer be measured?
+
+::: {.statement}
+Markowitz (1952) reduced the first question to two numbers per portfolio, an expected return and a variance. Von Neumann and Morgenstern (1944) gave the criterion that ranks risky prospects: expected utility.
+:::
+
+- Every mean-variance objective approximates that criterion; the quality of the approximation depends on how a return is defined, over which horizon, in which currency, and relative to which riskless alternative.
+- These definitions are fixed here once, so that no later chapter has to revisit them.
+- The data are the `r ncol(R)` risky class series of the modeled market, `r nrow(R)` monthly returns each.
+
+<p class="source">Markowitz, H. (1952). Portfolio Selection. *Journal of Finance* 7(1), 77–91. von Neumann, J. and Morgenstern, O. (1944). *Theory of Games and Economic Behavior*. Princeton University Press.</p>
+
+## Simple Returns and Log Returns {.codesmall}
+
+$$
+R_t = \frac{P_t + D_t}{P_{t-1}} - 1,
+\qquad
+r_t = \log\left(1 + R_t\right),
+\qquad
+1 + R_{0,T} = \prod_{t=1}^{T}\left(1 + R_t\right) = \exp\left(\sum_{t=1}^{T} r_t\right).
+$$
+
+- Simple returns add **across assets**: the portfolio return is $\boldsymbol{w}'\boldsymbol{R}_t$.
+- Log returns add **across time**.
+- The shipped data are simple returns, and they stay simple wherever a portfolio is formed.
+
+```{r prices}
+#| echo: true
+```
+
+::: {.notes}
+The assertion in the chunk checks the rebuilt simple return against the shipped one. The first observation is NA because a return needs two prices.
+:::
+
+## Averages and Annualization
+
+The arithmetic mean $\hat\mu = T^{-1}\sum_t R_t$ is the expected one-period return and the input to every objective. The geometric mean $g$ is the constant return that gives the same terminal wealth. To second order,
+
+$$
+\log(1 + g) \approx \mu - \frac{\sigma^2}{2}
+\qquad\text{(variance drag)},
+$$
+
+$$
+\mu_{\text{a}} = 12\,\mu_{\text{m}},
+\qquad
+\sigma_{\text{a}} = \sqrt{12}\,\sigma_{\text{m}},
+\qquad
+1 + g_{\text{a}} = \left(1 + g_{\text{m}}\right)^{12}.
+$$
+
+Multiplying a geometric monthly mean by twelve understates the compounded annual return; $\sqrt{12}$ for the volatility assumes independent months.
+
+## The Drag on `US_equity`, Numbers Substituted
+
+$$
+\mu - g
+= `r sprintf("%.6f", mu_m)` - `r sprintf("%.6f", g_m)`
+= `r sprintf("%.6f", mu_m - g_m)`,
+\qquad
+\frac{\sigma^2}{2} = \frac{`r sprintf("%.6f", s2_m)`}{2} = `r sprintf("%.6f", s2_m / 2)`.
+$$
+
+- The two agree to `r sprintf("%.1e", abs(mu_m - g_m - s2_m / 2))`, the third-order term the approximation drops.
+- The drag is `r sprintf("%.1f", 1e4 * (mu_m - g_m))` basis points a month, or `r sprintf("%.2f", 100 * 12 * (mu_m - g_m))` percentage points a year, on `r sprintf("%.1f%%", 100 * sqrt(s2_m * 12))` annualized volatility.
+- A dollar in `US_equity` became `r sprintf("%.1f", 1 + as.numeric(Return.cumulative(x)))` dollars: $(1 + `r sprintf("%.4f", as.numeric(Return.annualized(x, scale = 12)))`)^{`r nrow(R) / 12`}$, not $1 + `r nrow(R) / 12` \times `r sprintf("%.4f", mu_m * 12)`$.
+
+::: {.notes}
+The arithmetic figure is the right input to the quadratic utility and the wrong answer to the question of what the asset paid. Both statements are true; they answer different questions.
+:::
+
+## The Sharpe Ratio and Its Horizon
+
+$$
+\text{SR} = \frac{\mu - r_f}{\sigma} = \frac{\mu^e}{\sigma^e},
+\qquad
+\text{SR}_q = \text{SR}_1 \cdot
+\frac{q}{\sqrt{q + 2\sum_{k=1}^{q-1}(q - k)\,\rho_k}} .
+$$
+
+- Sharpe (1966, 1994) introduced the ratio; Lo (2002) derived the horizon formula.
+- With every $\rho_k = 0$ the factor is $\sqrt{q}$, and $\sqrt{12}$ turns a monthly ratio into an annual one.
+- Positive autocorrelation makes the naive $\sqrt{q}$ **overstate** the annual ratio; negative autocorrelation makes it understate it.
+
+<p class="source">Lo, A. W. (2002). The Statistics of Sharpe Ratios. *Financial Analysts Journal* 58(4), 36–52.</p>
+
+## Horizon Aggregation on the Data
+
+```{r sharpe-horizon-out}
+#| echo: false
+# horizons, shortfall and rho1 come from the chapter's sharpe-horizon chunk
+round(cbind(horizons, shortfall, rho1 = rho1[rownames(horizons)]), 3)
+```
+
+- For `US_government` the annual ratio is `r sprintf("%.0f%%", 100 * shortfall[["US_government"]])` below the $\sqrt{12}$ figure; its first-order autocorrelation is `r sprintf("%.3f", rho1[["US_government"]])`.
+- The correction overstates the annual ratio of `r sum(lo_ratio < 1)` of the sixteen series, `r paste0("\x60", names(which.min(lo_ratio)), "\x60")` most, by `r sprintf("%.0f%%", 100 * (1 / min(lo_ratio) - 1))`. The `r n_lead` largest overstatements are government and credit series.
+- $\sqrt{12}$ is the convention of the book, with that caveat attached.
+
+::: {.notes}
+For US_equity the shortfall is not explained by first-order autocorrelation; the direct figure rests on only `r nrow(R) / 12` annual observations and is itself imprecise.
+:::
+
+## One Ratio, Two Package Defaults {.codesmall}
+
+```{r sharpe-two-ways}
+#| echo: true
+```
+
+::: {.callout-note}
+## `geometric = TRUE` against `geometric = FALSE`
+
+`table.AnnualizedReturns()` divides the compounded excess return by the volatility; `SharpeRatio.annualized()` uses twelve times the arithmetic mean. The gap is the drag divided by the volatility, so it grows with volatility and can reorder a ranking: `r nrow(moved)` of the sixteen series change rank, always two at a time. Mixing the conventions in one table is not defensible.
+:::
+
+## Excess Returns as the Basis
+
+$$
+R^e_{it} = R_{it} - r_{f,t}.
+$$
+
+1. The theory is defined relative to a riskless rate: the tangency portfolio is where a ray from $r_f$ touches the frontier (Tobin, 1958; Sharpe, 1964).
+2. `PortfolioAnalytics` has no argument for one; excess returns make its maximum-Sharpe objective the Sharpe ratio.
+3. When the weights sum to less than one, the objective treats the balance as earning zero. With excess returns that is true.
+4. The bill moves: each period's own bill is the alternative. It paid `r sprintf("%.1f%%", 100 * rate[1])` a year in `r fmt_model(sim_riskfree_monthly$date[1])` and `r sprintf("%.2f%%", 100 * min(rate))` at its lowest, in `r fmt_model(sim_riskfree_monthly$date[which.min(rate)])`.
+
+The riskless rate is the three-month bill, not a money-market series: those carry duration and lose money in far more months.
+
+## Nominal, Real, and Currency {.smaller}
+
+$$
+1 + i = (1 + r)(1 + \pi),
+\qquad
+1 + R^{\$}_t = \left(1 + R^{\text{loc}}_t\right)\left(1 + f_t\right),
+\qquad
+R^{\text{hedged}}_t = R^{\$}_t - f_t \approx R^{\text{loc}}_t .
+$$
+
+- The modeled market carries no inflation series: the book works in nominal dollars, and the bill is riskless in nominal terms only (Fisher, 1930; Campbell and Viceira, 2001, 2002).
+- Every series is a dollar return, unhedged. Hedging is a subtraction of the matching `fx_return`, to first order.
+- Hedging removes between `r sprintf("%.0f%%", 100 * min(hedged_govs$removed))` and `r sprintf("%.0f%%", 100 * max(hedged_govs$removed))` of a foreign government bond's volatility.
+
+```{r hedge-out}
+#| echo: false
+# hedged_govs is built in the chapter's hedge chunk
+hedged_govs |>
+  dplyr::mutate(dplyr::across(-series, ~ sprintf("%.1f%%", 100 * .x))) |>
+  kable(align = "lrrr", col.names = c("", "unhedged", "hedged", "volatility removed"))
+```
+
+## The Investor's Objective
+
+The investor of von Neumann and Morgenstern (1944) maximizes the expected utility of terminal wealth,
+
+$$
+\max_{\boldsymbol{w}} \; \mathbb{E}\!\left[U(W_1)\right],
+\qquad
+W_1 = W_0\left(1 + r_f + \boldsymbol{w}'\boldsymbol{R}^e\right),
+$$
+
+for $U$ increasing and concave. With relative risk aversion $\gamma$ the premium for a variance $\sigma^2$ is $\tfrac{1}{2}\gamma\sigma^2$ (Pratt, 1964; Arrow, 1965). A second-order expansion leaves
+
+$$
+U(\boldsymbol{w}) = \mu_{\boldsymbol{w}} - \frac{\gamma}{2}\,\sigma^2_{\boldsymbol{w}}
+= \boldsymbol{w}'\boldsymbol{\mu} - \frac{\gamma}{2}\,\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}.
+$$
+
+The expansion is exact if $U$ is quadratic or returns are normal (Markowitz, 1959); Levy and Markowitz (1979) find the loss small on historical returns.
+
+## The Price of Risk Aversion
+
+$U(\boldsymbol{w})$ is a **certainty equivalent**. Along an indifference curve, an increase in expected return of $\Delta\mu$ buys an increase in variance of
+
+$$
+\sigma_1^2 - \sigma_0^2 = \frac{2\,\Delta\mu}{\gamma}.
+$$
+
+- With $\Delta\mu$ of one point and $\sigma_0 = 0$, $\gamma = 2$ accepts a volatility of $\sqrt{0.02 / 2} = `r sprintf("%.1f%%", 100 * sqrt(0.02 / 2))`$; $\gamma = 10$ accepts $\sqrt{0.02 / 10} = `r sprintf("%.1f%%", 100 * sqrt(0.02 / 10))`$.
+- Ten percent of volatility costs an investor with $\gamma = 4$ a certainty equivalent of $\tfrac{4}{2} \times 0.10^2 = `r sprintf("%.0f", 1e4 * 4 / 2 * 0.01)`$ basis points a year.
+
+## Risk Aversion in Units an Investor Recognizes
+
+```{r tbl-03-gamma}
+```
+
+An investor who holds `US_equity` alone, at an optimum, has $\gamma = \mu^e / \sigma^2 = `r sprintf("%.3f", mu_us)` / `r sprintf("%.3f", sd_us)`^2 = `r sprintf("%.1f", mu_us / sd_us^2)`$ on this sample; the customary range runs from about two to ten.
+
+## Dominance and the Northwest Rule
+
+In the plane with volatility on the horizontal axis and expected return on the vertical, $A$ **dominates** $B$ if
+
+$$
+\mu_A \ge \mu_B \;\text{ and }\; \sigma_A \le \sigma_B,
+\;\text{ with at least one inequality strict.}
+$$
+
+- A better allocation always lies to the **northwest**.
+- A portfolio or asset that no feasible alternative dominates is **efficient**.
+- Dominance ranks fewer pairs than the utility function, but a dominated portfolio is rejected by every investor with $\gamma > 0$. The vocabulary applies before a risk aversion is chosen.
+
+## The Northwest Rule Applied
+
+```{r fig-03-northwest}
+#| fig-alt: "Scatter of annualized volatility against arithmetic excess return for the sixteen series, efficient series filled, dominated series hollow, with the northwest quadrant of one most-dominated series shaded."
+#| fig-asp: 0.55
+```
+
+- `r sum(mom$kind == "dominated")` of the sixteen series are dominated by at least one other; `r paste0("\x60", mom$asset[mom$kind == "efficient"], "\x60", collapse = ", ")` are efficient.
+
+::: {.notes}
+This is a statement about one sample and carries no test, but it needs no optimizer and it is the first thing to look at before one runs. On compounded returns the efficient set is the same and the dominance relation moves beneath it: the variance drag again.
+:::
+
+## Strategic and Tactical Allocation {.smaller}
+
+::: {.statement}
+**Strategic allocation** is the long-run policy from unconditional beliefs; **tactical allocation** is a deviation from it using conditioning information available at the time.
+:::
+
+- The two are orthogonal to granularity: a tilt across classes can be tactical, a permanent tilt inside a sleeve is strategic.
+- Brinson et al. (1986, 1991) measured how much of the variation in pension fund returns the policy explained; Ibbotson and Kaplan (2000) clarified what that does and does not mean.
+- Chapters 9 to 15 are strategic, 16 to 19 tactical, 23 to 25 about implementing and evaluating either.
+- **The measure a portfolio is judged by must be the measure it was chosen by.**
+
+## The Bill Is Not a Seventeenth Asset
+
+- Add the actual bill as a seventeenth column and a minimum-variance optimizer puts `r sprintf("%.1f%%", 100 * w_bill[["bill"]])` into it.
+- Add a constant riskless rate and the covariance matrix is `r ncol(R_const)` by `r ncol(R_const)` of rank `r qr(stats::cov(R_const))$rank`: it cannot be inverted.
+- The riskless asset enters through the excess-return basis and the budget constraint, not through $\boldsymbol{\Sigma}$ (Tobin, 1958).
+
+::: {.notes}
+This is the answer to the reader who has just been told that the riskless rate is essential and is tempted to add it to the return matrix.
+:::
+
+## A Trap: `risk_aversion` Is $\gamma/2$ {.codesmall}
+
+::: {.callout-warning}
+## `risk_aversion` is $\gamma/2$, not $\gamma$
+
+The package builds $\boldsymbol{Q} = 2\lambda\boldsymbol{\Sigma}$ from `risk_aversion = `$\lambda$ and hands it to `ROI`, whose quadratic program carries a factor $\tfrac{1}{2}$. The coefficient on $\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$ is $\lambda$, where the criterion puts $\gamma/2$. Pass `risk_aversion = `$\gamma/2$.
+:::
+
+```{r spec}
+#| echo: true
+#| output: false
+```
+
+## Checking the Factor of Two {.codesmall}
+
+A second solver, `quadprog`, takes $\gamma$ literally. The weights may sum to anything between zero and one, so the budget does not hide the scale.
+
+```{r gamma-check}
+#| echo: true
+```
+
+The package at `risk_aversion = 5` matches the textbook problem at $\gamma = 10$ to machine precision and misses the one at $\gamma = 5$ by `r sprintf("%.2f", max(abs(w_pa - qp_weights(gamma0 / 2))))` in the largest weight.
+
+```{r sweep-full}
+#| include: false
+```
+
+```{r sweep-relaxed}
+#| include: false
+```
+
+```{r basis-invested}
+#| include: false
+```
+
+## Raising $\gamma$ Under Full Investment
+
+```{r tbl-03-sweep-full}
+```
+
+- Volatility falls from `r sprintf("%.1f%%", 100 * sweep_full$vol[sweep_full$gamma == 1])` to `r sprintf("%.2f%%", 100 * sweep_full$vol[sweep_full$gamma == 10000])`, against `r sprintf("%.2f%%", 100 * p_vol(w_gmv))` for minimum variance.
+- There is no cash to reach: a very risk-averse investor who must be fully invested holds the minimum-variance portfolio, the one that needs no estimate of $\boldsymbol{\mu}$ (Jagannathan and Ma, 2003).
+
+## Relaxing the Budget
+
+Let the weights sum to anything between zero and one. The first-order condition is $\boldsymbol{\mu} = \gamma\boldsymbol{\Sigma}\boldsymbol{w}$, so
+
+$$
+\boldsymbol{w}^\ast(\gamma) = \frac{1}{\gamma}\,\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu},
+\qquad
+\boldsymbol{\iota}'\boldsymbol{w}^\ast(\gamma) = \frac{\boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}}{\gamma}.
+$$
+
+```{r fig-03-gamma}
+#| fig-alt: "Two panels against risk aversion on a log scale: annualized volatility and invested fraction, under full investment and with the budget relaxed, with the minimum-variance level dashed."
+#| fig-asp: 0.4
+```
+
+The risky composition is fixed and the invested fraction is $`r sprintf("%.2f", k[1])`/\gamma$ once the cap stops binding: two-fund separation (Tobin, 1958).
+
+## The Basis in the Invested Fraction
+
+Hand the relaxed problem total returns and the optimizer believes the alternative to the risky series earns zero rather than the bill.
+
+```{r basis-invested-out}
+#| echo: false
+# basis is built in the chapter's basis-invested chunk
+basis |>
+  dplyr::mutate(dplyr::across(c(excess, total), ~ sprintf("%.4f", .x)),
+                ratio = sprintf("%.3f", ratio)) |>
+  kable(align = "rrrr", col.names = c("$\\gamma$", "invested, excess", "invested, total", "ratio"))
+```
+
+At every $\gamma$ the total-return problem invests `r sprintf("%.0f%%", 100 * (mean(basis$ratio) - 1))` more in risky assets, crediting each series with the bill's `r sprintf("%.1f%%", 100 * 12 * mean(rf))` a year as a reward for bearing risk. This is an arithmetic error about the alternative, not a view about the assets.
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** Simple returns add across assets, log returns across time. The arithmetic mean is the input to every objective, the geometric mean is what was earned, and the gap is half the variance. $\sqrt{12}$ assumes independent months; Lo (2002) says by how much autocorrelation breaks it.
+- **Outcome 2.** Returns enter every optimizer in excess of the Treasury bill: the tangency portfolio is defined relative to a riskless rate, `PortfolioAnalytics` has no argument for one, an uninvested fraction then earns what the objective assumes, and the bill moves.
+- **Outcome 3.** $\mu_{\boldsymbol{w}} - \tfrac{\gamma}{2}\sigma^2_{\boldsymbol{w}}$ approximates expected utility; its value is a certainty equivalent and $\gamma$ is a price: at $\gamma = 4$, ten percent of volatility costs `r sprintf("%.0f", 1e4 * 4 / 2 * 0.01)` basis points a year.
+- **Outcome 4.** A better allocation lies to the northwest; `r sum(mom$kind == "dominated")` of the sixteen series are dominated before any optimizer runs.
+- **Outcome 4.** `risk_aversion` is $\gamma/2$. Under full investment a rising $\gamma$ converges to minimum variance, not to cash; with the budget relaxed the composition is fixed and the invested fraction goes as $1/\gamma$.
+- **Outcome 4.** Chapters 9 to 15 are strategic, 16 to 19 tactical; the measure a portfolio is judged by must be the one it was chosen by.
+
+## Exercises {.smaller}
+
+Work these in `code/03-return-risk-and-the-investor-exercises.R`; solutions are in appendix G of the book.
+
+1. Recompute the dominance table on the weekly data, `sim_class_returns_weekly` in excess of `sim_riskfree_weekly`, annualizing with 52. Which series change status, and what property of the annualization is responsible?
+2. Apply the correction of Lo (2002) at $q = 3$ and $q = 12$ to all sixteen series and compare it with the Sharpe ratios computed directly from quarterly and annual compounded returns. Where they disagree, which of Lo's assumptions does the series violate?
+3. Repeat the hedging calculation for the four foreign equity markets. What does hedging do to `JP_equity`, and what sign must the covariance between local return and currency have for that to happen?
+4. Find the $\gamma$ at which the relaxed-budget solution has the same annualized volatility as a 60/40 portfolio of the equity and government series, equally weighted within each block. Report the invested fraction and read the corresponding row of the risk-aversion table. What does it say about the risk aversion of a 60/40 investor?

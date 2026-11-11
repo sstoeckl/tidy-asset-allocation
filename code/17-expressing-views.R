@@ -20,9 +20,8 @@ N <- ncol(Re); T <- nrow(Re)
 mu_s <- colMeans(Re)                 # the sample mean of chapter 6
 S    <- stats::cov(Re)               # the sample covariance of chapter 7
 
-# ===== The prior of @sec-06-expected-returns-implementation, rebuilt =====
-
 ## ---- prior ----
+# ===== The prior of @sec-06-expected-returns-implementation, rebuilt =====
 eq_ids     <- sim_assets$asset_id[sim_assets$asset_class == "equity"]
 region_of  <- setNames(sim_assets$region, sim_assets$asset_id)
 eq_classes <- grep("_equity$", colnames(Re), value = TRUE)
@@ -91,9 +90,8 @@ spec <- portfolio.spec(assets = colnames(Re)) |>
 w_prior <- tangency_lo(mu_eq, S)
 stopifnot(isTRUE(all.equal(w_prior, w_mkt, tolerance = 1e-6)))   # the prior buys the market
 
-# ===== Black-Litterman with two views =====
-
 ## ---- views ----
+# ===== Black-Litterman with two views =====
 P <- matrix(0, 2, N, dimnames = list(c("credit_spread", "commodity"), colnames(Re)))
 P["credit_spread", "US_credit"]     <-  1
 P["credit_spread", "EU_credit"]     <- -1
@@ -135,9 +133,8 @@ stopifnot(isTRUE(all.equal(unname(post$mu), as.numeric(bl$BLMu))),          # th
           isTRUE(all.equal(as.numeric(P %*% post$mu), 0.5 * prior_views + 0.5 * unname(q))))  # @eq-17-pooling
 round(cbind(prior = prior_views, view = q, posterior = as.numeric(P %*% post$mu)) * 12, 4)
 
-# ===== `black.litterman()` with views: three things to check before believing it =====
-
 ## ---- bl-recycle ----
+# ===== `black.litterman()` with views: three things to check before believing it =====
 one_number <- black.litterman(Re, P = P, Mu = mu_eq, Views = q[1])
 both_same  <- black.litterman(Re, P = P, Mu = mu_eq, Views = c(q[1], q[1]))
 c(recycled_silently = isTRUE(all.equal(as.numeric(one_number$BLMu), as.numeric(both_same$BLMu))),
@@ -213,9 +210,8 @@ trace |>
   ggplot2::scale_y_continuous(labels = scales::percent) +
   ggplot2::labs(x = "confidence c in the views", y = "weight", colour = NULL)
 
-# ===== Through `set.portfolio.moments()` =====
-
 ## ---- spm-route ----
+# ===== Through `set.portfolio.moments()` =====
 opt_spm <- optimize.portfolio(Re, spec, optimize_method = "ROI", maxSR = TRUE,
                               momentFUN = "set.portfolio.moments", method = "black_litterman",
                               Mu = mu_eq, P = P, Views = q)
@@ -227,9 +223,8 @@ c(mu_is_posterior      = isTRUE(all.equal(as.numeric(opt_spm$moment_values$mu), 
   max_weight_gap_pp    = 100 * max(abs(extractWeights(opt_spm)[colnames(Re)] - w_post)),
   fixed_max_gap_pp     = 100 * max(abs(extractWeights(opt_fix)[colnames(Re)] - w_post)))
 
-# ===== Entropy pooling on the 372 months =====
-
 ## ---- entropy-views ----
+# ===== Entropy pooling on the 372 months =====
 p0    <- rep(1 / T, T)                          # the uniform prior
 Aeq0  <- matrix(1, 1, T)                        # probabilities sum to one
 V     <- as.numeric(zoo::coredata(Re[, "US_equity"]))
@@ -249,9 +244,8 @@ stopifnot(all(vapply(posterior, function(p) abs(sum(p) - 1) < 1e-6, logical(1)))
           abs(sqrt(sum(ep_both$p_ * V^2) - sum(ep_both$p_ * V)^2) - s_v) < 1e-8)
 vapply(posterior, eff_n, numeric(1))
 
-# ===== `EntropyProg()`: what the signature does not say =====
-
 ## ---- entropy-frame ----
+# ===== `EntropyProg()`: what the signature does not say =====
 p_long <- lapply(names(posterior), function(k) {
   tibble::tibble(date = zoo::index(Re), kind = k,
                  p_rel = as.numeric(posterior[[k]]) * T)          # relative to the prior 1/T
@@ -331,9 +325,8 @@ cost |>
   kable(align = "lrrr",
         col.names = c("view on US_equity", "effective months", "largest p / prior", "approximation"))
 
-# ===== Ordinal views on the five equity classes =====
-
 ## ---- ranking ----
+# ===== Ordinal views on the five equity classes =====
 Req      <- Re[, eq_classes]
 asc_smp  <- names(sort(mu_s[eq_classes]))                      # sample order, ascending
 view_asc <- c(setdiff(asc_smp, "JP_equity"), "JP_equity")      # Japan promoted to the top
@@ -371,9 +364,8 @@ stopifnot(isTRUE(all.equal(c_ac / max(c_ac), c_an / max(c_an))),   # ac.ranking(
 
 round(rbind(ac_ranking = c_ac, formula = c_an, monte_carlo = c_mc)[, view_asc], 4)
 
-# ===== `ac.ranking()` ignores its scale argument =====
-
 ## ---- centroid-family ----
+# ===== `ac.ranking()` ignores its scale argument =====
 set.seed(1602)
 tibble::tibble(
   fn = c("centroid.complete.mc(order)", "centroid.buckets(list)",
@@ -417,9 +409,8 @@ stopifnot(view_asc[4] == "EU_equity", setequal(zeroed, view_asc[1:2]),       # t
   dplyr::mutate(dplyr::across(-class, ~ sprintf("%.1f%%", .x))) |>
   kable(align = "lrrrrr", col.names = c("", colnames(W5)))
 
-# ===== One Opinion, Three Formulations =====
-
 ## ---- application-views ----
+# ===== One Opinion, Three Formulations =====
 P_a <- matrix(0, 1, N, dimnames = list("JP_vs_UScredit", colnames(Re)))
 P_a[1, "JP_equity"] <- 1; P_a[1, "US_credit"] <- -1
 spread_eq <- as.numeric(P_a %*% mu_eq)

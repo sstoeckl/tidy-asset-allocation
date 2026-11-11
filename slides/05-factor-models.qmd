@@ -1,0 +1,370 @@
+---
+title: "Factor Models and Beta Estimation"
+subtitle: "Tidy Asset Allocation in R, Chapter 5"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 5"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/05-factor-models.R to the chunks below,
+# so no line of analysis is maintained twice. root.dir takes effect after this
+# chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("05-factor-models.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+```
+
+```{r setup}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** the single-factor model, its split of variance into systematic and idiosyncratic parts, and why its standard errors must be Newey-West.
+2. **Implement** the market proxy, the sixteen regressions and the conditional betas in R.
+3. **Explain** what a market proxy and a factor construction actually measure, whatever their labels say.
+4. **Evaluate** how much of the resulting explanation survives inference, rolling windows and a measure of turbulence.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+What do the series of a market have in common, and how much of each is explained by the market itself?
+
+::: {.statement}
+Sharpe (1964), Lintner (1965) and Black (1972) answered that an asset's expected excess return is proportional to its **covariance with the market**. Jensen (1968) turned it into a regression.
+:::
+
+- The regression is what every risk report still prints: a **beta** that is the input to a hedge, and an **alpha** that is the claim an active manager makes.
+- We set out the model, estimate it on this market, and ask how much of the explanation survives being measured properly.
+- Most of it does not: outside equity the typical beta changes sign in about a third of all estimation windows.
+
+<p class="source">Sharpe, W. (1964). Capital Asset Prices. *Journal of Finance* 19(3), 425–442. Jensen, M. (1968). The Performance of Mutual Funds in the Period 1945–1964. *Journal of Finance* 23(2), 389–416.</p>
+
+## The Single-Factor Model and Its Variance Split {.smaller}
+
+With $r_{it}$ the return on asset $i$, $r_{ft}$ the risk-free rate and $r_{mt}$ the market return, all in excess of the bill:
+
+$$
+r_{it} - r_{ft} = \alpha_i + \beta_i\left(r_{mt} - r_{ft}\right) + \varepsilon_{it},
+\qquad
+\beta_i = \frac{\operatorname{Cov}(r_i, r_m)}{\operatorname{Var}(r_m)} .
+$$
+
+Under the asset pricing theory $\alpha_i = 0$; read as a statistical description, $\alpha_i$ is whatever the market does not account for. The regression splits the variance of each asset:
+
+$$
+\underbrace{\operatorname{Var}(r_i)}_{\text{total}}
+= \underbrace{\beta_i^2 \operatorname{Var}(r_m)}_{\text{systematic}}
++ \underbrace{\operatorname{Var}(\varepsilon_i)}_{\text{idiosyncratic}},
+\qquad
+R^2_i = \frac{\beta_i^2\operatorname{Var}(r_m)}{\operatorname{Var}(r_i)} .
+$$
+
+The $R^2$ is the share of an asset's risk that the model claims to describe; an asset with a low $R^2$ is one the model has nothing to say about.
+
+::: {.notes}
+The errors have mean zero and are uncorrelated with the market. The R squared is not a decorative goodness-of-fit number: it tells us for which assets a beta is a meaningful summary at all.
+:::
+
+## Two Extensions
+
+The slope may differ in rising and falling markets (Bawa and Lindenberg, 1977; Ang, Chen and Xing, 2006). With $\tilde{r}_{mt} = r_{mt} - r_{ft}$:
+
+$$
+r_{it} - r_{ft} = \alpha_i + \beta_i\,\tilde{r}_{mt}
+  + \gamma_i\,\tilde{r}_{mt}\mathbf{1}\{\tilde{r}_{mt} < 0\} + \varepsilon_{it}.
+$$
+
+- $\beta_i$ is the beta in up markets and $\beta_i + \gamma_i$ the beta in down markets.
+- The slope may also move over time: the conditional CAPM of Ferson and Harvey (1991) and Jagannathan and Wang (1996), which we approach descriptively, through rolling windows.
+
+## Inference with Newey-West Errors
+
+Monthly returns are serially dependent and heteroskedastic, so the textbook standard error of an ordinary least squares slope is wrong. Newey and West (1987) replace $\sigma^2(X'X)^{-1}$ with
+
+$$
+(X'X)^{-1}\left(\sum_{j=-L}^{L} w_j \hat{\Gamma}_j\right)(X'X)^{-1},
+\qquad
+w_j = 1 - \frac{|j|}{L+1},
+$$
+
+where $\hat{\Gamma}_j$ is the sample autocovariance of the score at lag $j$ and $L$ the bandwidth, six lags here.
+
+- The asymmetric model is estimated sixteen times, once per series.
+- Any procedure repeated sixteen times produces significant-looking differences whether or not any exist (Harvey, Liu and Zhu, 2016).
+
+## Building the Market Proxy {.codesmall}
+
+A factor model needs a factor. We build the market from the 123 equity instruments, because a capitalization weight only exists at instrument level.
+
+```{r proxy}
+#| echo: true
+```
+
+The weights are lagged by one period: a capitalization observed at the end of month $t$ is not available for investing during month $t$.
+
+::: {.notes}
+Without the lag the proxy would earn a return no investor could have earned. The assertions in the code are the book's rule that objects which must line up are checked in code.
+:::
+
+## The Composition of the Proxy
+
+```{r proxy-composition}
+```
+
+The proxy is on average `r sprintf("%.0f%%", 100 * mean(us_share))` United States by weight and ends the sample at `r sprintf("%.0f%%", 100 * us_share[length(us_share)])`.
+
+- It is global in construction and American in effect.
+- Every beta below is largely a beta on the United States market. Roll (1977): a test of the model is a joint test of the model and of the proxy.
+
+```{r single-factor}
+#| include: false
+```
+
+## Sixteen Series, One Factor
+
+```{r tbl-05-single-factor}
+```
+
+The model explains `r sum(fit1$r2 > 0.5)` series and fails on the rest; the median $R^2$ across all `r nrow(fit1)` is `r sprintf("%.3f", median(fit1$r2))`.
+
+## How Much of Each Series the Market Explains {.smaller}
+
+```{r fig-05-model-fit}
+#| fig-alt: "Bar chart of the R squared of each of the sixteen series on the market factor; the four bars above one half are equity series."
+#| fig-asp: 0.42
+```
+
+```{r alpha-claims}
+#| include: false
+```
+
+- A single-factor model is a model of equities that happens to be applied to everything else; `r paste0("\x60", fit1$series[which.min(fit1$r2)], "\x60")` has an $R^2$ of `r sprintf("%.6f", min(fit1$r2))`.
+- Only one of the `r nrow(fit1)` alphas clears a t-statistic of two: `US_government`, at `r sprintf("%+.2f%%", 100 * fit1$alpha_ann[fit1$series == "US_government"])` a year, t = `r sprintf("%.2f", fit1$alpha_t[fit1$series == "US_government"])`. That is not a mispricing but the model reporting that it has the wrong factors, which is why Fama and French (1993) added a term structure and a default factor.
+
+::: {.notes}
+Alphas are annualized from monthly intercepts; the t-statistics use Newey-West errors at six lags. `US_credit` comes next with t = `r sprintf("%.2f", fit1$alpha_t[fit1$series == "US_credit"])`.
+:::
+
+## Splitting the Beta {.codesmall}
+
+`PerformanceAnalytics` estimates the up and down halves in one call per series.
+
+```{r conditional-betas}
+#| echo: true
+```
+
+```{r conditional-claims}
+#| include: false
+```
+
+`JP_government` has an unconditional beta of `r sprintf("%.4f", jp$beta)`, the sort of number that files a series under uncorrelated. It rises with the market when the market rises, at `r sprintf("%+.3f", jp$bull)`, and rises against it when the market falls, at `r sprintf("%+.3f", jp$bear)`.
+
+## Testing the Split {.codesmall}
+
+An apparent asymmetry has to survive a test: splitting a sample in two and comparing the halves is a machine for producing differences.
+
+```{r asymmetry-test}
+#| echo: true
+```
+
+```{r asymmetry-claims}
+#| include: false
+```
+
+`r length(survive)` of `r nrow(asym)` survive, both government bonds. The credit asymmetry an allocator would most like to believe in does not: `US_credit` has a gap of `r sprintf("%+.3f", asym$gap[asym$series == "US_credit"])` with t = `r sprintf("%.2f", asym$t[asym$series == "US_credit"])`.
+
+::: {.notes}
+There are `r sum(mkt_e < 0)` down months in the sample. Report the split as a diagnostic; do not build a hedge on it without the test.
+:::
+
+## Beta Up Against Beta Down
+
+```{r fig-05-asymmetric}
+#| fig-alt: "Scatter of the beta when the market is down against the beta when it is up for sixteen series; only two filled points survive the test."
+#| fig-asp: 0.52
+```
+
+Points below the diagonal fall less than they rise; points above it fall more. Only the filled points survive a Newey-West test of the difference.
+
+## What a Size Factor Sorts On {.codesmall}
+
+Size is the second factor everyone reaches for (Fama and French, 1992, 1993). We build it globally and region-neutrally.
+
+```{r smb}
+#| echo: true
+```
+
+```{r smb-legs}
+#| echo: true
+```
+
+The big leg is `r sprintf("%.0f%%", 100 * mean(legs["big_us", ]))` United States, the small leg `r sprintf("%.0f%%", 100 * mean(legs["small_us", ]))`: a global capitalization sort in a five-region universe sorts on region, and so on currency.
+
+## The Cost of a Region Bet {.codesmall}
+
+```{r smb-r2}
+#| echo: true
+```
+
+```{r smb-claims}
+#| include: false
+```
+
+- The global factor lifts the median $R^2$ from `r sprintf("%.3f", med_r2())` to `r sprintf("%.3f", med_r2(smb_global))`; the region-neutral one only to `r sprintf("%.3f", med_r2(smb_neutral))`. The explanatory power was the regional composition of the legs.
+- The premium runs the other way: t = `r sprintf("%.2f", nw_t(smb_neutral))` region-neutral, `r sprintf("%.2f", nw_t(smb_global))` global (Griffin, 2002; Hou, Karolyi and Kho, 2011).
+
+::: {.notes}
+The lesson is not that size does not exist. A factor is defined by its construction, and a sort nobody has inspected is a bet nobody has chosen.
+:::
+
+## One Call for the Survey
+
+::: {.callout-note}
+## `table.CAPM()` computes most of this chapter in one call
+
+It returns alpha and beta with their p-values, the bull and bear betas, $R^2$, tracking error, the information ratio, Treynor's ratio and the appraisal ratio.
+:::
+
+```{r table-capm}
+#| echo: true
+```
+
+It reports no standard error on the bull-minus-bear gap, which is the number that decides whether the split means anything.
+
+```{r rolling-betas}
+#| include: false
+```
+
+## Rolling Betas {.smaller}
+
+```{r tbl-05-rolling}
+```
+
+Sixty-month windows. `travel` is the distance from the lowest window to the highest; `sign flips` is the share of windows whose beta disagrees in sign with the full-sample estimate.
+
+```{r rolling-claims}
+#| include: false
+```
+
+## A Beta Is a Time Series
+
+```{r fig-05-rolling-betas}
+#| fig-alt: "Sixty-month rolling betas for six series, with the full-sample estimate dashed."
+#| fig-asp: 0.5
+```
+
+- `r paste0("\x60", travel$series[1], "\x60")` moves `r sprintf("%.2f", travel$travel[1])`, while `US_equity` travels only `r sprintf("%.2f", travel$travel[travel$series == "US_equity"])` and never changes sign (Blume, 1971).
+- Outside equity all `r sum(!is_eq)` series change sign, the median in `r flip_p(median(flips[!is_eq]))` of all windows.
+
+::: {.notes}
+A small beta is not a stable beta. It is a beta whose sign is unknown, so a hedge ratio needs an error bar before it needs a decimal place.
+:::
+
+## Turbulence as a Measure of Instability
+
+The Mahalanobis distance of a period's returns from their recent mean, scaled by the covariance structure (Chow et al., 1999; Kritzman and Li, 2010):
+
+$$
+d_t = \left(\boldsymbol{r}_t - \boldsymbol{\mu}\right)'
+      \boldsymbol{\Sigma}^{-1}
+      \left(\boldsymbol{r}_t - \boldsymbol{\mu}\right).
+$$
+
+An unusual *pattern* of returns counts as turbulent even when no single series is extreme.
+
+```{r turbulence}
+#| echo: true
+#| output: false
+```
+
+`OSturbulence()` estimates $\boldsymbol{\mu}$ and $\boldsymbol{\Sigma}$ from data strictly before each observation, so the index never sees the month it is scoring. The package is not on CRAN; see the book's package notes.
+
+## The Highest Readings {.codesmall}
+
+```{r turbulence-peaks}
+#| echo: true
+```
+
+```{r turbulence-claims}
+#| include: false
+```
+
+The highest reading is `r fmt_model(d[peak])`, in the `r episode_of[peak]`, at `r sprintf("%.2f", tb[peak])`, `r sprintf("%.2f", tb[top[1]] / tb[top[2]])` times the next one. It is the month chapter 4 found by counting exceedances, expressed as one number and available on the day rather than in hindsight.
+
+## Correlations or Volatilities {.codesmall}
+
+The ratio of the full distance to the one computed from variances alone separates correlations breaking from volatilities rising (Forbes and Rigobon, 2002).
+
+```{r correlation-turbulence}
+#| echo: true
+```
+
+```{r correlation-turbulence-claims}
+#| include: false
+```
+
+In the peak month the ratio is `r sprintf("%.2f", ct[peak])` against a median of `r sprintf("%.2f", median(ct, na.rm = TRUE))`: an extreme move in an ordinary correlation structure.
+
+```{r fig-05-turbulence}
+#| fig-alt: "Line chart of the out-of-sample turbulence index from a sixty-month trailing window."
+#| fig-asp: 0.3
+```
+
+::: {.notes}
+The first five model years are consumed by the trailing window and are not shown in the figure.
+:::
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** The $R^2$ is the share of an asset's risk the model claims to describe; its median across the sixteen series is `r sprintf("%.2f", median(fit1$r2))`. A one-factor model is an equity model applied to everything else.
+- **Outcome 3.** A market proxy has a composition: this one is on average `r sprintf("%.0f%%", 100 * mean(us_share))` United States, so every beta against it is largely a United States beta.
+- **Outcome 4.** Of sixteen asymmetries estimated, `r length(survive)` survive Newey-West inference, and the one an allocator would most want is not among them.
+- **Outcome 3.** A factor is defined by its construction: a global size sort puts `r sprintf("%.0f%%", 100 * mean(legs["big_us", ]))` United States in one leg and `r sprintf("%.0f%%", 100 * mean(legs["small_us", ]))` in the other, a region bet wearing a size label.
+- **Outcome 4.** Betas move. Equity betas do so without changing sign; outside equity the median beta has the wrong sign in `r flip_p(median(flips[!is_eq]))` of all sixty-month windows.
+- **Outcome 4.** The instability is measurable without hindsight: the turbulence index picks out `r fmt_model(d[peak])`, in the `r episode_of[peak]`, from a trailing window.
+
+## Exercises {.smaller}
+
+Work these in `code/05-factor-models-exercises.R`.
+
+1. Rebuild the market proxy with equal rather than capitalization weights. Which betas move most, and does the ranking in the rolling-beta table survive? What does that say about the phrase "the market"?
+2. Replace the interaction term of the asymmetry test with separate regressions on the up and down months. Do the point estimates agree and the standard errors not? Which is the honest one?
+3. Take the two series with the highest `sign_flips` and plot their rolling betas against the turbulence index. Does the beta move because the market is turbulent, or independently of it?
+4. Vary the `s.k` argument of `OSturbulence()` from 1 to 12 and describe what the index measures at each end.
+5. Apply a Bonferroni and a Benjamini-Hochberg correction to the sixteen p-values in `asym`, and report how many survive each.

@@ -18,9 +18,8 @@ Re <- R - rf                                                       # excess, @se
 stopifnot(ncol(Re) == 16L, !anyNA(Re))
 N  <- ncol(Re)
 
-# ===== Sleeves, and what is decided at each level =====
-
 ## ---- sleeves ----
+# ===== Sleeves, and what is decided at each level =====
 sleeve_of <- function(a) dplyr::case_when(
   grepl("_equity$", a)     ~ "equity",
   grepl("_government$", a) ~ "government",
@@ -32,9 +31,8 @@ sleeves <- split(colnames(Re), sleeve_of(colnames(Re)))
 stopifnot(setequal(unlist(sleeves), colnames(Re)))
 lengths(sleeves)
 
-# ===== The shrinkage reading =====
-
 ## ---- cross-block ----
+# ===== The shrinkage reading =====
 S    <- stats::cov(Re)
 same <- outer(sleeve_of(colnames(S)), sleeve_of(colnames(S)), "==")
 stopifnot(all(dim(same) == dim(S)), isSymmetric(same))
@@ -73,9 +71,8 @@ p_sr  <- function(w) p_ret(w) / p_vol(w)
 eff_bets <- function(w) 1 / sum(w^2)              # reciprocal Herfindahl, @sec-09
 round(w_flat[w_flat > 0.005], 4)
 
-# ===== Worked: the identity of @eq-15-identity, and the ladder in sample =====
-
 ## ---- identity-check ----
+# ===== Worked: the identity of @eq-15-identity, and the ladder in sample =====
 # A sleeve of one asset is its own portfolio.
 within_gmv <- function(S, sleeves) lapply(sleeves, function(a)
   if (length(a) == 1L) setNames(1, a) else gmv_qp(S[a, a]))
@@ -119,9 +116,8 @@ ladder <- tibble::tibble(
 stopifnot(diff(ladder$vol) >= -1e-12)          # flat <= nested <= block-diagonal
 ladder
 
-# ===== Worked: hierarchical risk parity is a different hierarchy =====
-
 ## ---- hrp ----
+# ===== Worked: hierarchical risk parity is a different hierarchy =====
 D  <- sqrt(0.5 * (1 - stats::cor(Re)))                  # the correlation distance
 hc <- hclust(stats::as.dist(D), method = "single")
 ord <- colnames(Re)[hc$order]                            # quasi-diagonalization
@@ -162,9 +158,8 @@ stopifnot(names(which.max(w_hrp)) == names(which.min(diag(S))))   # the prose sa
 round(sort(w_hrp, decreasing = TRUE)[1:5], 4)
 c(volatility = p_vol(w_hrp), effective_bets = eff_bets(w_hrp))
 
-# ===== Hedging is a sleeve decision =====
-
 ## ---- hedge-sleeves ----
+# ===== Hedging is a sleeve decision =====
 fx <- sim_fx_monthly
 hedged <- R
 for (a in colnames(R)) {
@@ -202,18 +197,16 @@ hedge_tab |>
         col.names = c("sleeve", "volatility, unhedged", "volatility, hedged",
                       "bets, unhedged", "bets, hedged"))
 
-# ===== A sleeve of one asset =====
-
 ## ---- one-asset ----
+# ===== A sleeve of one asset =====
 one <- try(optimize.portfolio(Re[, "GLOBAL_commodity", drop = FALSE],
                               gmv_spec("GLOBAL_commodity"), optimize_method = "ROI"),
            silent = TRUE)
 stopifnot(inherits(one, "try-error"))
 cat(conditionMessage(attr(one, "condition")))
 
-# ===== `mult.portfolio.spec()` and `add.sub.portfolio()` =====
-
 ## ---- mult-spec ----
+# ===== `mult.portfolio.spec()` and `add.sub.portfolio()` =====
 three <- sleeves[c("equity", "government", "credit")]
 
 top <- gmv_spec(names(three))
@@ -228,9 +221,8 @@ c(class = class(mp), top = class(mp$top.portfolio)[1],
   sub_portfolios = length(mp$sub.portfolios), sub_class = class(mp$sub.portfolios[[1]]))
 names(mp$sub.portfolios[[1]])
 
-# ===== The defaults do not run, and one argument is silently discarded =====
-
 ## ---- mult-default ----
+# ===== The defaults do not run, and one argument is silently discarded =====
 mp_default <- mult.portfolio.spec(top)
 for (k in names(three)) mp_default <- add.sub.portfolio(mp_default, gmv_spec(three[[k]]),
                                                         optimize_method = "ROI")
@@ -245,9 +237,8 @@ c(proxy_rows = nrow(o_mp$R), proxy_cols = ncol(o_mp$R),
   first_model_year = model_year(zoo::index(o_mp$R)[1]),
   last_model_year  = model_year(zoo::index(o_mp$R)[nrow(o_mp$R)]))
 
-# ===== The same thing by hand =====
-
 ## ---- mult-by-hand ----
+# ===== The same thing by hand =====
 W <- 60L
 proxy_by_hand <- function(a) {
   X <- zoo::coredata(Re[, a, drop = FALSE]); n <- nrow(X); out <- numeric(n)
@@ -269,9 +260,8 @@ b_no_backfill <- gmv_qp(stats::cov(by_hand[-(1:W), ]))
 round(rbind(package = as.numeric(o_mp$weights), by_hand = b_hand,
             without_backfill = b_no_backfill), 4)
 
-# ===== Holding several optimizations together =====
-
 ## ---- sleeve-stage-list ----
+# ===== Holding several optimizations together =====
 ol_sleeves <- combine.optimizations(lapply(three, function(a)
   optimize.portfolio(Re[, a], gmv_spec(a), optimize_method = "ROI", trace = TRUE)))
 
@@ -301,18 +291,16 @@ stopifnot(inherits(ol_top, "opt.list"))
 round(extractWeights(ol_top), 4)
 round(extractObjectiveMeasures(ol_top), 5)
 
-# ===== `opt.list` methods need `trace = TRUE` =====
-
 ## ---- fig-15-top-riskreward ----
+# ===== `opt.list` methods need `trace = TRUE` =====
 # Three top-level policies on the four sleeve series, from
 # `chart.RiskReward()` on the `opt.list`. Circles are the sleeves themselves.
 # Monthly units, not annualized.
 chart.RiskReward(ol_top, risk.col = "StdDev", return.col = "mean",
                  chart.assets = TRUE, main = "")
 
-# ===== In sample =====
-
 ## ---- in-sample ----
+# ===== In sample =====
 w_eq <- setNames(rep(1 / N, N), colnames(Re))
 insample <- tibble::tibble(
   construction = c("flat minimum variance", "nested minimum variance",
@@ -334,9 +322,8 @@ insample |>
   kable(align = "lrrrrr",
         col.names = c("", "volatility", "excess return", "Sharpe", "effective bets", "largest"))
 
-# ===== Out of sample =====
-
 ## ---- oos-loop ----
+# ===== Out of sample =====
 FIRST_OOS <- 121L                                # the register's first out-of-sample month
 stopifnot(FIRST_OOS == which(model_year(zoo::index(Re)) == 11L)[1])   # first month of model year 11
 oos    <- FIRST_OOS:nrow(Re)
@@ -472,9 +459,8 @@ ggplot2::ggplot(growth, ggplot2::aes(date, growth, colour = construction)) +
 budget <- t(race60$sleeve_budget)
 round(colMeans(budget), 3)
 
-# ===== The policy view =====
-
 ## ---- tangency-qp ----
+# ===== The policy view =====
 tan_qp <- function(S, mu) {
   stopifnot(any(mu > 0))
   n   <- ncol(S)

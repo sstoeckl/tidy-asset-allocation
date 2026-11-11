@@ -1,0 +1,354 @@
+---
+title: "The Covariance Matrix"
+subtitle: "Tidy Asset Allocation in R, Chapter 7"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 7"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/07-covariance-matrix.R to the chunks below,
+# so no line of analysis is maintained twice. root.dir takes effect after this
+# chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(PortfolioAnalytics)   # the chapter's setup chunk loads it; the moment-function and factor-model slides need it
+library(knitr)
+knitr::read_chunk("07-covariance-matrix.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** why the sample covariance matrix is singular when assets outnumber observations, and what a singular estimate claims about portfolios.
+2. **Diagnose** an estimate with its rank and its condition number before an optimizer uses it.
+3. **Implement** the four responses (fewer assets, a factor structure, shrinkage, a robust estimator) and **pass** them to `optimize.portfolio()` through `momentFUN`.
+4. **Evaluate** the routes out of sample, and **explain** why shrinkage helps only where the sample matrix cannot be computed.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+Suppose we have an equity sleeve to fill: `r ncol(eq)` names in the eligible universe, `r nrow(cls)` months of returns, and we want the combination with the lowest risk.
+
+::: {.statement}
+Michaud (1989) named the consequence and Chopra and Ziemba (1993) priced it: on a realistic universe the sample covariance matrix is singular, and a singular matrix does not give a noisy answer, it gives a meaningless one.
+:::
+
+- No view, no forecast, no tilt: the low-volatility end of the frontier of Chapter 9.
+- The failure is not one of degree, and it does not come from poor data or a badly written optimizer.
+- We set out what the optimizer asks for, work through four responses in order of cost, and ask which of them pays out of sample.
+
+<p class="source">Michaud, R. (1989). The Markowitz Optimization Enigma. *Financial Analysts Journal* 45(1), 31–42. Chopra, V. and Ziemba, W. (1993). *Journal of Portfolio Management* 19(2), 6–11.</p>
+
+## What the Optimizer Requires
+
+Minimum variance minimizes $\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$ subject to the constraints: $\boldsymbol{\Sigma}$ is the entire input. Being symmetric, it holds $N(N+1)/2$ distinct numbers, estimated from $T$ observations by
+
+$$
+\hat{\boldsymbol{\Sigma}} = \frac{1}{T-1}\sum_{t=1}^{T}
+  (\boldsymbol{r}_t - \bar{\boldsymbol{r}})(\boldsymbol{r}_t - \bar{\boldsymbol{r}})' .
+$$
+
+This is a sum of $T$ outer products, each of rank one, so
+
+$$
+\operatorname{rank}(\hat{\boldsymbol{\Sigma}}) \leq \min(N,\, T-1).
+$$
+
+- Whenever $N > T-1$ the estimate is singular, whatever the data look like: it would hold if the returns were coin flips.
+- The `r ncol(cls)` asset classes need `r ncol(cls) * (ncol(cls) + 1) / 2` parameters; the `r ncol(eq)` equities need `r format(ncol(eq) * (ncol(eq) + 1) / 2, big.mark = ",")`, from `r nrow(eq)` months.
+
+## What a Singular Estimate Claims
+
+If $\hat{\boldsymbol{\Sigma}}$ is singular, there exists a weight vector $\boldsymbol{w} \neq \boldsymbol{0}$ with
+
+$$
+\boldsymbol{w}'\hat{\boldsymbol{\Sigma}}\boldsymbol{w} = 0,
+$$
+
+a portfolio the estimate says cannot lose money, and there are as many independent such portfolios as the matrix is short of full rank.
+
+- An optimizer told to minimize variance finds them, because that is its job, and puts everything there.
+- They are long-short cancellations that happened to net out over the estimation months, and they will not net out again.
+- Among all portfolios consistent with the constraints, the procedure selects the one the estimate is most optimistic about, which is the one it is most wrong about: an *error maximizer* (Michaud, 1989).
+
+## The Condition Number
+
+Short of singularity, the quantity governing how much an error in $\hat{\boldsymbol{\Sigma}}$ is magnified on its way into the weights is
+
+$$
+\kappa(\hat{\boldsymbol{\Sigma}})
+= \frac{\lambda_{\max}}{\lambda_{\min}},
+$$
+
+the ratio of the largest to the smallest eigenvalue.
+
+- Most small eigenvalues of a financial correlation matrix are indistinguishable from those of a random matrix of the same dimensions (Laloux et al., 1999; Marchenko and Pastur, 1967).
+- The directions the optimizer most wants to exploit carry the least information.
+- Errors in expected returns hurt an order of magnitude more than errors in variances, which hurt more than errors in covariances (Chopra and Ziemba, 1993).
+
+## Diagnosing Before the Solver Does {.codesmall}
+
+```{r diagnose}
+#| echo: true
+```
+
+```{r diagnose-claims}
+#| include: false
+```
+
+- `rank` below `assets` means the matrix is singular; `riskless_directions` counts the portfolios it believes are free. Five years on `r ncol(eq)` equities produce `r covariance_health(eq[1:60, ])[["riskless_directions"]]` of them.
+- The third row has $N < T - 1$, yet the condition number is $10^{`r sprintf("%.1f", log10(h_ins[["condition"]]))`}$: the bond block nearly replicates itself. Past roughly $10^{8}$ the computation reads noise.
+
+::: {.notes}
+A finite but very large condition number is more dangerous than an infinite one, because everything still runs: the matrix inverts and the weights are a magnified copy of the sampling noise.
+:::
+
+## Rank and Condition by Window Length {.smaller}
+
+```{r rank-by-level}
+```
+
+The `min_eigen` entries on the singular rows are **negative**. A covariance matrix cannot have a negative eigenvalue; that is floating-point noise around an eigenvalue of exactly zero. The matrix describes a world in which some portfolio has negative variance.
+
+## Four Routes, and the Cheapest {.smaller}
+
+Two routes change what may be owned, two change how it is estimated. We take them in order of what they cost.
+
+**Route one: hold fewer things.** Sixteen classes rather than `r ncol(eq)` securities, or sector sleeves rather than names, leave a matrix comfortably estimable on five years.
+
+```{r windows-invertible}
+```
+
+- Not one sixty-month window of the class returns is rank deficient. At the level of individual securities it becomes the only question that matters; the data have not changed, only how many things the portfolio is asked to hold.
+- Most institutional mandates are set at the class level for this reason; it does not help when the mandate names `r ncol(eq)` securities.
+
+## Route Two: A Factor Structure
+
+Assert that returns are driven by $k$ common factors plus asset-specific noise:
+
+$$
+\boldsymbol{r}_t = \boldsymbol{B}\boldsymbol{f}_t + \boldsymbol{\varepsilon}_t,
+\qquad
+\boldsymbol{\Sigma} = \boldsymbol{B}\boldsymbol{\Omega}\boldsymbol{B}' + \boldsymbol{D},
+$$
+
+with $\boldsymbol{B}$ the $N \times k$ loadings, $\boldsymbol{\Omega}$ the covariance of the factors and $\boldsymbol{D}$ a diagonal matrix of residual variances.
+
+- That is $Nk + N$ numbers rather than $N(N+1)/2$: for three factors on `r ncol(eq)` assets, `r ncol(eq) * 3 + ncol(eq)`.
+- $\boldsymbol{D}$ is positive by construction, so the estimate cannot be singular whatever $T$ is.
+- Convergence conditions: Fan et al. (2008); choosing $k$: Bai and Ng (2002), Connor and Korajczyk (1993).
+
+## Statistical Factors in Six Lines {.codesmall}
+
+```{r factor-covariance}
+#| echo: true
+```
+
+Full rank on a window where the sample matrix has `r covariance_health(eq[1:120, ])[["riskless_directions"]]` riskless directions, and a condition number of `r sprintf("%.0f", max(e_fac) / min(e_fac))` where the sample matrix's is infinite.
+
+## A Package Constraint {.codesmall}
+
+`PortfolioAnalytics` ships this as `statistical.factor.model()`, with one constraint worth knowing about in the released version.
+
+```{r factor-model-package}
+#| echo: true
+```
+
+It requires at least as many observations as assets, which is precisely the condition under which it is not needed. Principal components need enough components, not enough columns, which is why the six lines run on the same window.
+
+::: {.notes}
+The package notes appendix records the patch that relaxes the check and where it stands. On an open source package, fixing the one line and sending it back is usually less work than the workaround.
+:::
+
+## Route Three: Shrinkage {.codesmall}
+
+Keep every asset and the sample estimate, but pull it towards a well-conditioned target $\boldsymbol{F}$, commonly a scaled identity:
+
+$$
+\hat{\boldsymbol{\Sigma}}_{\text{shrunk}}
+= (1-\lambda)\,\hat{\boldsymbol{\Sigma}} + \lambda\,\boldsymbol{F},
+\qquad \lambda \in [0, 1].
+$$
+
+```{r shrunk}
+#| echo: true
+```
+
+`lambda` is the weight on the target, `r sprintf("%.0f%%", 100 * attr(S_shr, "lambda"))` of the way towards independence here. It is estimated from the data (Ledoit and Wolf, 2003, 2004; Schäfer and Strimmer, 2005), following Stein (1956).
+
+## Route Four: Robust Estimation {.codesmall}
+
+Shrinkage repairs a matrix badly conditioned because the sample is short; a robust estimator repairs one badly centered because a few months dominate it.
+
+```{r robust-family}
+#| echo: true
+```
+
+```{r robust-demo}
+#| echo: true
+```
+
+The minimum covariance determinant estimator uses the subset of observations whose covariance has the smallest determinant (Rousseeuw, 1984). Whether the lower volatility is an improvement is a judgment about the world: right if those months were contamination, wrong if they were the tail an investor is paid to bear.
+
+## Getting Shrinkage into the Optimizer {.codesmall}
+
+`optimize.portfolio()` takes a `momentFUN` argument, and it accepts a function object rather than only the name of one.
+
+```{r moment-methods}
+#| echo: true
+```
+
+```{r momentfun-takes-a-function}
+#| echo: true
+```
+
+The released `set.portfolio.moments()` offers no shrinkage; none of its methods is route three.
+
+## A Trap: The Moment Function
+
+::: {.callout-important}
+## A moment function must set both pairs of names
+
+The returned list carries `mu` and `sigma`, and also `mean` and `var`. Different code paths inside the package read different names, so a function that sets only one pair works until the objective changes and then fails in a way that points nowhere near the cause.
+
+The matrix must also be a plain `matrix` carrying dimnames, because `cov.shrink()` returns attributes that some downstream code does not expect.
+:::
+
+- Because it is a function, it can be built with its settings baked in: one per shrinkage intensity, or one closing over a factor model fitted elsewhere.
+
+## Scoring the Routes Out of Sample {.smaller}
+
+Four estimators, three window lengths, long only and fully invested, rebalanced monthly; all windows scored on the same months.
+
+```{r equal-weight-control}
+```
+
+```{r tbl-07-race}
+```
+
+```{r race-claims}
+#| include: false
+```
+
+At sixty and at one hundred and twenty months two of the four estimators produce no portfolio on every one of the `r race$periods[1]` rebalancing dates: that is the rank bound arriving as an empty result.
+
+::: {.notes}
+The first output is the equal-weight control on the same months. The race itself is computed in the chapter's estimator script and read from its stored table.
+:::
+
+## Where Shrinkage Wins, and Where It Ties {.smaller}
+
+```{r the-tie}
+```
+
+- Shrinkage gives the lower volatility of the two estimators that run: `r sprintf("%.1f%%", 100 * at("shrunk", 120, "ann_vol"))` at 120 months against `r sprintf("%.1f%%", 100 * at("diagonal", 120, "ann_vol"))` for the diagonal and `r sprintf("%.1f%%", 100 * ew[["ann_vol"]])` for equal weighting.
+- At 180 months the sample matrix is estimable and `r sprintf("%.4f", at("shrunk", 180, "ann_vol"))` against `r sprintf("%.4f", at("sample", 180, "ann_vol"))` is a dead heat. Shrinkage is the estimator that exists when the others do not.
+- `lambda` falls from `r sprintf("%.3f", at("shrunk", 60, "lambda"))` to `r sprintf("%.3f", at("shrunk", 180, "lambda"))`: the procedure asks for less help as it needs less.
+
+## Lower Volatility Is Not a Better Portfolio {.smaller}
+
+- At 180 months the sample matrix has the lowest volatility and shrinkage the highest Sharpe ratio; the factor model trails both by `r sprintf("%.2f", min(r180$sharpe[r180$estimator %in% c("sample", "shrunk")]) - at("factor3", 180, "sharpe"))` on Sharpe ratio. Volatility was the objective, and it does not rank the results.
+- Minimum variance cut annualized volatility from `r sprintf("%.1f%%", 100 * ew[["ann_vol"]])` to `r sprintf("%.1f%%", 100 * at("shrunk", 120, "ann_vol"))`, and gave up `r sprintf("%.1f", 100 * (ew[["ann_ret"]] - at("shrunk", 120, "ann_ret")))` percentage points of annual return.
+- On this market it finished ahead of equal weighting on Sharpe ratio, `r sprintf("%.3f", at("shrunk", 120, "sharpe"))` against `r sprintf("%.3f", ew[["sharpe"]])`.
+- That is not the general finding: DeMiguel et al. (2009) report that no optimized rule is reliably ahead of equal weighting. Chapter 8 asks whether the advantage belongs to the method or to this sample.
+
+## The Spectrum Before and After Shrinkage
+
+```{r spectrum}
+#| include: false
+```
+
+```{r fig-07-spectrum}
+#| fig-alt: "Eigenvalue spectrum of the sample and the shrunk covariance matrix on a log scale; the sample matrix runs off the bottom."
+```
+
+The largest eigenvalue falls by `r sprintf("%.1f%%", 100 * (1 - e_h[1] / e_s[1]))` and the smallest non-zero one rises by a factor of `r sprintf("%.0f", min(e_h) / min(e_s[e_s > 1e-12]))`. The `r sum(e_s < 1e-12)` zero eigenvalues of the sample matrix are the riskless portfolios seen from the other side.
+
+::: {.notes}
+Shrinkage is not a better guess at any individual covariance. It states that the extremes of a sample spectrum are mostly sampling error and belong nearer the middle (Laloux et al., 1999).
+:::
+
+## Shrink Towards What, When the Target Moves? {.smaller}
+
+A scaled identity is chosen for being maximally unlike the noisy thing it corrects, not for being true. Calm months against the credit crisis of `sim_episodes`:
+
+```{r regimes}
+```
+
+```{r regimes-claims}
+#| include: false
+```
+
+- The first principal component carries `r sprintf("%.0f%%", 100 * shape["calm", "pc1_share"])` of the variance in calm months and `r sprintf("%.0f%%", 100 * shape["crisis", "pc1_share"])` through the crisis; mean correlation rises from `r sprintf("%.2f", shape["calm", "mean_correlation"])` to `r sprintf("%.2f", shape["crisis", "mean_correlation"])`.
+- The crisis lies beyond `r sprintf("%.0f%%", 100 * beyond[["pc1"]])` of calm windows of its own length, so the rank bound alone does not explain it.
+- A diagonal target is least defensible exactly when it does the most work: the reason to prefer a factor target where one is available.
+
+## The Shrinkage Already in Place
+
+Every optimization so far has been long only. Jagannathan and Ma (2003) showed that a non-negativity constraint acts on the solution as shrinkage acts on the matrix: it forbids the large offsetting long-short positions that a singular estimate invites.
+
+- Imposing the constraint improves out-of-sample risk even when it is known to be false; Frost and Savarino (1988) reach the same conclusion from the Bayesian side.
+- Route three took about a third off the volatility of an equal-weighted sleeve. The long-only constraint, imposed for reasons of mandate, had already done comparable work for nothing.
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** The sample covariance matrix is singular whenever there are more assets than observations, regardless of the data; on `r ncol(eq)` equities and five years it is short of full rank by more than sixty.
+- **Outcome 1.** A singular estimate asserts that some portfolio has zero variance, and a minimizer will find it and hold it.
+- **Outcome 2.** The condition number measures how much an input error is magnified in the weights; the smallest eigenvalues of a financial covariance matrix are largely noise.
+- **Outcome 3.** There are four responses: hold fewer assets, impose a factor structure, shrink, or estimate robustly. The first three address conditioning; the fourth addresses contamination.
+- **Outcome 4.** Shrinkage wins where the sample matrix cannot be computed and ties with it once the window is long enough; its own $\lambda$ falls as the window grows.
+- **Outcome 4.** Minimum variance cut volatility by about a third and finished ahead of equal weighting here; the long-only constraint is itself a form of shrinkage.
+
+## Exercises {.smaller}
+
+Work these in `code/07-covariance-matrix-exercises.R`; solutions are in appendix G of the book.
+
+1. Apply `covariance_health()` to the government and credit instruments of `sim_assets` alone. The matrix is nearly singular with far more observations than assets; identify the reason from the eigenvectors of the smallest eigenvalues.
+2. Fix `lambda` of `corpcor::cov.shrink()` at 0, 0.1, 0.25, 0.5 and 1 and plot realized out-of-sample volatility against it. Is the analytic choice near the minimum?
+3. Build a moment function on `factor_covariance()` and compare it with `shrinkage_moments()` on the same rolling windows. Where does the factor structure stop helping?
+4. Repeat the minimum-variance optimization on the equities with the shrunk matrix, long only and with weights free to go negative. Quantify the Jagannathan and Ma effect.

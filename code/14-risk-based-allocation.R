@@ -17,9 +17,8 @@ Re <- R - sim_riskfree_monthly$return
 S  <- stats::cov(Re)
 N  <- ncol(Re)
 
-# ===== The decomposition that makes this precise =====
-
 ## ---- risk-contribution ----
+# ===== The decomposition that makes this precise =====
 risk_contribution <- function(w, S) {
   marginal <- as.numeric(S %*% w)
   (w * marginal) / as.numeric(t(w) %*% S %*% w)
@@ -28,9 +27,8 @@ risk_contribution <- function(w, S) {
 w_eq <- setNames(rep(1 / N, N), colnames(Re))
 round(sort(risk_contribution(w_eq, S), decreasing = TRUE)[1:5], 4)
 
-# ===== Equal risk contribution =====
-
 ## ---- erc ----
+# ===== Equal risk contribution =====
 erc <- function(S, tol = 1e-12, max_iter = 1e5) {
   N <- ncol(S)
   w <- rep(1 / N, N)
@@ -52,9 +50,8 @@ round(sort(w_erc, decreasing = TRUE)[1:6], 4)
 ## ---- erc-claims ----
 stopifnot(names(which.max(w_erc)) == "US_government")
 
-# ===== The approximation that is nearly free =====
-
 ## ---- inverse-vol ----
+# ===== The approximation that is nearly free =====
 base <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "full_investment") |>
   add.constraint(type = "long_only")
@@ -68,24 +65,21 @@ c(l1_distance_from_erc = sum(abs(w_iv - w_erc)) / 2,
   weight_correlation   = stats::cor(w_iv, w_erc),
   max_rc_deviation     = max(abs(risk_contribution(w_iv, S) - 1 / N)))
 
-# ===== Implementation =====
-
 ## ---- spec ----
+# ===== Implementation =====
 rb_spec <- base |>
   add.objective(type = "risk_budget", name = "StdDev", min_concentration = TRUE)
 
-# ===== The objective is right =====
-
 ## ---- objective-values ----
+# ===== The objective is right =====
 score <- function(w) {
   constrained_objective(w = as.numeric(w), R = Re, portfolio = rb_spec,
                         trace = TRUE, normalize = FALSE)$out
 }
 c(equal_weight = score(w_eq), true_erc = score(w_erc))
 
-# ===== The search does not find it =====
-
 ## ---- searches ----
+# ===== The search does not find it =====
 set.seed(1602)
 
 attempt <- function(method, ...) {
@@ -146,9 +140,8 @@ tibble::tibble(
   kable(align = "lrrr",
         col.names = c("", "L1 from ERC", "max RC deviation", "volatility"))
 
-# ===== What the machinery does do =====
-
 ## ---- max-prisk ----
+# ===== What the machinery does do =====
 set.seed(1602)
 capped <- optimize.portfolio(
   Re, base |> add.objective(type = "risk_budget", name = "StdDev", max_prisk = 0.15),
@@ -157,9 +150,8 @@ capped <- optimize.portfolio(
 w_cap <- extractWeights(capped)[colnames(Re)]
 c(largest_risk_contribution = max(risk_contribution(w_cap, S)), cap = 0.15)
 
-# ===== Auditing concentration =====
-
 ## ---- concentration ----
+# ===== Auditing concentration =====
 effective_bets <- function(w) {
   r <- risk_contribution(w, S); r <- r[r > 0]
   exp(-sum(r * log(r)))                      # the entropy of the risk shares
@@ -190,9 +182,8 @@ conc |>
   kable(align = "lrrrr",
         col.names = c("", "HHI", "diversification", "effective bets", "volatility"))
 
-# ===== The trade, in its own units =====
-
 ## ---- oos-line ----
+# ===== The trade, in its own units =====
 sweep <- utils::read.csv("tables/oos-sweep.csv") |>
   dplyr::filter(universe == "classes", window == 60,
                 frequency == "months", basis == "gross")
@@ -206,9 +197,8 @@ stopifnot(sr_oos("min_variance") > sr_oos("equal_weight"),
           sr_oos("inverse_vol")  > sr_oos("max_sharpe"),
           to_oos("inverse_vol")  < to_oos("max_sharpe") / 4)
 
-# ===== The covariance is a regime variable =====
-
 ## ---- regime-spectrum ----
+# ===== The covariance is a regime variable =====
 d      <- zoo::index(Re)
 in_ep  <- vapply(sim_episodes$episode, function(e) in_episode(d, e),
                  logical(length(d)))

@@ -17,9 +17,8 @@ library(tidypm)
 ann_ret <- function(x, p = 12) prod(1 + x)^(p / length(x)) - 1
 ann_vol <- function(x, p = 12) stats::sd(x) * sqrt(p)
 
-# ===== Implementation =====
-
 ## ---- universe ----
+# ===== Implementation =====
 returns  <- sim_class_returns_monthly     # date, class, return, index
 money    <- sim_money_market_monthly      # the five money markets, beside them
 bill     <- sim_riskfree_monthly          # date, rate_annual, return
@@ -34,9 +33,8 @@ rf <- bill$return
 stopifnot(identical(zoo::index(R), zoo::index(M)), length(rf) == nrow(R))
 dim(R)
 
-# ===== The moments =====
-
 ## ---- moments ----
+# ===== The moments =====
 moments <- tibble::tibble(
   series   = colnames(R),
   ret      = apply(R, 2, ann_ret),
@@ -91,9 +89,8 @@ ggplot2::ggplot(moments, ggplot2::aes(vol, ret)) +
   ggplot2::scale_y_continuous(labels = scales::percent) +
   ggplot2::labs(x = "annualized volatility", y = "annualized return", colour = NULL)
 
-# ===== Testing the distribution =====
-
 ## ---- normality ----
+# ===== Testing the distribution =====
 jb_stat <- vapply(colnames(R), function(s) {
   x <- as.numeric(R[, s]); n <- length(x)
   s3 <- mean((x - mean(x))^3) / stats::sd(x)^3
@@ -114,10 +111,9 @@ stopifnot(identical(names(jb_stat), colnames(R)),
           all(grepl("_credit$", names(sort(jb_stat, decreasing = TRUE))[1:3])))
 
 ## ---- tbl-04-tails ----
-# Expected shortfall at 95%, computed two ways. The Gaussian-corrected figure
-# is the Cornish-Fisher expansion, which adjusts a normal quantile for
-# skewness and kurtosis; the historical figure simply averages the realized
-# tail.
+# Expected shortfall at 95%, computed two ways. The Cornish-Fisher figure
+# adjusts a normal quantile for the measured skewness and kurtosis; the
+# historical figure simply averages the realized tail.
 tails <- tibble::tibble(
   series = colnames(R),
   es_hist = apply(R, 2, function(x)
@@ -130,9 +126,8 @@ tails <- tibble::tibble(
 
 head(tails, 4)
 
-# ===== How well each moment is estimated =====
-
 ## ---- instability ----
+# ===== How well each moment is estimated =====
 win <- 60L
 risky <- colnames(R)
 
@@ -195,9 +190,8 @@ ggplot2::ggplot(rolls, ggplot2::aes(date, value, colour = moment)) +
                                           vol = tidyaa_colors[["blue"]])) +
   ggplot2::labs(y = NULL, colour = NULL)
 
-# ===== Drawdowns are episodes, not a number =====
-
 ## ---- drawdowns ----
+# ===== Drawdowns are episodes, not a number =====
 # table.Drawdowns() returns dates; we print them on the model calendar.
 model_dates <- function(tab) {
   dplyr::mutate(tab, dplyr::across(c(From, Trough, To),
@@ -214,18 +208,17 @@ deepest <- lapply(colnames(R), function(s) {
 still_down <- is.na(deepest$Recovery)
 deepest$series[still_down]
 
-# ===== Fat tails are events, not a distribution =====
-
 ## ---- clustering ----
+# ===== Fat tails are events, not a distribution =====
 Rr  <- R[, risky]
 z   <- scale(Rr)
 hit <- rowSums(abs(z) > 2.5)
 p   <- mean(abs(z) > 2.5)
 
 obs <- table(factor(hit, levels = 0:ncol(Rr)))
-exp <- stats::dbinom(0:ncol(Rr), ncol(Rr), p) * nrow(Rr)
+expct <- stats::dbinom(0:ncol(Rr), ncol(Rr), p) * nrow(Rr)
 
-tibble::tibble(k = 0:ncol(Rr), observed = as.integer(obs), expected = round(exp, 2)) |>
+tibble::tibble(k = 0:ncol(Rr), observed = as.integer(obs), expected = round(expct, 2)) |>
   dplyr::filter(k >= 3, observed > 0)
 
 ## ---- worst-month ----
@@ -248,9 +241,8 @@ tibble::as_tibble(z) |>
                                 high = tidyaa_colors[["blue"]], midpoint = 0) +
   ggplot2::labs(y = NULL, fill = NULL)
 
-# ===== The crises are not one crisis =====
-
 ## ---- episodes ----
+# ===== The crises are not one crisis =====
 ep  <- sim_episodes                 # episode, label, start, end, description
 cum <- vapply(ep$episode, function(e) {
   apply(Rr[in_episode(d, e), ], 2, function(x) prod(1 + x) - 1)
@@ -296,9 +288,8 @@ rc <- stats::setNames(regime$mean_cor, regime$regime)
 stopifnot(rc[["credit_crisis"]] > rc[["calm"]], rc[["rates_shock"]] > rc[["calm"]],
           rc[["equity_bear"]] < rc[["calm"]])
 
-# ===== Currency is not one decision =====
-
 ## ---- currency ----
+# ===== Currency is not one decision =====
 fx <- sim_fx_monthly
 share <- function(series, region) {
   u <- as.numeric(R[, series])

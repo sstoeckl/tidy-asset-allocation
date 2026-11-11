@@ -17,9 +17,8 @@ rf <- sim_riskfree_monthly$return
 Re <- R - rf
 stopifnot(ncol(Re) == 16L, !anyNA(Re), length(rf) == nrow(R))
 
-# ===== What an information ratio is estimating =====
-
 ## ---- months-needed ----
+# ===== What an information ratio is estimating =====
 # Months of data before an information ratio has a t-statistic of two,
 # by eq-24-se applied per month and the ratio quoted per year.
 months_needed <- function(ir_annual, t_stat = 2) {
@@ -28,9 +27,8 @@ months_needed <- function(ir_annual, t_stat = 2) {
 }
 round(c(months = months_needed(0.5), years = months_needed(0.5) / 12), 1)
 
-# ===== A policy portfolio and a manager =====
-
 ## ---- policy ----
+# ===== A policy portfolio and a manager =====
 sleeve_of <- function(a) dplyr::case_when(
   grepl("_equity$", a)     ~ "equity",
   grepl("_government$", a) ~ "government",
@@ -79,16 +77,14 @@ stopifnot(all(diagnose_rebalancing(bt)$status == "converged"),
           identical(colnames(W_act), colnames(R)))
 c(rebalances = nrow(W_act), first = fmt_model(zoo::index(W_act)[1]))
 
-# ===== Two return series, and the trap between them =====
-
 ## ---- backfill ----
+# ===== Two return series, and the trap between them =====
 msg <- tryCatch(Return.portfolio(R, weights = W_act),
                 warning = function(w) conditionMessage(w))
 msg
 
-# ===== The benchmark comparison starts with a portfolio nobody chose =====
-
 ## ---- returns ----
+# ===== The benchmark comparison starts with a portfolio nobody chose =====
 first_w <- zoo::index(W_act)[1]
 R_oos   <- R[zoo::index(R) > first_w]             # the months a weight vector precedes
 rf_oos  <- xts::xts(rf[zoo::index(R) > first_w], order.by = zoo::index(R_oos))
@@ -107,9 +103,8 @@ a <- Rp - Rb                                    # the active return of eq-24-te
 colnames(a) <- "active_return"
 c(months = nrow(a), from = fmt_model(zoo::index(a)[1]))
 
-# ===== The measures in PerformanceAnalytics =====
-
 ## ---- measures ----
+# ===== The measures in PerformanceAnalytics =====
 te_pa <- TrackingError(Rp, Rb)
 ap_pa <- ActivePremium(Rp, Rb)
 ir_pa <- InformationRatio(Rp, Rb)
@@ -121,9 +116,8 @@ stopifnot(all.equal(as.numeric(ir_ar), ir_hand),
 round(c(tracking_error = te_pa, active_premium = ap_pa,
         IR_default = ir_pa, IR_arithmetic = ir_ar), 4)
 
-# ===== The default information ratio is not @eq-24-ir =====
-
 ## ---- capture ----
+# ===== The default information ratio is not @eq-24-ir =====
 capture <- table.CaptureRatios(Rp, Rb)
 up_months <- UpDownRatios(Rp, Rb, method = "Number", side = "Up")
 dn_months <- UpDownRatios(Rp, Rb, method = "Number", side = "Down")
@@ -154,9 +148,8 @@ active_share <- rowSums(abs(sweep(zoo::coredata(W_act), 2, b[colnames(W_act)])))
 round(c(mean = mean(active_share), lowest = min(active_share),
         highest = max(active_share)), 3)
 
-# ===== Active weights in PortfolioAnalytics =====
-
 ## ---- active-sum ----
+# ===== Active weights in PortfolioAnalytics =====
 spec_active <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "active") |>                      # min_sum = max_sum = 0
   add.constraint(type = "box", min = -b, max = 1 - b) |>  # so that b + x >= 0
@@ -188,9 +181,8 @@ stopifnot(all(abs(dual$active_return - dual$target) < 1e-6),
           all(abs(dual$sum_active) < 1e-8), all(abs(dual$min_weight) < 1e-6))
 dual |> dplyr::mutate(dplyr::across(-target, ~ round(.x, 4)))
 
-# ===== The tracking-error budget, built =====
-
 ## ---- te-tilt ----
+# ===== The tracking-error budget, built =====
 te_tilt <- function(tau, sigma_max = NULL) {
   w <- CVXR::Variable(length(mu))
   x <- w - b
@@ -276,9 +268,8 @@ te_frontier |>
         col.names = c("budget", "active return", "IR", "volatility",
                       "excess return", "gap to frontier", "held", "active share"))
 
-# ===== Jorion's repair, and the anchored allocation =====
-
 ## ---- jorion ----
+# ===== Jorion's repair, and the anchored allocation =====
 tau_budget <- 0.04
 w_roll   <- te_tilt(tau_budget)
 w_jorion <- te_tilt(tau_budget, sigma_max = p_vol(b))
@@ -349,9 +340,8 @@ ggplot2::ggplot() +
   ggplot2::scale_y_continuous(labels = scales::percent) +
   ggplot2::labs(x = "annualized volatility", y = "annualized excess return")
 
-# ===== Where the active return came from, by sleeve =====
-
 ## ---- brinson ----
+# ===== Where the active return came from, by sleeve =====
 sleeves <- sort(unique(sl))
 W_used_x <- xts::xts(W_used, order.by = zoo::index(R_oos))   # weights applied in month t
 
@@ -409,9 +399,8 @@ stopifnot(abs(sum(attr_tbl$total) - mean(a) * 12) < 1e-10,
           all(attr_tbl$allocation[attr_tbl$sleeve %in% c("equity", "government")] < 0),
           all(abs(attr_tbl$selection) < abs(attr_tbl$allocation)))
 
-# ===== The benchmark is a bet =====
-
 ## ---- cap-weights ----
+# ===== The benchmark is a bet =====
 eq  <- sim_assets$asset_id[sim_assets$asset_class == "equity"]
 Ra  <- as_xts_pm(sim_asset_returns_monthly[sim_asset_returns_monthly$asset %in% eq, ],
                  date, asset, return)
@@ -470,9 +459,8 @@ dplyr::bind_rows(
 ## ---- size-bet ----
 round(size_bet, 3)
 
-# ===== The error bar =====
-
 ## ---- beta-instability ----
+# ===== The error bar =====
 MKT   <- rowSums(Wc * zoo::coredata(Ra))          # the proxy of chapter 5
 mkt_e <- MKT - rf
 

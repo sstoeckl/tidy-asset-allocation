@@ -1,0 +1,409 @@
+---
+title: "Estimation Error and Its Cost"
+subtitle: "Tidy Asset Allocation in R, Chapter 8"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 8"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/08-estimation-error.R to the chunks below,
+# so no line of analysis is maintained twice. root.dir takes effect after this
+# chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("08-estimation-error.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** the plug-in rule and the size of what it promises and what it loses, both of order $N/T$.
+2. **Measure** the Sharpe gap, promised minus realized, for four rules on rolling windows.
+3. **Split** the loss between the mean and the covariance by simulation under a known truth.
+4. **Evaluate** the window at which optimization overtakes $1/N$, and read the out-of-sample register.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+How much is a better forecast worth, in Sharpe ratio?
+
+::: {.statement}
+DeMiguel, Garlappi and Uppal (2009) asked it the other way round: fourteen optimizing rules against the portfolio that forecasts nothing, equal weighting, on seven datasets. None beat it reliably out of sample.
+:::
+
+- Jobson and Korkie (1980): the estimated tangency portfolio can be outperformed by equal weighting.
+- Michaud (1989): an optimizer is an error maximizer; Best and Grauer (1991): small changes in the means move the weights by large amounts.
+- Chopra and Ziemba (1993): errors in means cost about eleven times as much as errors in variances.
+- This chapter is about **strategic allocation**: unconditional moments, and what estimating them costs.
+
+<p class="source">DeMiguel, V., Garlappi, L., Uppal, R. (2009). Optimal versus naive diversification. *Review of Financial Studies* 22(5), 1915–1953.</p>
+
+## The Plug-In Rule
+
+From $T$ months of excess returns the sample estimates are
+
+$$
+\hat{\boldsymbol{\mu}} = \frac{1}{T}\sum_{t=1}^{T}\boldsymbol{r}_t,
+\qquad
+\hat{\boldsymbol{\Sigma}} = \frac{1}{T-1}\sum_{t=1}^{T}
+  (\boldsymbol{r}_t - \hat{\boldsymbol{\mu}})(\boldsymbol{r}_t - \hat{\boldsymbol{\mu}})' ,
+$$
+
+and the **plug-in rule** substitutes them into the solution as though they were the truth:
+
+$$
+\hat{\boldsymbol{w}}_{\text{tan}}
+= \frac{\hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}}
+       {\boldsymbol{\iota}'\hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}},
+\qquad
+\hat{\boldsymbol{w}}_{\text{mv}}
+= \frac{\hat{\boldsymbol{\Sigma}}^{-1}\boldsymbol{\iota}}
+       {\boldsymbol{\iota}'\hat{\boldsymbol{\Sigma}}^{-1}\boldsymbol{\iota}} .
+$$
+
+The second needs no $\hat{\boldsymbol{\mu}}$, and the precision of $\hat{\boldsymbol{\mu}}$ depends on the calendar span of the sample, not on how often it is observed.
+
+::: {.notes}
+Data: the sixteen risky class series of the modeled market, `r nrow(Re)` monthly excess returns each. Everything computed in this chapter is long only unless said otherwise.
+:::
+
+## Two Rules That Estimate Almost Nothing
+
+::: {.columns}
+::: {.column width="50%"}
+**Equal weighting** estimates nothing:
+
+$$
+\boldsymbol{w}_{1/N} = \frac{\boldsymbol{\iota}}{N}.
+$$
+:::
+::: {.column width="50%"}
+**Inverse volatility** estimates one moment per asset:
+
+$$
+w_i = \frac{\hat{\sigma}_i^{-1}}{\sum_{j=1}^{N}\hat{\sigma}_j^{-1}}.
+$$
+:::
+:::
+
+- Both are estimators; equal weighting is the degenerate one whose variance is zero.
+- The comparison is not naive against sophisticated but a sequence of rules that estimate zero, one, or all of the moments the objective asks for.
+
+## Why the Promise Is Inflated
+
+The unconstrained weights are linear in $\hat{\boldsymbol{\mu}}$ with coefficient matrix $\hat{\boldsymbol{\Sigma}}^{-1}$ (Best and Grauer, 1991). With $\theta^2 = \boldsymbol{\mu}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$ the squared maximum Sharpe ratio, under independent normal returns (Kan and Zhou, 2007)
+
+$$
+\mathbb{E}\big[\hat{\theta}^2\big] = \frac{T\,\theta^2 + N}{T - N - 2} .
+$$
+
+- This exceeds $\theta^2$ for every finite $T$, by a term of order $N/T$ that is present even when $\theta^2 = 0$.
+- A window of $T$ months on $N$ assets manufactures a squared Sharpe ratio of roughly $N/T$ from noise alone.
+
+## And the Delivery Is Lower {.smaller}
+
+For quadratic utility $U(\boldsymbol{w}) = \boldsymbol{w}'\boldsymbol{\mu} - \tfrac{\gamma}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$ the optimum attains $\theta^2/(2\gamma)$. The plug-in rule $\hat{\boldsymbol{w}} = \hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}/\gamma$ attains, in expectation (Kan and Zhou, 2007),
+
+$$
+\mathbb{E}\big[U(\hat{\boldsymbol{w}})\big]
+= \frac{\theta^2}{\gamma}\,\frac{T}{T-N-2}
+\;-\;\frac{T^2 (T-2)}{2\gamma\,(T-N-1)(T-N-2)(T-N-4)}
+   \left(\theta^2 + \frac{N}{T}\right).
+$$
+
+- First term: the plug-in portfolio's expected return, inflated by $T/(T-N-2)$.
+- Second term: its expected variance, carrying the same $N/T$. Positions taken on noise have variance but no return.
+- The loss falls with $T$ and rises with $N$; for small $T$ relative to $N$ the expected utility is negative, worse than holding the bill.
+
+```{r kz-numbers}
+#| include: false
+```
+
+```{r kz-check}
+#| include: false
+```
+
+## The Formula on the Sixteen Series
+
+The only data-dependent quantity is $\theta^2 = `r sprintf("%.4f", theta2)`$ a month, an unconstrained maximum Sharpe ratio of `r sprintf("%.2f", sqrt(12 * theta2))` a year.
+
+```{r tbl-08-kz}
+```
+
+- On sixty months, the unconstrained investor is expected to do worse than cash.
+- The full sample of `r nrow(Re)` months recovers `r sprintf("%.0f%%", 100 * kz$share[kz$T == nrow(Re)])` of the optimum.
+- A simulation of 2,000 normal draws of sixty months gives a promised annualized Sharpe ratio of `r sprintf("%.2f", sqrt(12 * mean(mc["theta2_hat", ])))` for a truth of `r sprintf("%.2f", sqrt(12 * theta2))`.
+
+::: {.notes}
+The simulation reproduces both closed forms to the second decimal, which is the algebra working. The formula assumes normality and independence, which this market violates.
+:::
+
+## The Sharpe Gap
+
+On a rolling window ending at $t$, the **promised** Sharpe ratio is the one the window itself reports,
+
+$$
+\widehat{SR}^{\,\text{promised}}_t
+= \frac{\hat{\boldsymbol{w}}_t'\hat{\boldsymbol{\mu}}_t}
+       {\sqrt{\hat{\boldsymbol{w}}_t'\hat{\boldsymbol{\Sigma}}_t\hat{\boldsymbol{w}}_t}} ,
+$$
+
+and the **realized** Sharpe ratio is the one earned by the held portfolios $\hat{\boldsymbol{w}}_t'\boldsymbol{r}_{t+1}$ out of sample. The **gap** is
+
+$$
+\text{gap} = \overline{\widehat{SR}^{\,\text{promised}}} - SR^{\,\text{realized}} ,
+$$
+
+annualized by $\sqrt{12}$.
+
+- It needs no truth, and compares a rule with itself across time.
+- For equal weighting the promise is not zero: the window still flatters it. That makes it the control.
+
+::: {.notes}
+Broadie (1993) separates the true, estimated and actual frontiers: the promise is a point on the estimated one, the realization a point on the actual one.
+:::
+
+## The Naive Rules in `PortfolioAnalytics` {.codesmall}
+
+Both benchmarks are exported functions with the signature of an optimizer.
+
+```{r naive-rules}
+#| echo: true
+```
+
+```{r naive-weights}
+#| include: false
+```
+
+`US_government`, the least volatile series, receives `r sprintf("%.1f%%", 100 * max(w_iv))` of the inverse-volatility portfolio against `r sprintf("%.1f%%", 100 / N)` of equal weighting.
+
+## A Trap: Naive Rules in the Rebalancing Loop {.codesmall}
+
+::: {.callout-important}
+## Passed by name, the naive rules return `NA` weights without an error
+`optimize.portfolio.rebalancing(optimize_method = "equal.weight")` completes normally and every period holds `NA` weights; passing the function object fails at the first subscript.
+:::
+
+```{r naive-in-rebalancing}
+#| echo: true
+```
+
+- `r length(bt_naive$opt_rebalancing)` periods, each of class `optimize.portfolio.equal.weight`, none usable.
+- The only route is to call the functions directly on each window, as the loop below does.
+
+## The Optimized Rules as Quadratic Programs {.codesmall}
+
+The long-only tangency uses a change of variable: minimize $\boldsymbol{y}'\boldsymbol{\Sigma}\boldsymbol{y}$ subject to $\boldsymbol{y}'\boldsymbol{\mu} = 1$, $\boldsymbol{y} \geq \boldsymbol{0}$, then rescale $\boldsymbol{w} = \boldsymbol{y}/\boldsymbol{\iota}'\boldsymbol{y}$.
+
+```{r qp-rules}
+#| echo: true
+#| output: false
+```
+
+```{r qp-check}
+#| include: false
+```
+
+Checked against `optimize.portfolio()` with `ROI` on one problem, both agree to a turnover below one basis point. The full-sample tangency portfolio places `r sprintf("%.0f%%", 100 * w_tan[["US_government"]])` in `US_government` and `r sprintf("%.0f%%", 100 * w_tan[["US_equity"]])` in `US_equity`; its Sharpe ratio under the full-sample moments is `r sprintf("%.3f", sharpe_of(w_tan, mu, S))`.
+
+::: {.notes}
+Writing the two problems directly is what makes several thousand solves feasible in the simulation later.
+:::
+
+```{r rolling-gap}
+#| include: false
+```
+
+```{r realized-sharpe}
+#| include: false
+```
+
+```{r gap-check}
+#| include: false
+```
+
+```{r gap-facts}
+#| include: false
+```
+
+## The Gap, Rule by Rule
+
+`r length(ends)` rolling windows of sixty months, scored out of sample from the first month of model year 11.
+
+```{r tbl-08-gap}
+```
+
+- The tangency portfolio promises `r sprintf("%.2f", g("max_sharpe", "promised"))` and delivers `r sprintf("%.2f", g("max_sharpe", "realized"))`, keeping `r sprintf("%.0f%%", 100 * g("max_sharpe", "kept"))`; its gap is `r sprintf("%.1f", g("max_sharpe", "gap") / g("equal_weight", "gap"))` times that of equal weighting.
+- Minimum variance estimates only $\hat{\boldsymbol{\Sigma}}$, realizes the most, and keeps `r sprintf("%.0f%%", 100 * g("min_variance", "kept"))`.
+
+::: {.notes}
+Scoring from the start of the sample instead lifts the tangency portfolio from last to rank `r rank_all` of `r nrow(gap_all)`, but the four gaps keep their order. The same experiment through the backtesting chapter's register agrees to within a thousandth.
+:::
+
+## The Gap in a Picture
+
+```{r fig-08-gap}
+#| fig-alt: "Dumbbell chart of promised and realized annualized Sharpe ratios for four rules, one segment per rule."
+#| fig-asp: 0.45
+```
+
+The ordering of the gaps is the ordering of how much each rule estimates: nothing, one volatility per asset, the whole of $\hat{\boldsymbol{\Sigma}}$, and then $\hat{\boldsymbol{\mu}}$ with maximization over it.
+
+## A Truth to Score Against
+
+A backtest cannot say which input caused the gap. A simulation can: we take the full-sample moments as the truth, draw $T$ months from a normal distribution with those moments, estimate, form the long-only tangency portfolio, and score it under the truth.
+
+```{r truth}
+#| echo: true
+```
+
+- Under the truth the tangency portfolio has a Sharpe ratio of `r sprintf("%.2f", sr_star)`, equal weighting `r sprintf("%.2f", sr_ew)`, minimum variance `r sprintf("%.2f", sr_gmv)`.
+- The first is the ceiling: the average distance below it is the loss.
+
+## The Mean Channel and the Covariance Channel {.smaller}
+
+The decomposition is Chopra and Ziemba's (1993), by substitution. On every draw we form three portfolios:
+
+1. the plug-in rule, both moments estimated;
+2. estimated mean, **true** covariance: what estimating $\boldsymbol{\mu}$ costs;
+3. true mean, **estimated** covariance: what estimating $\boldsymbol{\Sigma}$ costs.
+
+```{r channels}
+#| include: false
+```
+
+```{r tbl-08-channels}
+```
+
+```{r channel-facts}
+#| include: false
+```
+
+::: {.notes}
+300 draws per window length, long-only throughout. The ratio at sixty months is smaller than the eleven of Chopra and Ziemba because the long-only constraint caps what an error in the mean can do to the weights.
+:::
+
+## Where the Loss Sits
+
+```{r fig-08-channels}
+#| fig-alt: "Sharpe ratio under the truth against estimation window length for three estimated portfolios, with true tangency, minimum variance and equal weight as dashed lines."
+#| fig-asp: 0.6
+```
+
+At sixty months the mean channel costs `r sprintf("%.0f", ratio(60L))` times the covariance channel, and `r sprintf("%.0f", ratio(1000L))` times at a thousand months. A thousand months is eighty-three years: the standard error of a mean falls with the square root of the span.
+
+## When 1/N Stops Winning
+
+For sub-universes of four, eight and sixteen series, and each window length, we score the long-only rule, the unconstrained rule and equal weighting under the sub-universe's own truth.
+
+```{r region}
+#| include: false
+```
+
+```{r tbl-08-crossover}
+```
+
+```{r region-facts}
+#| include: false
+```
+
+- A long-only constraint shortens the crossover from `r cr(16L, "T_unconstrained")` to `r cr(16L, "T_long_only")` months on the sixteen: a shrinkage of the covariance matrix in disguise (Jagannathan and Ma, 2003).
+- The required window does not grow with $N$ here, because the benefit of optimizing grows with it.
+
+## The Crossover in a Picture
+
+```{r fig-08-region}
+#| fig-alt: "Two panels, long only and unconstrained, of the expected Sharpe ratio of the estimated tangency portfolio minus equal weighting against window length for three universe sizes."
+#| fig-asp: 0.5
+```
+
+The cost of estimating is of order $N/T$; the benefit is whatever the universe offers. Here government bonds beside equities are what $1/N$ cannot exploit.
+
+::: {.notes}
+In the simulation the long-only tangency portfolio beats equal weighting on sixty months in `r sprintf("%.0f%%", 100 * share_60)` of draws. The rolling backtest says it did not: estimation error under a fixed truth is a lower bound, because the moments drift.
+:::
+
+```{r register}
+#| include: false
+```
+
+```{r register-facts}
+#| include: false
+```
+
+## The Register Line
+
+Out of sample, sixty-month windows, read from the backtesting chapter's register.
+
+```{r deck-register}
+# Reshapes the chapter's `reg` object for display; no new analysis.
+reg |>
+  dplyr::transmute(rule = label,
+                   `Sharpe ratio` = sprintf("%.2f", sharpe),
+                   volatility = sprintf("%.1f%%", 100 * ann_vol),
+                   turnover = sprintf("%.2f", ann_turnover)) |>
+  kable(align = "lrrr")
+```
+
+- The rules that estimate no mean occupy the first four places. On 120-month windows the tangency portfolio ranks `r rank_of("max_sharpe", reg_120)` of `r nrow(reg_120)`, ahead of both naive rules.
+- Differences between the tangency portfolio and $1/N$ are below the standard error of `r sprintf("%.2f", se_tan)`.
+
+::: {.notes}
+The lesson is not that optimization fails: the cost of an input is set by how well it can be estimated, and the mean cannot.
+:::
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** A plug-in portfolio promises more than the truth and delivers less, both driven by $N/T$; on sixty months of sixteen series the unconstrained rule's expected utility is negative.
+- **Outcome 2.** The Sharpe gap is computable without a truth. The tangency portfolio keeps `r sprintf("%.0f%%", 100 * g("max_sharpe", "kept"))` of its promise, minimum variance `r sprintf("%.0f%%", 100 * g("min_variance", "kept"))`; equal weighting's gap of `r sprintf("%.2f", g("equal_weight", "gap"))` is what a window manufactures on a portfolio that never used it.
+- **Outcome 3.** The mean channel costs `r sprintf("%.0f", ratio(60L))` times the covariance channel at sixty months and is still open at a thousand; the covariance channel is nearly closed on sixteen series.
+- **Outcome 4.** The window at which optimization overtakes $1/N$ depends on the cost, of order $N/T$, and on the benefit, which the universe sets; a long-only constraint shortens it several-fold.
+- **Outcome 4.** Estimation error under a fixed truth is a lower bound: the simulated tangency portfolio beats $1/N$ in `r sprintf("%.0f%%", 100 * share_60)` of draws, the actual one trailed it on sixty-month windows.
+- **Outcome 2.** `equal.weight()` and `inverse.volatility.weight()` passed to `optimize.portfolio.rebalancing()` by name produce `NA` weights and no error.
+
+## Exercises {.smaller}
+
+Work these in `code/08-estimation-error-exercises.R`; solutions are in appendix G of the book.
+
+1. Rerun the rolling loop with a window of 120 months and recompute the gap table. Does the longer window close the tangency portfolio's gap, and by how much relative to the other three rules?
+2. Replace `draw_months()` with a twelve-month block bootstrap of `Re` and recompute the channel split at $T = 60$. Does the mean channel still dominate, and does the plug-in portfolio still beat equal weighting?
+3. Using the expected-utility formula with $\theta^2$ fixed, find the $T$ at which expected utility turns positive and the $T$ at which it reaches ninety percent of the optimum, for $N = 16$ and $N = 50$. How do the thresholds scale with $N$?
+4. In the rolling loop, shrink $\hat{\boldsymbol{\mu}}_t$ halfway toward its cross-sectional average and remeasure the tangency portfolio's gap. Does it help more than the long-only constraint already did?

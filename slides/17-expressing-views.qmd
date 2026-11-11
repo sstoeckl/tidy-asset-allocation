@@ -1,0 +1,446 @@
+---
+title: "Expressing Views"
+subtitle: "Tidy Asset Allocation in R, Chapter 17"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 17"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/17-expressing-views.R to the chunks below,
+# so no line of analysis is maintained twice. root.dir takes effect after this
+# chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("17-expressing-views.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+```{r prior}
+#| include: false
+```
+
+```{r helpers}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** the three formulations of a view (Bayesian update, entropy pooling, centroid of a ranking) and the pooling identity that makes the confidence $c$ the size of the position.
+2. **Implement** each in R, check `black.litterman()`, `set.portfolio.moments()`, `EntropyProg()` and `ac.ranking()` against the formulas, and **recognize** where the package misleads.
+3. **Explain** what a view moves: the assets in it, the assets that covary with them, or the probabilities of the scenarios.
+4. **Compare** the three formulations on one opinion by what each had to specify, its tracking error and its turnover.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+An allocator holds an opinion: European credit will lag, commodities will pay, Japanese equity is cheap. How does that opinion become a weight?
+
+::: {.statement}
+Black and Litterman (1992) answered that it should not become one directly: an optimizer handed a hand-written return vector produces the extreme portfolios that Michaud (1989) called error maximization. The opinion is blended with an equilibrium prior in proportion to how confidently it is held.
+:::
+
+- Two further formulations ask less of the allocator: views on the probabilities of historical scenarios (Meucci, 2008), and views that are only a ranking (Almgren and Chriss, 2006).
+- This chapter is **tactical**: a view is conditioning information, and every portfolio is a deviation from the strategic policy anchored on the equilibrium vector.
+- Data: the sixteen risky class series of the modeled market, `r nrow(Re)` monthly returns each, in excess of the Treasury bill.
+
+<p class="source">Black, F. and Litterman, R. (1992). Global Portfolio Optimization. *Financial Analysts Journal* 48(5), 28–43.</p>
+
+## Prior and Views
+
+The prior on the expected excess returns is centered on the equilibrium of reverse optimization (Sharpe, 1974):
+
+$$
+\boldsymbol{\mu} \sim N\!\left(\boldsymbol{\mu}_{\text{eq}},\, \tau\boldsymbol{\Sigma}\right),
+\qquad
+\boldsymbol{\mu}_{\text{eq}} = \delta\,\boldsymbol{\Sigma}\,\boldsymbol{w}_{\text{mkt}}.
+$$
+
+A view states $K$ linear combinations of $\boldsymbol{\mu}$ through a $K \times N$ pick matrix $\boldsymbol{P}$, a value $\boldsymbol{q}$ and an error covariance $\boldsymbol{\Omega}$:
+
+$$
+\boldsymbol{P}\boldsymbol{\mu} = \boldsymbol{q} + \boldsymbol{\varepsilon},
+\qquad
+\boldsymbol{\varepsilon} \sim N(\boldsymbol{0}, \boldsymbol{\Omega}).
+$$
+
+- A row of $\boldsymbol{P}$ with a single one is an absolute view; a row with $+1$ and $-1$ is a relative view on a spread.
+- $\boldsymbol{\Omega}$ says how sure the allocator is. Neither $\tau$ nor $\boldsymbol{\Omega}$ has data behind it.
+
+## The Posterior
+
+Prior and likelihood are normal, so the posterior is normal:
+
+$$
+\boldsymbol{\mu}_{\text{BL}}
+= \boldsymbol{\mu}_{\text{eq}}
++ \tau\boldsymbol{\Sigma}\boldsymbol{P}'
+  \left(\boldsymbol{P}\tau\boldsymbol{\Sigma}\boldsymbol{P}' + \boldsymbol{\Omega}\right)^{-1}
+  \left(\boldsymbol{q} - \boldsymbol{P}\boldsymbol{\mu}_{\text{eq}}\right),
+$$
+
+$$
+\boldsymbol{\Sigma}_{\boldsymbol{\mu}}
+= \tau\boldsymbol{\Sigma}
+- \tau\boldsymbol{\Sigma}\boldsymbol{P}'
+  \left(\boldsymbol{P}\tau\boldsymbol{\Sigma}\boldsymbol{P}' + \boldsymbol{\Omega}\right)^{-1}
+  \boldsymbol{P}\tau\boldsymbol{\Sigma}.
+$$
+
+- The mean moves away from the prior only in the directions $\boldsymbol{\Sigma}\boldsymbol{P}'$: a view on one asset moves every asset that covaries with it.
+- $\boldsymbol{\Sigma}_{\boldsymbol{\mu}}$ is the covariance of the *mean*, not of returns, and never goes to a risk objective.
+
+## Confidence and Market Plus Views {.smaller}
+
+Meucci (2010) gives a closed form for the confidence $c \in (0,1)$:
+
+$$
+\boldsymbol{\Omega} = \frac{1-c}{c}\;\boldsymbol{P}\tau\boldsymbol{\Sigma}\boldsymbol{P}'
+\qquad\Longrightarrow\qquad
+\boldsymbol{P}\boldsymbol{\mu}_{\text{BL}}
+= (1-c)\,\boldsymbol{P}\boldsymbol{\mu}_{\text{eq}} + c\,\boldsymbol{q}.
+$$
+
+$\tau$ cancels from the posterior mean. At $c = \tfrac12$ allocator and market weigh equally; as $c \to 1$ the view is imposed, as $c \to 0$ ignored. An investor with the market's risk aversion then holds (He and Litterman, 1999)
+
+$$
+\boldsymbol{w}_{\text{BL}}
+= \boldsymbol{w}_{\text{mkt}} + \boldsymbol{P}'\boldsymbol{\Lambda},
+\qquad
+\boldsymbol{\Lambda} = \frac{c}{\delta}
+  \left(\boldsymbol{P}\boldsymbol{\Sigma}\boldsymbol{P}'\right)^{-1}
+  \left(\boldsymbol{q} - \boldsymbol{P}\boldsymbol{\mu}_{\text{eq}}\right).
+$$
+
+An asset in no view keeps its market weight, however strongly it covaries with assets that are. This is what separates Black-Litterman from writing a number into $\boldsymbol{\mu}$ by hand.
+
+::: {.notes}
+The confidence is the size of the position, not a nuisance parameter. Under a long-only constraint the weights formula holds until a weight reaches zero.
+:::
+
+## Two Views {.codesmall}
+
+A relative view (United States credit outperforms European credit by two points a year) and an absolute one (commodities earn four percent above the bill), in the monthly units of the data.
+
+```{r views}
+#| echo: true
+#| output: false
+```
+
+```{r tbl-17-views}
+```
+
+The prior disagrees with the first view by `r sprintf("%.1f", 100 * (q[["credit_spread"]] - prior_views[1]) * 12)` points, because European credit covaries more with the market than United States credit under the proxy weights; the second view is `r sprintf("%.1f", 100 * (q[["commodity"]] - prior_views[2]) * 12)` points from the prior.
+
+## The Posterior in a Few Lines {.codesmall}
+
+`black.litterman()` has no confidence parameter, so we write the update and use the package as a check.
+
+```{r bl-post}
+#| echo: true
+```
+
+The assertions confirm that the package is the formula at $c = \tfrac12$, that $\tau$ cancels, and that each view portfolio lands at the midpoint of prior and view.
+
+## Package Behavior: Views and Omega {.codesmall}
+
+::: {.callout-warning}
+## `black.litterman()` with views: three things to check
+
+`Omega` is the full $\boldsymbol{P}\boldsymbol{\Sigma}\boldsymbol{P}'$, off-diagonals included, so covarying view portfolios are correlated errors. `P` must be a matrix even for one view. `Views` is not checked against `nrow(P)`: a shorter vector is recycled without a message.
+:::
+
+```{r bl-recycle}
+#| echo: true
+```
+
+::: {.notes}
+The first element of the result says one number silently became every view. The stopifnot() at the top of bl_post() is the guard the package lacks.
+:::
+
+```{r bl-means-frame}
+#| include: false
+```
+
+## What Two Views Do to Sixteen Means
+
+```{r fig-17-bl-means}
+#| fig-alt: "Dot-and-segment chart of equilibrium and Black-Litterman means for the sixteen series, annualized."
+#| fig-width: 7
+#| fig-asp: 0.55
+```
+
+- A view on two credit series moved `r sum(abs(shift) > 0.5)` of the sixteen means by more than half a point: `EU_credit` falls by `r sprintf("%.1f", -shift[["EU_credit"]])` points and `EU_equity`, in no view, by `r sprintf("%.1f", -shift[["EU_equity"]])`.
+
+```{r bl-tangency}
+#| include: false
+```
+
+```{r confidence-trace}
+#| include: false
+```
+
+## From Means to Weights and Confidence
+
+```{r fig-17-confidence}
+#| fig-alt: "Long-only tangency weights of five series as the confidence in the two views rises from 0.01 to 0.99."
+#| fig-width: 7
+#| fig-asp: 0.5
+```
+
+- Unconstrained, the thirteen assets in no view keep their market weight; `US_credit` and `EU_credit` move by `r sprintf("%+.1f", 100 * tilt[["US_credit"]])` and `r sprintf("%+.1f", 100 * tilt[["EU_credit"]])` points.
+- Long-only, `r length(moved)` weights move by more than half a point; at $c = 0.99$ `US_government` holds `r sprintf("%.0f%%", 100 * trace$weight[trace$conf == 0.99 & trace$asset == "US_government"])`.
+
+::: {.notes}
+Nothing in the data chose a point on this path. The path is not monotone even for named assets, because the constraint decides where the money shorted from European credit goes.
+:::
+
+## A Trap: `BLSigma` with Views {.codesmall}
+
+```{r spm-route}
+#| echo: true
+```
+
+::: {.callout-warning}
+## With views, `BLSigma` is no longer a rescaled $\boldsymbol{\Sigma}$
+
+The optimizer receives $\boldsymbol{\Sigma}_{\boldsymbol{\mu}}$, and the tangency portfolio is solved on the wrong risk: the commodity weight is `r sprintf("%.0f%%", 100 * extractWeights(opt_spm)[["GLOBAL_commodity"]])` against `r sprintf("%.0f%%", 100 * w_post[["GLOBAL_commodity"]])`. `momentargs = list(sigma = S)` restores the return covariance.
+:::
+
+## Entropy Pooling
+
+Take as prior $J$ scenarios with probabilities $p_j$ (here the `r T` months, uniform). A view is any constraint on expectations under new probabilities $\tilde{\boldsymbol{p}}$. The posterior is the closest to the prior in relative entropy (Meucci, 2008):
+
+$$
+\tilde{\boldsymbol{p}}
+= \arg\min_{\boldsymbol{x}} \sum_{j=1}^{J} x_j \left(\ln x_j - \ln p_j\right)
+\;\;\text{s.t.}\;\;
+\sum_j x_j = 1,\;\; \boldsymbol{H}\boldsymbol{x} = \boldsymbol{h},\;\; \boldsymbol{F}\boldsymbol{x} \le \boldsymbol{f}.
+$$
+
+The solution is an exponential tilt with one multiplier per view, so the optimization runs over $K$ numbers rather than $J$ probabilities:
+
+$$
+\tilde{p}_j \propto p_j \exp\!\left(-\boldsymbol{\theta}'\boldsymbol{H}_{\cdot j}
+- \boldsymbol{\lambda}'\boldsymbol{F}_{\cdot j}\right),
+\qquad \boldsymbol{\lambda} \ge \boldsymbol{0}.
+$$
+
+For normal scenarios and views on means this reproduces Black-Litterman; otherwise the two part.
+
+## The Price of a View
+
+A posterior that concentrates on a few months has thrown the rest of the history away. The diagnostic is the **effective number of scenarios**:
+
+$$
+N_{\text{eff}} = \exp\!\left(-\sum_{j=1}^{J} \tilde{p}_j \ln \tilde{p}_j\right)
+\approx T \exp\!\left(-\frac{k^2}{2T}\right),
+$$
+
+where the approximation holds for a view that moves one mean by $k$ standard errors.
+
+- A view within a few standard errors costs almost nothing; one tens of standard errors away leaves a fraction of the history.
+- Confidence enters by opinion pooling, $\boldsymbol{p}_c = (1-c)\,\boldsymbol{p} + c\,\tilde{\boldsymbol{p}}$, which restores the pooling identity for the mean.
+
+## Two Views on `US_equity` {.codesmall}
+
+The mean two points a year above the sample mean, the volatility twenty percent below.
+
+```{r entropy-views}
+#| echo: true
+```
+
+```{r entropy-frame}
+#| include: false
+```
+
+The mean view leaves `r sprintf("%.1f", eff_n(ep_mean$p_))` effective months of `r T`, the volatility view `r sprintf("%.1f", eff_n(ep_vol$p_))`.
+
+## Which Months Carry the Probability
+
+```{r fig-17-entropy}
+#| fig-alt: "Posterior scenario probabilities relative to the uniform prior, month by month, for a mean view, a volatility view and both."
+#| fig-width: 7
+#| fig-asp: 0.62
+```
+
+- The mean view tilts every month by a little; the volatility view removes the months of the liquidity shock and the credit crisis almost entirely.
+- `r fmt_model(worst$date[1])`, in the liquidity shock, keeps `r sprintf("%.1f%%", 100 * worst$p_rel[1])` of its prior probability.
+
+```{r meucci-moments}
+#| include: false
+```
+
+```{r meucci-portfolio}
+#| include: false
+```
+
+```{r entropy-cost}
+#| include: false
+```
+
+## One Series Named, Sixteen Moved
+
+- The view named one series and moved sixteen: `EU_equity`'s mean rises by `r sprintf("%.1f", moved_mu[["EU_equity"]])` points and `UK_equity`'s volatility falls by `r sprintf("%.0f%%", -100 * moved_vol[["UK_equity"]])`, because the months the view discarded were their bad months too.
+- The sample tangency portfolio holds `r sprintf("%.1f%%", 100 * w_smp[["US_credit"]])` in `US_credit`; under the volatility view it holds `r sprintf("%.0f%%", 100 * w_ep[["US_credit"]])`. Nothing was said about credit, but its skewness is `r sprintf("%.2f", as.numeric(PerformanceAnalytics::skewness(R[, "US_credit"])))` and its worst months are the equity market's.
+
+```{r tbl-17-entropy-cost}
+```
+
+::: {.notes}
+The table prices views by distance in standard errors. In the units an allocator states them in, the volatility view is the expensive one, although in standard errors of its own estimate it is the nearer.
+:::
+
+## Views as an Ordering: the Centroid
+
+A number is often more than an allocator honestly has. If $\mu_{\pi(1)} \ge \dots \ge \mu_{\pi(N)}$, the best portfolio over all mean vectors consistent with the order maximizes $\boldsymbol{w}'\boldsymbol{c}$ (Almgren and Chriss, 2006), with
+
+$$
+c_{\pi(j)} \approx \Phi^{-1}\!\left(\frac{N + 1 - j - \alpha}{N - 2\alpha + 1}\right),
+\qquad \alpha = 0.4424 - 0.1185\,N^{-0.21}.
+$$
+
+- The centroid is the vector of expected order statistics of $N$ standard normals: symmetric about zero, carrying no level and no scale.
+- A ranking is worth money because a correct order delivers correlation with realized returns without any magnitude (Grinold, 1989).
+- What a centroid does not say is how large the position should be.
+
+## Ranking Japan to the Top {.codesmall}
+
+`meucci.ranking()` writes each adjacent pair as an inequality row of the entropy problem and returns the posterior moments.
+
+```{r ranking}
+#| include: false
+```
+
+```{r meucci-ranking}
+#| echo: true
+```
+
+The constraint is weak: the least-divergent way to put `JP_equity`, the lowest of the five by `r sprintf("%.1f", 100 * (max(mu_s[eq_classes]) - mu_s[["JP_equity"]]) * 12)` points, at the top is to tie it with the two highest. `r 4L - sum(diff(mu_rank[view_asc]) > 1e-6)` of four inequalities hold as ties.
+
+## Package Behavior: `ac.ranking()` {.codesmall}
+
+```{r ac-ranking}
+```
+
+::: {.callout-warning}
+## `ac.ranking()` ignores its scale argument
+
+The helper discards `max.value` and maps the centroid onto $[-0.05, 0.05]$: the top-ranked asset is assigned `r sprintf("%.0f", 100 * max(c_ac) * 12)` percent a year on monthly data. The vector carries no names. Treat the output as a direction and set the scale ourselves.
+:::
+
+::: {.notes}
+Rows two and three agree up to rescaling and Monte Carlo error. The other centroid functions (buckets, sign, sectors) encode views that are less than a complete sort and are tabulated in the chapter.
+:::
+
+```{r centroid-family}
+#| include: false
+```
+
+```{r centroid-portfolios}
+#| include: false
+```
+
+## A Centroid Is a Direction
+
+```{r tbl-17-ranking}
+```
+
+- Alone, the centroid selects the top of the ranking: the Sharpe ratio is invariant to the scale of $\boldsymbol{\mu}$, and a zero-mean vector on correlated assets offers no diversification.
+- Added to the prior with the prior's own dispersion, it lifts `JP_equity` from `r sprintf("%.1f%%", 100 * w_mkt5[["JP_equity"]])` to `r sprintf("%.1f%%", 100 * W5["JP_equity", "prior + centroid"])`. The level came from the prior and the size from a choice.
+
+```{r application-views}
+#| include: false
+```
+
+```{r application-portfolios}
+#| include: false
+```
+
+## One Opinion, Three Formulations {.smaller}
+
+Long `JP_equity`, short `US_credit`: a spread three points a year above equilibrium at $c = \tfrac12$, as a relative view, as an entropy view on the history, and as a bucket ranking.
+
+All three put the spread at `r sprintf("%.2f%%", 100 * spreads[["BL"]] * 12)`, halfway from `r sprintf("%.2f%%", 100 * spread_eq * 12)` to `r sprintf("%.2f%%", 100 * q_a * 12)`. Everything else differs.
+
+```{r tbl-17-three}
+```
+
+The centroid committed to the least and moved the portfolio the most, a turnover of `r sprintf("%.0f%%", 100 * summ$turnover[summ$formulation == "centroid"])`: its shift in $\boldsymbol{\mu}$ is not $\boldsymbol{\Sigma}$ times a portfolio, so the optimizer reads a hedged spread.
+
+## The Weights Side by Side
+
+```{r fig-17-three}
+#| fig-alt: "Long-only tangency weights under three formulations of one opinion, against the market portfolio."
+#| fig-width: 7
+#| fig-asp: 0.62
+```
+
+Black-Litterman and entropy pooling move the two named assets and little else. The spread's standard error over `r T / 12` model years is `r sprintf("%.1f", 100 * stats::sd(V_a) * sqrt(12) / sqrt(T / 12))` points, so the opinion is less than one standard error of what the sample can say.
+
+::: {.notes}
+None of this is out of sample: a backtest of views needs a record of what the allocator believed, which no dataset supplies. Where the view comes from a signal, such a history exists by construction.
+:::
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** Black-Litterman is a normal prior centered on the equilibrium, views as linear statements with error, and a posterior that moves every asset by its covariance with the view portfolios.
+- **Outcome 1.** With $\boldsymbol{\Omega} = \tfrac{1-c}{c}\boldsymbol{P}\tau\boldsymbol{\Sigma}\boldsymbol{P}'$, $\tau$ cancels and each view lands at $(1-c)$ prior plus $c$ view: the confidence is the size of the position.
+- **Outcome 2.** `black.litterman()` fixes the confidence at one half; with views, `BLSigma` must be replaced by the return covariance; `ac.ranking()` assigns a wrong scale.
+- **Outcome 3.** The posterior tangency portfolio is the market plus a position in each view portfolio; a view written into $\boldsymbol{\mu}$ by hand becomes a hedged spread trade.
+- **Outcome 3.** Entropy pooling puts the view on `r T` scenarios: a mean view within a few standard errors costs nothing; a volatility view discards the worst months and re-rates everything with a left tail.
+- **Outcome 4.** A ranking is a direction and has no level or scale; the same opinion at the same confidence yields three portfolios whose turnover differs by what each formulation had to specify.
+
+## Exercises {.smaller}
+
+Work these in `code/17-expressing-views-exercises.R`; solutions are in appendix G of the book.
+
+1. Replace $\boldsymbol{\Omega}$ by the diagonal convention of He and Litterman (1999) in `bl_post()` and recompute the posterior for the two views. Does the pooling identity still hold view by view? When do the two conventions coincide?
+2. Express the volatility view at 50 and at 150 percent of the sample volatility. Report the effective number of months, the months with the most posterior probability, and what the tangency portfolio does with `US_credit`.
+3. Write the bucket ranking as two absolute views in `bl_post()` and compare the tangency portfolio with the centroid column of the three-way table. Which weights stop moving, and why?
+4. Rank the five equity classes in the reverse of their sample order and run `meucci.ranking()`. How many posterior means are tied, and what does `ac.ranking()` return? Which should the optimizer receive, and at what scale?

@@ -28,9 +28,8 @@ stopifnot(identical(d, zoo::index(R)), !anyNA(A), setequal(regions, unique(regio
           ncol(A) == nrow(eq))
 c(instruments = ncol(A), months = nrow(A))
 
-# ===== The benchmark, rebuilt from its instruments =====
-
 ## ---- benchmark ----
+# ===== The benchmark, rebuilt from its instruments =====
 cap_w <- sim_marketcap_weekly[sim_marketcap_weekly$asset %in% eq$asset_id, ] |>
   tidyr::pivot_wider(names_from = asset, values_from = market_cap) |>
   dplyr::arrange(date)
@@ -81,9 +80,8 @@ conc |>
         col.names = c("region", "names", "largest / smallest", "top five share",
                       "effective names", "largest weight"))
 
-# ===== Equal against capitalization weighting =====
-
 ## ---- ew-cw ----
+# ===== Equal against capitalization weighting =====
 ew_cw <- dplyr::bind_rows(lapply(regions, function(g) {
   j  <- names(region)[region == g]
   cw <- as.numeric(R[, paste0(g, "_equity")])        # the shipped benchmark
@@ -107,9 +105,8 @@ ew_cw |>
         col.names = c("region", "cap return", "equal return", "gap", "cap vol",
                       "equal vol", "tracking error", "IR"))
 
-# ===== Sorting on size and momentum =====
-
 ## ---- sorts ----
+# ===== Sorting on size and momentum =====
 mom <- matrix(NA_real_, nrow(X), ncol(X), dimnames = dimnames(X))
 for (t in 13:nrow(X)) mom[t, ] <- apply(1 + X[(t - 12):(t - 2), ], 2, prod) - 1
 
@@ -150,9 +147,8 @@ size_t <- sorts$t[sorts$sort == "size, small minus big" & sorts$leg == "long-sho
 mom_t  <- sorts$t[sorts$sort == "momentum, winners minus losers" & sorts$leg == "long-short"]
 stopifnot(size_t > 2, abs(mom_t) < 2)
 
-# ===== A covariance matrix for one hundred and twenty-three names =====
-
 ## ---- factor-models ----
+# ===== A covariance matrix for one hundred and twenty-three names =====
 fm  <- lapply(1:3, function(k) statistical.factor.model(A, k = k))
 S_k <- lapply(fm, extractCovariance)
 share <- stats::prcomp(X)$sdev^2; share <- share / sum(share)      # variance by component
@@ -169,9 +165,8 @@ stopifnot(all(mapply(function(a, b) max(abs(a - b)) < 1e-12, factor_covs(X), S_k
 refused <- tryCatch(statistical.factor.model(A[1:120, ], k = 3), error = conditionMessage)
 c(first_component = share[1], next_two = sum(share[2:3]), refused = refused)
 
-# ===== `statistical.factor.model()` refuses the case it exists for =====
-
 ## ---- race ----
+# ===== `statistical.factor.model()` refuses the case it exists for =====
 min_var <- function(S) {                           # long only, fully invested
   n <- ncol(S)
   sol <- try(quadprog::solve.QP(2 * S, rep(0, n), cbind(rep(1, n), diag(n)),
@@ -232,9 +227,8 @@ race |>
   kable(align = "lrrrrr",
         col.names = c("estimator", "return", "volatility", "Sharpe", "effective names", "held"))
 
-# ===== The selected sleeve =====
-
 ## ---- us-setup ----
+# ===== The selected sleeve =====
 us   <- names(region)[region == "US"]
 t1   <- oos[1]
 A_us <- A[(t1 - W):(t1 - 1L), us]                   # the window before t1
@@ -250,9 +244,8 @@ w_mv <- extractWeights(optimize.portfolio(A_us, base_us |> add.objective(type = 
 p_vol <- function(w, S = S_us) sqrt(12 * as.numeric(t(w) %*% S %*% w))
 c(held = sum(w_mv > 1e-6), largest = max(w_mv), vol = p_vol(w_mv), benchmark_vol = p_vol(b_us))
 
-# ===== A position limit is honored on the ES path and dropped on the variance path =====
-
 ## ---- position-limit ----
+# ===== A position limit is honored on the ES path and dropped on the variance path =====
 K <- 10L
 spec_K <- base_us |> add.constraint(type = "position_limit", max_pos = K)
 w_K_var <- extractWeights(optimize.portfolio(A_us, spec_K |> add.objective(type = "risk", name = "var"),
@@ -285,9 +278,8 @@ stopifnot(abs(te_of(w_sel, b_us, S_us) - tau) < 1e-6, all(w_sel <= pmax(0.10, b_
 c(held = sum(w_sel > 1e-6), largest = max(w_sel), tracking_error = te_of(w_sel, b_us, S_us),
   vol = p_vol(w_sel), active_share = sum(abs(w_sel - b_us)) / 2)
 
-# ===== The sleeve as a sub-portfolio =====
-
 ## ---- sub-portfolio ----
+# ===== The sleeve as a sub-portfolio =====
 sleeve_spec <- function(a) portfolio.spec(a) |>
   add.constraint("full_investment") |>
   add.constraint(type = "box", min = 0, max = 0.10) |>
@@ -306,9 +298,8 @@ top_w <- setNames(as.numeric(o_mp$weights), regions)   # returned as proxy.1 .. 
 stopifnot(length(top_w) == length(regions), abs(sum(top_w) - 1) < 1e-8, nrow(o_mp$R) == nrow(A))
 round(top_w, 4)
 
-# ===== Selection Under the Allocation Above It =====
-
 ## ---- policy ----
+# ===== Selection Under the Allocation Above It =====
 Re <- R - rf; S16 <- stats::cov(Re); mu16 <- colMeans(Re)
 qp <- function(S, a) {       # min w'Sw s.t. a'w = 1, w >= 0, rescaled: a = 1 gives GMV, a = mu the tangency
   n <- ncol(S)

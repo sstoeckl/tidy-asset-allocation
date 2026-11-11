@@ -1,0 +1,407 @@
+---
+title: "Hierarchical and Sleeve-Based Allocation"
+subtitle: "Tidy Asset Allocation in R, Chapter 15"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 15"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/15-hierarchical-allocation.R to the
+# chunks below, so no line of analysis is maintained twice. root.dir takes
+# effect after this chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("15-hierarchical-allocation.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** the two-stage sleeve problem and read it as a shrinkage of the covariance matrix with an identity at its limit.
+2. **Implement** it with `mult.portfolio.spec()` and by hand, and **explain** what the package actually does.
+3. **Evaluate** whether the hierarchy dominates one-stage optimization, in sample and out of sample.
+4. **Interpret** the class series as the sleeve's benchmark, and hedging as a sleeve decision.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+How should an allocation be organized when nobody can hold the whole problem in one head, and what does the organization cost?
+
+::: {.statement}
+Sharpe (1981) posed the decentralized investment problem: a central office sets budgets for specialist managers, who each optimize the sleeve they know.
+:::
+
+- Brinson et al. (1986) measured how much of an institution's return that first, top-level decision explains.
+- The two layers, classes first and selection within them, are the working organization of every large allocator.
+- The structure is a decision with a cost, and the cost can be measured. It is a **strategic** decision: set from unconditional assumptions, revisited rarely.
+
+<p class="source">Sharpe, W. (1981). Decentralized Investment Management. *Journal of Finance* 36(2), 217–234. Brinson, G., Hood, R., Beebower, G. (1986). *Financial Analysts Journal* 42(4), 39–44.</p>
+
+## The Two-Stage Problem
+
+Partition the $N$ assets into $K$ sleeves. Stage 1 solves each sleeve on its own block $\boldsymbol{\Sigma}_{kk}$,
+
+$$
+\boldsymbol{v}_k = \arg\min_{\boldsymbol{v}} \; \boldsymbol{v}'\boldsymbol{\Sigma}_{kk}\boldsymbol{v}
+\quad \text{s.t.} \quad \boldsymbol{v}'\boldsymbol{\iota} = 1,\; \boldsymbol{v} \geq \boldsymbol{0}.
+$$
+
+Stage 2 treats each sleeve as one asset, $r_{k,t} = \boldsymbol{v}_k'\boldsymbol{r}_{k,t}$, and allocates across the $K$ sleeve returns,
+
+$$
+\boldsymbol{b} = \arg\min_{\boldsymbol{b}} \; \boldsymbol{b}'\boldsymbol{\Omega}\boldsymbol{b}
+\quad \text{s.t.} \quad \boldsymbol{b}'\boldsymbol{\iota} = 1,\; \boldsymbol{b} \geq \boldsymbol{0},
+\qquad
+\Omega_{jk} = \boldsymbol{v}_j'\boldsymbol{\Sigma}_{jk}\boldsymbol{v}_k .
+$$
+
+$$
+\boldsymbol{w}_{\text{nest}} = (b_1 \boldsymbol{v}_1', \ldots, b_K \boldsymbol{v}_K')' .
+$$
+
+This portfolio is feasible for the flat problem, so in sample it can never have a lower variance than the flat minimum. The gap is the price of decentralization.
+
+::: {.notes}
+Nothing at stage 1 sees an asset outside its sleeve, and stage 2 sees the sleeves only through K series. Van Binsbergen et al. (2008) quantify the loss; Elton and Gruber (2004) derive the instructions under which it vanishes.
+:::
+
+## The Sixteen Classes as Four Sleeves {.codesmall}
+
+```{r sleeves}
+#| echo: true
+```
+
+Four sleeves: `r paste(names(sleeves), collapse = ", ")`. Three hold five class series and the commodity sleeve holds one, a case the implementation has to face rather than assume away.
+
+## The Shrinkage Reading
+
+Stage 1 uses only the diagonal blocks of $\boldsymbol{\Sigma}$: it is the flat problem on
+
+$$
+\boldsymbol{\Sigma}_{\text{B}} =
+\begin{pmatrix}
+\boldsymbol{\Sigma}_{11} & \boldsymbol{0} & \cdots \\
+\boldsymbol{0} & \boldsymbol{\Sigma}_{22} & \\
+\vdots & & \ddots
+\end{pmatrix},
+$$
+
+every cross-sleeve covariance set to zero. This is shrinkage with a target that keeps the blocks, but the intensity is imposed by the mandate rather than estimated as in Ledoit and Wolf (2004).
+
+```{r cross-block}
+#| include: false
+```
+
+- The cross-sleeve entries carry `r sprintf("%.0f%%", 100 * (1 - sum(S_block^2) / sum(S^2)))` of the squared mass of $\boldsymbol{\Sigma}$.
+- Average correlation across sleeves is `r sprintf("%.2f", mean(Cm[!same & upper.tri(Cm)]))`, within a sleeve `r sprintf("%.2f", mean(Cm[same & upper.tri(Cm)]))`. The blocks are real; the space between them is not empty.
+
+## An Identity at the Limit
+
+If stage 2 also ignores the cross-sleeve covariances, $\boldsymbol{\Omega}$ is diagonal and the top level is inverse-variance weighting. The whole procedure is then the flat minimum-variance portfolio on $\boldsymbol{\Sigma}_{\text{B}}$:
+
+$$
+w_i = \frac{\sigma_k^{-2}}{\sum_{j} \sigma_j^{-2}}\, v_{k,i}
+\;\; \text{for } i \in k,
+\qquad \sigma_k^{2} = \frac{1}{\boldsymbol{\iota}'\boldsymbol{\Sigma}_{kk}^{-1}\boldsymbol{\iota}} ,
+$$
+
+because the inverse of a block-diagonal matrix is block-diagonal.
+
+- Flat: every entry of $\boldsymbol{\Sigma}$.
+- Nested: the diagonal blocks plus $\boldsymbol{\Omega}$.
+- Block-diagonal: the diagonal blocks alone.
+
+Where nesting sits on this ladder depends on how much of the cross-block covariance is signal.
+
+## The Solver: One Quadratic Program {.codesmall}
+
+```{r gmv-qp}
+#| echo: true
+```
+
+We call `quadprog` directly, the solver `ROI` dispatches to, and check once that the two agree. The rolling loop below solves it more than a thousand times.
+
+## The Ladder in Sample
+
+```{r identity-check}
+#| include: false
+```
+
+```{r nested-in-sample}
+#| include: false
+```
+
+```{r ladder-in-sample}
+#| include: false
+```
+
+```{r deck-ladder}
+# Reshape of the chapter's `ladder`; no new analysis.
+ladder |>
+  dplyr::mutate(vol = sprintf("%.2f%%", 100 * vol), sharpe = sprintf("%.3f", sharpe),
+                bets = sprintf("%.2f", bets)) |>
+  knitr::kable(align = "lrrr", col.names = c("", "volatility", "Sharpe", "effective bets"))
+```
+
+- The inverse-variance construction and the flat portfolio on $\boldsymbol{\Sigma}_{\text{B}}$ agree to machine precision.
+- Nesting costs `r sprintf("%.2f", 100 * (ladder$vol[2] - ladder$vol[1]))` percentage points of volatility; dropping the cross-sleeve covariances at both stages costs `r sprintf("%.2f", 100 * (ladder$vol[3] - ladder$vol[1]))`.
+- Stage 2 sees the one negative sleeve correlation, equity with government, at `r sprintf("%.2f", Oc["equity", "government"])`. Stage 1 could not.
+
+## Hierarchical Risk Parity: A Different Hierarchy
+
+```{r hrp}
+#| include: false
+```
+
+```{r hrp-summary}
+#| include: false
+```
+
+López de Prado (2016) estimates the tree from the correlation distance, orders the assets along it, and allocates by recursive bisection with inverse-variance budgets. Nothing is inverted.
+
+`r paste(ord, collapse = ", ")`
+
+- The tree places the credit series of `r c("one", "two", "three", "four", "five")[sum(adjacent)]` of five countries next to the same country's government series; the `r names(adjacent)[!adjacent]` pair is the exception.
+- The fixed-income half is organized by currency, not by asset class. The asserted and the estimated hierarchy disagree about what a sleeve is.
+- The portfolio still puts `r sprintf("%.0f%%", 100 * max(w_hrp))` in `r paste0("\x60", names(which.max(w_hrp)), "\x60")`, the series with the lowest variance.
+
+::: {.notes}
+The disagreement is a fact about hedging: unhedged in dollars, a foreign bond is mostly its currency.
+:::
+
+## Hedging Is a Sleeve Decision
+
+```{r hedge-sleeves}
+#| include: false
+```
+
+```{r tbl-15-hedge}
+```
+
+- Hedging the government sleeve takes its minimum variance from `r sprintf("%.2f%%", 100 * hedge_tab$unhedged[hedge_tab$sleeve == "government"])` to `r sprintf("%.2f%%", 100 * hedge_tab$hedged[hedge_tab$sleeve == "government"])` and spreads it over more positions: foreign bonds become holdable once their currency is removed.
+- Equity moves from `r sprintf("%.2f%%", 100 * hedge_tab$unhedged[hedge_tab$sleeve == "equity"])` to `r sprintf("%.2f%%", 100 * hedge_tab$hedged[hedge_tab$sleeve == "equity"])` (Campbell et al., 2010).
+
+## A Trap: The Sleeve of One Asset {.codesmall}
+
+```{r one-asset}
+#| echo: true
+```
+
+::: {.callout-note}
+## A single-asset sleeve cannot be a sub-portfolio
+
+The constraint matrix loses a dimension on its way to `ROI::L_constraint()`, which rejects it. The commodity sleeve cannot enter `mult.portfolio.spec()`; the package path runs on three sleeves, the by-hand path keeps the commodity as its own portfolio.
+:::
+
+## `mult.portfolio.spec()` and `add.sub.portfolio()` {.codesmall}
+
+```{r mult-spec}
+#| echo: true
+```
+
+Every sleeve is run through the rolling backtest of `optimize.portfolio.rebalancing()`; the top level is optimized once, on the full history of the realized sleeve returns.
+
+```{r mult-default}
+#| include: false
+```
+
+::: {.callout-important}
+## The defaults do not run, and one argument is silently discarded
+
+`rebalance_on = NULL` fails in `xts::endpoints()`. `training_period = NULL` becomes thirty-six observations. Passing `rolling_window` instead of `trailing_periods` is overwritten by `NULL`: an expanding window that nothing reports.
+:::
+
+## What the Package Does, Reproduced by Hand
+
+```{r mult-run}
+#| include: false
+```
+
+```{r mult-by-hand}
+#| include: false
+```
+
+The by-hand series reproduce the package's proxies to machine precision and the top-level weights to the solver's tolerance.
+
+```{r deck-backfill}
+# Reshape of the chapter's weights; the same matrix the chapter prints.
+rbind(package = as.numeric(o_mp$weights), by_hand = b_hand,
+      without_backfill = b_no_backfill) |>
+  round(4) |>
+  knitr::kable(col.names = names(three))
+```
+
+- The proxies have `r nrow(o_mp$R)` rows: `Return.portfolio()` back-fills the training period with a drifting equal-weight sleeve.
+- Dropping the sixty months nobody chose moves the government budget from `r sprintf("%.1f%%", 100 * b_hand[["government"]])` to `r sprintf("%.1f%%", 100 * b_no_backfill[["government"]])`. The package gives no way to remove it.
+
+::: {.notes}
+The weights come back named proxy.1 to proxy.3, and the proxy returns are visible only with trace = TRUE.
+:::
+
+## Stage-1 Solutions as a Block Picture
+
+```{r sleeve-stage-list}
+#| include: false
+```
+
+```{r fig-15-sleeve-weights}
+#| fig-alt: "Three lines, one per sleeve, of the stage-1 minimum-variance weights over the sixteen classes; each line is zero outside its own block."
+#| fig-asp: 0.45
+```
+
+`combine.optimizations()` collects the sleeve solutions; `extractWeights()` then returns a matrix that is a picture of $\boldsymbol{\Sigma}_{\text{B}}$.
+
+## Top-Level Policies on the Sleeve Series
+
+```{r top-list}
+#| include: false
+```
+
+```{r fig-15-top-riskreward}
+#| fig-alt: "Risk-reward chart of three top-level policies on the four sleeve series, monthly units."
+#| fig-asp: 0.5
+```
+
+`combine.portfolios()` specifies several policies at once. `extractObjectiveMeasures()` and `chart.RiskReward()` on an `opt.list` need `trace = TRUE`.
+
+## Nested Against Flat in Sample
+
+```{r in-sample}
+#| include: false
+```
+
+```{r tbl-15-insample}
+```
+
+- Nesting gives up `r sprintf("%.3f", insample$sharpe[1] - insample$sharpe[2])` of Sharpe ratio and buys no diversification: `r sprintf("%.2f", insample$bets[2])` effective positions against the flat `r sprintf("%.2f", insample$bets[1])`.
+- Stage 2 is still a minimum-variance problem and still buys the sleeve with the lowest variance. Only a constraint on the budgets changes that.
+
+## Out of Sample: The Race
+
+A restriction that costs variance in sample can buy it back out of sample if it forbids mostly estimation error (Chapter 8). Sixty-month rolling window, monthly, from the first month of model year 11.
+
+```{r oos-loop}
+#| include: false
+```
+
+```{r oos-check}
+#| include: false
+```
+
+```{r oos-windows}
+#| include: false
+```
+
+```{r oos-verdict}
+#| include: false
+```
+
+```{r tbl-15-oos}
+```
+
+- The flat line lands within `r sprintf("%.3f", abs(stats60["flat", "sharpe"] - sweep_sr("min_variance", 60)))` of the register's minimum-variance entry.
+- At sixty months nested earns `r sprintf("%.3f", stats60["nested", "sharpe"])` against flat `r sprintf("%.3f", stats60["flat", "sharpe"])`; flat also has the lower realized volatility, `r sprintf("%.2f%%", 100 * stats60["flat", "ann_vol"])` against `r sprintf("%.2f%%", 100 * stats60["nested", "ann_vol"])`.
+
+::: {.notes}
+Shortening the window to 36 months or lengthening it to 120 does not reverse the order, and block-diagonal trails nested at every window. What stage 2 recovers is worth less than what stage 1 discards.
+:::
+
+## The Gap Opens Steadily
+
+```{r fig-15-oos-cumulative}
+#| fig-alt: "Growth of one unit of excess return on a log scale for flat, nested, block-diagonal and equal-weight portfolios, out of sample."
+#| fig-asp: 0.5
+```
+
+```{r sleeve-budget-path}
+#| include: false
+```
+
+- The largest share any named episode of `sim_episodes` contributes to the gap is `r sprintf("%.0f%%", 100 * max(episode_share))`, in the `r sim_episodes$label[which.max(episode_share)]`.
+- The nested portfolio gives the government sleeve `r sprintf("%.0f%%", 100 * colMeans(budget)[["government"]])` on average; stage 1 chose its composition without seeing equities.
+- Turnover: `r sprintf("%.0f%%", 100 * race60$turnover[["nested"]])` a year nested, `r sprintf("%.0f%%", 100 * race60$turnover[["flat"]])` flat. Costs do not change the ranking.
+
+## The Policy View
+
+```{r tangency-qp}
+#| include: false
+```
+
+```{r policy}
+#| include: false
+```
+
+```{r policy-summary}
+#| include: false
+```
+
+A policy is rarely minimum variance everywhere: tangency inside equity, minimum variance elsewhere. Sleeve budget times within-sleeve weight is the class weight, handed to the sleeve managers as benchmarks.
+
+```{r tbl-15-policy}
+```
+
+The policy earns an in-sample Sharpe ratio of `r sprintf("%.3f", p_sr(w_policy))` against `r sprintf("%.3f", p_sr(w_flat_tan))` for the flat tangency portfolio; neither number is a forecast.
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** The nested problem is the structure every large allocator uses; in sample it can never dominate the flat problem, because the unrolled portfolio is feasible for it.
+- **Outcome 1.** Stage 1 is the flat problem on the block-diagonal matrix, a shrinkage whose intensity is set by the mandate; with inverse-variance budgets at the top the two coincide exactly.
+- **Outcome 2.** `mult.portfolio.spec()` runs each sleeve through the rolling backtest, back-fills the training period, and optimizes the top level once. Its defaults do not run, `rolling_window` is silently discarded, a one-asset sleeve fails, and the proxies are visible only with `trace = TRUE`.
+- **Outcome 3.** On sixteen classes the hierarchy loses out of sample at every window tried, and block-diagonal loses by more: the cross-sleeve covariances are information here.
+- **Outcome 4.** The estimated hierarchy groups fixed income by currency; a hedge is a property of the sleeve.
+- **Outcome 4.** The class series is the sleeve's benchmark: the policy is set on investable proxies and handed down.
+
+## Exercises {.smaller}
+
+Work these in `code/15-hierarchical-allocation-exercises.R`; solutions are in appendix G of the book.
+
+1. Build the sleeves by currency instead of class, the commodity on its own, and rerun `race(60L)`. Does the currency hierarchy dominate the class hierarchy out of sample, and does either dominate the flat construction?
+2. Replace the top-level step in `race()` with inverse-variance weighting and confirm that the result coincides with the block-diagonal line. What does the difference between the nested and block-diagonal rows measure?
+3. Repeat hierarchical risk parity with complete linkage and cut the tree at four clusters. Does the estimated hierarchy recover the four sleeves?
+4. Using `proxy_by_hand()`, vary the training period over 36, 60 and 120 months and report how far the top-level weights move when the back-filled months are dropped.

@@ -1,0 +1,367 @@
+---
+title: "Descriptive Analysis of Asset Returns"
+subtitle: "Tidy Asset Allocation in R, Chapter 4"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 4"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/04-descriptive-analysis.R to the chunks
+# below, so no line of analysis is maintained twice. root.dir takes effect after
+# this chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("04-descriptive-analysis.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+```
+
+```{r setup}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** the four sample moments and **explain** why the mean and the variance differ in how precisely they can be estimated.
+2. **Compute** the moments, a normality test and expected shortfall in R, and **read** them, including what `ES()` does by default.
+3. **Distinguish** a fat marginal tail from a joint one, and **show** how correlation changes across the four episodes.
+4. **Explain** why the currency share of a foreign holding depends on the asset and not on the country.
+:::
+
+::: {.notes}
+Each takeaway at the end is tagged to one of these four outcomes. The exercises practice outcomes 1 to 3.
+:::
+
+## The Question {.smaller}
+
+Every later chapter takes a return series and does something to it. Which properties of that series are worth relying on?
+
+::: {.statement}
+Mandelbrot (1963) and Fama (1965) showed that financial returns are not Gaussian; Cont (2001) collects the regularities that survive across markets and periods.
+:::
+
+- We ask which of those regularities hold in the modeled market of this book.
+- And which of the numbers we are about to use can be estimated at all.
+- The answer splits the book: expected returns are the hard problem, volatility the tractable one.
+
+<p class="source">Mandelbrot, B. (1963). The Variation of Certain Speculative Prices. *Journal of Business* 36(4), 394–419. Cont, R. (2001). Empirical properties of asset returns. *Quantitative Finance* 1(2), 223–236.</p>
+
+## Data
+
+The modeled market of chapter 2: five regions, each with equities, government bonds and credit, plus a global commodity index.
+
+- `r length(unique(sim_class_returns_monthly$class))` risky class series, `r length(unique(sim_class_returns_monthly$date))` months, model years 1 to `r max(model_year(sim_class_returns_monthly$date))`.
+- All in US dollars and unhedged; a money-market series per region beside them; the US Treasury bill is the risk-free rate.
+- No series is the history of a real security, so the data ship with the package and every number reproduces offline.
+
+::: {.notes}
+The series are the output of a factor model. This matters later: the episodes are named for what happens in them, not for a date.
+:::
+
+## The Four Sample Moments
+
+Returns $r_t$, $t = 1, \dots, T$:
+
+$$
+\hat{\mu} = \frac{1}{T}\sum_{t=1}^{T} r_t,
+\qquad
+\hat{\sigma}^2 = \frac{1}{T-1}\sum_{t=1}^{T}(r_t - \hat{\mu})^2,
+$$
+
+$$
+\hat{S} = \frac{1}{T}\sum_{t=1}^{T}\left(\frac{r_t - \hat{\mu}}{\hat{\sigma}}\right)^{3},
+\qquad
+\hat{K} = \frac{1}{T}\sum_{t=1}^{T}\left(\frac{r_t - \hat{\mu}}{\hat{\sigma}}\right)^{4} - 3 .
+$$
+
+They are reported side by side in one table, as though they were four facts of the same kind. They are not.
+
+## The Mean Does Not Improve
+
+Independent returns, calendar span $\tau$, observation interval $\Delta$, $T = \tau/\Delta$:
+
+$$
+\operatorname{se}(\hat{\mu}) = \frac{\sigma}{\sqrt{\tau}},
+\qquad
+\operatorname{se}(\hat{\sigma}^2) \approx \sigma^2\sqrt{\frac{2\Delta}{\tau}}.
+$$
+
+- The precision of the mean depends only on the **calendar span**. Weekly instead of monthly sampling of the same years leaves it unchanged.
+- The precision of the variance depends on the **number of observations**: the same change halves its standard error (Merton, 1980).
+- $\hat{S}$ and $\hat{K}$ use third and fourth powers, so one extreme observation can outweigh the rest of the sample.
+
+::: {.notes}
+This asymmetry is why the book splits into an expected-returns chapter and a covariance chapter.
+:::
+
+## Testing Normality
+
+Jarque and Bera (1980) combine the two shape moments:
+
+$$
+\mathrm{JB} = \frac{T}{6}\left(\hat{S}^2 + \frac{\hat{K}^2}{4}\right)
+\;\xrightarrow{\;d\;}\; \chi^2_2
+\quad\text{under normality.}
+$$
+
+- A specification test, not a model: a rejection says that skewness and excess kurtosis together exceed sampling error.
+- Whether normality matters depends on the quantity. For a portfolio variance it hardly does; for a tail quantile it decides the answer.
+
+## Expected Shortfall and the Cornish-Fisher Correction
+
+$$
+\mathrm{ES}_\alpha = \mathbb{E}\!\left[\, r \mid r \leq \mathrm{VaR}_\alpha \right]
+$$
+
+Expected shortfall is coherent and subadditive (Artzner et al., 1999); value at risk is not. It can be estimated from the sample tail, or from a normal quantile $z$ corrected for skewness and kurtosis:
+
+$$
+z_{\mathrm{CF}} = z + \frac{(z^2-1)\hat{S}}{6}
+  + \frac{(z^3-3z)\hat{K}}{24} - \frac{(2z^3-5z)\hat{S}^2}{36}.
+$$
+
+The gap between the two estimates measures what the normal approximation costs (Favre and Galeano, 2002; Boudt et al., 2008).
+
+## Three Tables and One Boundary {.codesmall}
+
+```{r universe}
+#| echo: true
+```
+
+`PortfolioAnalytics` wants a wide `xts` matrix and will not convert for us. We cross from the tidy to the matrix world explicitly.
+
+```{r to-xts}
+#| echo: true
+```
+
+## The Moments of the Sixteen Series
+
+```{r moments}
+#| include: false
+```
+
+```{r moments-claims}
+#| include: false
+```
+
+```{r tbl-04-moments}
+```
+
+- `US_credit` earns `r sprintf("%.1f%%", 100 * mom("US_credit", "ret"))` against `US_equity`'s `r sprintf("%.1f%%", 100 * mom("US_equity", "ret"))`, yet ranks `r match("US_credit", moments$series)` of `r nrow(moments)` on the Sharpe ratio, because its volatility is under half.
+
+::: {.notes}
+The return ranking is not the Sharpe ranking. Whether credit is the better holding depends on whether variance is the right measure of its risk, which the risk-measures chapter settles.
+:::
+
+## Mean and Volatility
+
+```{r fig-04-risk-return}
+#| fig-alt: "Scatter of annualized volatility against annualized return for the sixteen classes, with a dashed line from the bill through the highest Sharpe ratio."
+#| fig-asp: 0.5
+```
+
+The dashed line runs from the bill through the highest Sharpe ratio available; series below it earn less per unit of risk than the best single holding.
+
+## The Money Market Is Not the Bill
+
+```{r mm-not-bill}
+```
+
+- `US_money_market` tracks the bill (correlation `r sprintf("%.2f", stats::cor(mm, rf))`) but carries duration: it loses money in `r sprintf("%.0f%%", 100 * mean(mm < 0))` of months, the bill in `r sprintf("%.1f%%", 100 * mean(rf < 0))`.
+- We treat money markets as short-duration assets and use `sim_riskfree_monthly` as the risk-free rate.
+
+```{r mm-currency}
+```
+
+The four foreign money markets have volatilities near ten percent: unhedged in dollars, they are nearly pure currency positions.
+
+## Volatility Is Not Non-Normality
+
+```{r normality}
+```
+
+```{r normality-claims}
+#| include: false
+```
+
+- `r sum(jb < 0.05)` of `r length(jb)` series reject normality at five percent.
+- `JP_equity`, the second most volatile series, has the second smallest statistic (`r sprintf("%.0f", jb_stat[["JP_equity"]])`); `US_credit`, at less than half its volatility, has `r sprintf("%.0f", jb_stat[["US_credit"]])`.
+- The three largest statistics belong to credit series.
+
+## Expected Shortfall Computed Two Ways {.codesmall}
+
+```{r tbl-04-tails}
+#| echo: true
+```
+
+For `US_credit` the two estimates differ by a factor of `r sprintf("%.1f", tails$ratio[tails$series == "US_credit"])`, for `US_equity` by `r sprintf("%.2f", tails$ratio[tails$series == "US_equity"])`.
+
+## A Trap: The Default Estimator
+
+::: {.callout-note}
+## `ES()` does not default to the historical estimate
+
+`PerformanceAnalytics::ES()` defaults to `method = "modified"`, so a call without that argument returns the Cornish-Fisher figure rather than the sample tail. It is the better default, given how few observations a 95% tail contains, and it is rarely noticed.
+:::
+
+- Whenever a reported expected shortfall is compared against another source, check which estimator produced it.
+- A Gaussian risk model is roughly right for equities and roughly half right for credit, the series that ranked `r match("US_credit", moments$series)` of `r nrow(moments)` on Sharpe ratio.
+
+## How Well Each Moment Is Estimated
+
+```{r instability}
+#| include: false
+```
+
+```{r instability-claims}
+#| include: false
+```
+
+```{r fig-04-instability}
+#| fig-alt: "Rolling sixty-month volatility and mean for four series against their full-sample values."
+#| fig-asp: 0.4
+```
+
+- Over sixty-month windows, volatility moves by `r med("vol", "median_rel_iqr")` of its level, the mean by `r med("mean", "median_rel_iqr")` of its own level, and skewness reverses sign in `r med("skew", "median_sign_flip")` of windows.
+
+::: {.notes}
+Dashed lines are the full-sample answers, solid lines what a sixty-month window would have told an investor. This is the precision asymmetry made concrete.
+:::
+
+## Drawdowns Are Episodes {.smaller}
+
+`table.Drawdowns()` returns each episode: when it began, bottomed and ended, and how long recovery took.
+
+```{r drawdowns}
+```
+
+```{r unrecovered}
+#| include: false
+```
+
+- `r sum(still_down)` of the `r ncol(R)` series end the sample inside their deepest drawdown. An `NA` in `Recovery` means the series never got back.
+- A single `maxDrawdown()` call reports a depth and cannot tell these apart from a drawdown recovered in `r min(deepest$Recovery, na.rm = TRUE)` months.
+
+## Fat Tails Are Events
+
+Independent fat tails diversify; shared ones do not. Series per month beyond 2.5 standard deviations:
+
+```{r clustering}
+```
+
+```{r worst-month}
+#| include: false
+```
+
+- Months with five or more series beyond the threshold: `r sum(hit >= 5)` observed against `r sprintf("%.2f", sum(exp[6:length(exp)]))` expected under independence.
+- In `r fmt_model(w)`, a month of the credit crisis, `r max(hit)` of `r ncol(Rr)` series moved at once.
+
+## The Market Moving at Once
+
+```{r fig-04-outliers}
+#| fig-alt: "Heat map of standardized monthly returns, series in rows and months in columns, with dark vertical stripes where the whole market moved."
+#| fig-asp: 0.45
+```
+
+Each row is a series, each column a month; the dark vertical stripes are the events in which the whole market moved at once (Longin and Solnik, 2001).
+
+## Four Episodes, Four Different Crises {.smaller}
+
+Cumulative returns in percent over each episode of `sim_episodes`:
+
+```{r episodes}
+```
+
+```{r episodes-claims}
+#| include: false
+```
+
+```{r rates-winners}
+#| include: false
+```
+
+- Credit fell with equity in the credit crisis (`US_credit` `r pct(cum["US_credit", "credit_crisis"])` down) but sided with government bonds in the equity bear market.
+- In the rates shock `US_government` lost `r pct(cum["US_government", "rates_shock"])`; only `r length(winners)` of `r nrow(cum)` series gained, `GLOBAL_commodity` among them.
+
+::: {.notes}
+A lesson on diversification drawn from the credit crisis alone reverses in the rates shock. That is why the backtests later report the episodes separately.
+:::
+
+## Correlation by Regime
+
+```{r regime-correlations}
+```
+
+```{r regime-claims}
+#| include: false
+```
+
+- Average pairwise correlation rises from `r sprintf("%.2f", rc[["calm"]])` in calm months to `r sprintf("%.2f", rc[["credit_crisis"]])` in the credit crisis and `r sprintf("%.2f", rc[["rates_shock"]])` in the rates shock; it falls to `r sprintf("%.2f", rc[["equity_bear"]])` in the equity bear market.
+- The credit crisis lasts `r n_ep[["credit_crisis"]]` months: the matrix is a description, not an estimate. Measured correlation also rises mechanically with volatility (Forbes and Rigobon, 2002).
+
+## Currency Is Not One Decision {.smaller}
+
+With $r^{\text{usd}} = r^{\text{loc}} + f$, where $f$ is the currency return,
+
+$$
+\operatorname{Var}(r^{\text{usd}})
+= \operatorname{Var}(r^{\text{loc}}) + \operatorname{Var}(f)
++ 2\operatorname{Cov}(r^{\text{loc}}, f).
+$$
+
+```{r currency}
+```
+
+```{r currency-claims}
+#| include: false
+```
+
+- Hedging `JP_equity` takes volatility from `r sprintf("%.1f%%", 100 * jp_eq[["unhedged"]])` to `r sprintf("%.1f%%", 100 * jp_eq[["hedged"]])`: the negative covariance already supplies the hedge. `EU_credit` runs the other way (Campbell et al., 2010).
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** The mean's precision depends only on the calendar span, the variance's on the number of observations; sampling more finely helps one and not the other.
+- **Outcome 1.** On sixty-month windows volatility moves by `r med("vol", "median_rel_iqr")` of its level, the mean by `r med("mean", "median_rel_iqr")` of its own, and skewness reverses sign in `r med("skew", "median_sign_flip")` of windows.
+- **Outcome 2.** Non-normality and volatility are unrelated: `JP_equity` is the second closest to Gaussian, while `US_credit` has two expected-shortfall estimates a factor of `r sprintf("%.1f", tails$ratio[tails$series == "US_credit"])` apart.
+- **Outcome 3.** Fat tails are events rather than a distribution: `r sum(hit >= 5)` months show joint exceedances that independence would produce once in `r sprintf("%.0f", 1 / sum(exp[6:length(exp)]))` samples of this length.
+- **Outcome 3.** The four episodes are not one crisis; correlation rises in two and falls in one, and on `r n_ep[["credit_crisis"]]` months it is a description.
+- **Outcome 4.** The currency share of a foreign holding is a property of the asset: hedging a Japanese government bond removes most of its volatility, hedging Japanese equity none.
+
+## Exercises {.smaller}
+
+Work these in `code/04-descriptive-analysis-exercises.R`; solutions are in appendix G of the book.
+
+1. Recompute the moments table on `sim_class_returns_weekly`, annualizing by $\sqrt{52}$. Which columns change materially? Explain using the precision formulas.
+2. Repeat the exceedance count at thresholds of 2, 3 and 4. Where does the excess over independence first appear?
+3. Combine `US_credit` and `JP_government` with equal weights and compute the skewness. Is it the average of the two? Why not?
+4. Hedge all sixteen series with `sim_fx_monthly` and recompute average correlation by regime. Does hedging change the diversification or only the volatility?
+5. Verify the precision formulas by simulation at monthly and weekly frequency, 1,000 repetitions.

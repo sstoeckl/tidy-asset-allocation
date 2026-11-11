@@ -1,0 +1,416 @@
+---
+title: "Decision-Aware Forecasting"
+subtitle: "Tidy Asset Allocation in R, Chapter 27"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 27"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/27-decision-aware-forecasting.R to the
+# chunks below, so no line of analysis is maintained twice. root.dir takes
+# effect after this chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+library(knitr)
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+knitr::read_chunk("27-decision-aware-forecasting.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+# The script carries the book's section markers ("# ===== ... ====="); the
+# source hook drops them from displayed code so a slide shows only its own chunk.
+.src_hook <- knitr::knit_hooks$get("source")
+knitr::knit_hooks$set(source = function(x, options) {
+  x <- x[!grepl("^# =====", x)]
+  if (!length(x) || !any(nzchar(trimws(x)))) return("")
+  .src_hook(x, options)
+})
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **Derive** the certainty-equivalent loss of a forecast error and **explain** why it is measured in the metric $\boldsymbol{\Sigma}^{-1}$, not the identity.
+2. **State** the risk-unit correction of the sample mean, its exact risk and its constant, and **implement** it.
+3. **Explain** why every forecast dimension acted on costs $1/T$, and how many rank groups are worth forming.
+4. **Evaluate** what each of the three answers buys out of sample, and where each fails.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+Should a return forecaster be trained on mean squared error at all?
+
+::: {.statement}
+The investor who uses a forecast does not pay for its error in squared percentage points but in the units of the decision it feeds. Stöckl and Hanke (2026) show that for a mean-variance investor those units are known exactly.
+:::
+
+- The general question is the operations-research one: Elmachtoub and Grigas (2022) propose training a predictor on the **regret** of the decision it induces rather than on its own accuracy.
+- In finance that regret has a closed form.
+- The chapter concerns **estimation**, so the same corrections apply to a long-run mean and to a conditional one.
+
+<p class="source">Stöckl, S. and Hanke, M. (2026). No Country for Old Means: Optimal Input Shrinkage for Optimal Portfolios? SSRN 7548058. Elmachtoub, A. and Grigas, P. (2022). Smart "Predict, then Optimize". *Management Science* 68(1), 9–26.</p>
+
+## The Statistical Loss
+
+Let $\boldsymbol{\mu}$ be the expected excess returns on $N$ assets, $\boldsymbol{\Sigma}$ their covariance matrix, and $\hat{\boldsymbol{\mu}}$ a forecast from any source. A forecaster is trained and judged on
+
+$$
+L_{\text{stat}}(\hat{\boldsymbol{\mu}})
+= (\hat{\boldsymbol{\mu}} - \boldsymbol{\mu})'(\hat{\boldsymbol{\mu}} - \boldsymbol{\mu}),
+$$
+
+the squared error summed over assets. The investor with risk aversion $\gamma$ maximizes the certainty equivalent
+
+$$
+CE(\boldsymbol{w}) = \boldsymbol{w}'\boldsymbol{\mu} - \tfrac{\gamma}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w},
+\qquad
+\boldsymbol{w}^* = \boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}/\gamma,
+\qquad
+CE^* = \frac{\boldsymbol{\mu}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}}{2\gamma},
+$$
+
+and holds the plug-in position $\hat{\boldsymbol{w}} = \boldsymbol{\Sigma}^{-1}\hat{\boldsymbol{\mu}}/\gamma$ when handed the forecast.
+
+## The Decision Loss
+
+Expanding the certainty equivalent of the plug-in position,
+
+$$
+CE(\hat{\boldsymbol{w}}) = \hat{\boldsymbol{\mu}}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}/\gamma - \hat{\boldsymbol{\mu}}'\boldsymbol{\Sigma}^{-1}\hat{\boldsymbol{\mu}}/(2\gamma),
+$$
+
+and subtracting it from $CE^*$ leaves a perfect square:
+
+$$
+CE^* - CE(\hat{\boldsymbol{w}})
+= \frac{1}{2\gamma}\,
+  (\hat{\boldsymbol{\mu}} - \boldsymbol{\mu})'\boldsymbol{\Sigma}^{-1}(\hat{\boldsymbol{\mu}} - \boldsymbol{\mu})
+= \frac{\text{RAFE}(\hat{\boldsymbol{\mu}})^2}{2\gamma}.
+$$
+
+- The quadratic form is the squared risk-adjusted forecast error of Salcher, Stöckl and Hanke (2026a).
+- In the language of Elmachtoub and Grigas (2022) this is the regret of the mean-variance decision.
+
+::: {.notes}
+The derivation of the Sharpe-ratio bound sits in chapter 26; here we take the identity from there and use it as a loss.
+:::
+
+## Two Metrics for One Error
+
+The two losses are quadratic forms in the same error $\boldsymbol{e} = \hat{\boldsymbol{\mu}} - \boldsymbol{\mu}$ under two metrics. In the eigenbasis of $\boldsymbol{\Sigma}$, with eigenvalues $\lambda_1 \geq \cdots \geq \lambda_N$ and eigenvectors $\boldsymbol{u}_j$,
+
+$$
+L_{\text{stat}} = \sum_j (\boldsymbol{u}_j'\boldsymbol{e})^2,
+\qquad
+2\gamma \times \text{decision loss} = \sum_j \frac{(\boldsymbol{u}_j'\boldsymbol{e})^2}{\lambda_j}.
+$$
+
+The same squared error costs $\lambda_1/\lambda_N$ times more in the least volatile direction than in the most volatile one: the condition number of chapter 7.
+
+```{r metric}
+#| echo: true
+```
+
+A unit error along the first eigenvector costs `r sprintf("%.0f", cost_top)`, along the last `r sprintf("%.2g", cost_bottom)`: a ratio of $10^{`r sprintf("%.1f", log10(cost_bottom / cost_top))`}$.
+
+::: {.notes}
+A forecaster that minimizes squared error spends its accuracy where the variance is large; the optimizer needs it where the variance is small, the mechanism of Best and Grauer (1991).
+:::
+
+## Three Places to Reconcile the Losses
+
+A forecaster trained on the statistical loss can be reconciled with a decision scored by the decision loss in three places (Granger, 1969; Elliott and Timmermann, 2008):
+
+1. **After the forecast**: correct its output in risk units and leave the model alone, the post-optimal moment correction of Stöckl and Hanke (2026).
+2. **Between forecast and decision**: act on fewer of its dimensions, which Salcher, Stöckl and Hanke (2026b) price.
+3. **Inside the training loop**: replace the loss with the certainty equivalent of the portfolio the forecast implies, the parametric policy of chapter 18 taken one step further.
+
+Each answer comes with a condition under which it does not help; the implementation says which one partially falsifies its own prediction.
+
+## Correcting the Mean in Risk Units
+
+Take the setting of Kan and Zhou (2007): excess returns independent $\mathcal{N}(\boldsymbol{\mu}, \boldsymbol{\Sigma})$ over $T \geq N + 1$ months, $\hat{\boldsymbol{\mu}}$ the sample mean. In risk units, with $\boldsymbol{m} = \boldsymbol{\Sigma}^{-1/2}\boldsymbol{\mu}$, we have $\hat{\boldsymbol{m}} \sim \mathcal{N}(\boldsymbol{m}, \boldsymbol{I}/T)$ and
+
+$$
+\mathbb{E}\,\text{RAFE}(\hat{\boldsymbol{\mu}})^2 = \frac{N}{T}.
+$$
+
+Each of the $N$ dimensions costs $1/T$, the variance of an estimated Sharpe ratio, whatever signal it carries. The correction is Stein estimation in these units: fix a target $\boldsymbol{P}\hat{\boldsymbol{\mu}}$, $\boldsymbol{P}$ idempotent of rank $r$ (zero, or the grand mean), shrink the residual, and the square root of $\hat{\boldsymbol{\Sigma}}$ cancels (Stöckl and Hanke, 2026):
+
+$$
+\tilde{\boldsymbol{\mu}}_c
+= \hat{\boldsymbol{\mu}} - \frac{c}{T}\,\frac{(\boldsymbol{I} - \boldsymbol{P})\hat{\boldsymbol{\mu}}}{\hat{q}},
+\qquad
+\hat{q} = \big((\boldsymbol{I} - \boldsymbol{P})\hat{\boldsymbol{\mu}}\big)'\hat{\boldsymbol{\Sigma}}^{-1}\big((\boldsymbol{I} - \boldsymbol{P})\hat{\boldsymbol{\mu}}\big).
+$$
+
+For the grand mean: $\tilde{\boldsymbol{\mu}}_c = \bar{\mu}\boldsymbol{\iota} + \big(1 - c/(T\hat{q})\big)(\hat{\boldsymbol{\mu}} - \bar{\mu}\boldsymbol{\iota})$.
+
+::: {.notes}
+The estimated covariance matrix enters through one scalar, the sample Mahalanobis length of the residual from the target.
+:::
+
+## The Exact Risk and the Constant
+
+With $\psi = q/\hat{q}$, $(T-1)\psi \sim \chi^2_{T-N}$ independently of $\hat{\boldsymbol{\mu}}$ (Wishart), so the feasible corrector is the oracle one with constant $c\psi$. Conditional on $\psi$, the identity of Stein (1981) turns the cross term into a divergence. The exact risk:
+
+$$
+\mathbb{E}\,\text{RAFE}(\tilde{\boldsymbol{\mu}}_c)^2
+= \frac{N}{T} - \frac{\tau_P}{T^2}\Big[2c\,(N - r - 2)\,\mathbb{E}\psi - c^2\,\mathbb{E}\psi^2\Big],
+$$
+
+with $\mathbb{E}\psi = \frac{T-N}{T-1}$ and $\mathbb{E}\psi^2 = \frac{(T-N)(T-N+2)}{(T-1)^2}$. The bracket is a concave quadratic in $c$, largest at
+
+$$
+c_f = (N - r - 2)\,\frac{T-1}{T-N+2},
+$$
+
+a function of $N$, $T$ and the target's rank alone: no tuning, no validation window.
+
+::: {.notes}
+Everything about the estimated covariance matrix that matters is in the two moments of psi, and they depend on N and T only. The risk is finite whenever N minus r is at least three.
+:::
+
+## What the Theorem Says, and What It Does Not {.smaller}
+
+- For the grand mean the risk is below $N/T$ for every $N \geq 4$ and $T \geq N + 1$: the corrected mean **dominates** the sample mean whenever the sample is longer than the number of assets.
+- Lineage: Stein (1956) showed the sample mean inadmissible; James and Stein (1961) gave the estimator; Efron and Morris (1975) moved the target to the grand mean; Jorion (1986) brought it into portfolio choice as Bayes-Stein.
+- New here: the target projection need not be orthogonal in risk units. The proof uses only $\boldsymbol{R}^2 = \boldsymbol{R}$ and $\operatorname{tr}\boldsymbol{R} = N - r$. The Bayes-Stein target depends on $\hat{\boldsymbol{\Sigma}}$, and the theorem does not cover it.
+- The zero target rescales the forecast and leaves the direction of the plug-in position unchanged: its gain is in the certainty equivalent, not the Sharpe ratio.
+- The theorem ranks the corrected mean against the sample mean, **not** against rules that use no mean, such as $1/N$ or minimum variance.
+
+## Using Less of the Forecast
+
+The second answer keeps the forecast and acts on fewer dimensions. With $\boldsymbol{a} = \boldsymbol{\Sigma}^{-1/2}\boldsymbol{\mu}$ the truth in risk units and $\hat{\boldsymbol{b}} = \boldsymbol{a} + \boldsymbol{\eta}$ the forecast, acting only on the projection $\boldsymbol{Q}\hat{\boldsymbol{b}}$ onto a $k$-dimensional subspace loses, in expectation,
+
+$$
+2\gamma\,\mathbb{E}[\text{loss}]
+= \underbrace{\|(\boldsymbol{I} - \boldsymbol{Q})\boldsymbol{a}\|^2}_{\text{signal discarded}}
++ \underbrace{\frac{k}{T}}_{\text{noise retained}} .
+$$
+
+- A dimension is worth acting on if and only if its squared Sharpe ratio exceeds $1/T$ (Jobson and Korkie, 1981; Lo, 2002).
+- Shrinkage, the two-fund scalar of Kan and Zhou (2007) and the combination with $1/N$ of Tu and Zhou (2011) are a **soft** reduction: they pay on every dimension.
+- A **hard** reduction wins whenever the signal is concentrated on a few dimensions.
+
+## How Many Rank Groups
+
+Order the assets by the forecast; let $\rho$ be the cross-sectional rank correlation with next month's return in risk units, the information coefficient of Grinold (1989). If the true profile is linear in the rank, its slope is $\tau^2 = \rho^2/(1-\rho^2)$. Cutting the ranking into $G$ groups discards about $N\tau^2/G^2$ of signal and retains $G/T$ of noise, so the loss is minimized at
+
+$$
+G^* = \left(\frac{2\,N\,T\,\rho^2}{1 - \rho^2}\right)^{1/3}.
+$$
+
+- The cube root is the rate Cattaneo et al. (2020) derive for characteristic-sorted portfolios.
+- The price per group is $1/T$ regardless of how many assets it averages, so $G^*$ is small.
+- It falls to one group, which is $1/N$, when the forecast cannot rank.
+
+## The Decision Loss Inside the Training Loop
+
+Let $f_{\boldsymbol{\theta}}(\boldsymbol{x}_t)$ be a forecaster and $\boldsymbol{w}(\cdot)$ the map from a forecast to weights. The decision-aware estimator maximizes the sample certainty equivalent of the portfolio the forecast implies:
+
+$$
+\hat{\boldsymbol{\theta}}
+= \arg\max_{\boldsymbol{\theta}}\;
+\frac{1}{T}\sum_{t}\Big[r_{p,t+1}(\boldsymbol{\theta}) - \frac{\gamma}{2}\,r_{p,t+1}(\boldsymbol{\theta})^2\Big],
+\quad
+r_{p,t+1}(\boldsymbol{\theta}) = \boldsymbol{w}\big(f_{\boldsymbol{\theta}}(\boldsymbol{x}_t)\big)'\boldsymbol{r}_{t+1}.
+$$
+
+With the plug-in map and a known $\boldsymbol{\Sigma}$, the algebra of the decision loss gives
+
+$$
+\max_{\boldsymbol{\theta}}\;\mathbb{E}\,CE
+\;\Longleftrightarrow\;
+\min_{\boldsymbol{\theta}}\;\mathbb{E}\,\big(f_{\boldsymbol{\theta}}(\boldsymbol{x}_t) - \boldsymbol{\mu}_t\big)'\boldsymbol{\Sigma}^{-1}\big(f_{\boldsymbol{\theta}}(\boldsymbol{x}_t) - \boldsymbol{\mu}_t\big):
+$$
+
+generalized least squares in the metric the optimizer uses. Brandt, Santa-Clara and Valkanov (2009) is the special case $\boldsymbol{w}(f) = f$; Bertsimas and Kallus (2020) call it prescriptive analytics.
+
+::: {.notes}
+Nothing in the loop uses the quadratic form, so the third answer generalizes to any utility, constraint or cost; only the closed form is lost. What is also lost is precision: the criterion carries the noise of a Sharpe ratio.
+:::
+
+## Where Each Answer Fails
+
+- **The correction** drops every deviation from the target when $c_f \geq T\hat{q}$, which happens when $T$ is small relative to $N$: the corrected mean is then the grand mean and the tangency rule becomes minimum variance.
+- **The group rule** returns one group when the forecast cannot rank, and buys nothing when its cross-sectional content is small to begin with.
+- **The loop** can choose worse on both counts when the certainty equivalent it tunes on is noisier than the gain it chases: a Sharpe ratio realized over $T$ months has standard error of order $\sqrt{(1 + SR^2/2)/T}$ (Lo, 2002).
+
+## The Corrected Mean in a Few Lines {.codesmall}
+
+```{r correct-mean}
+#| echo: true
+```
+
+With $N = `r N`$, $r = 1$ and `r Tn` months, $c_f = (`r N` - 1 - 2)\,\frac{`r Tn - 1`}{`r Tn - N + 2`} = `r sprintf("%.2f", cm_full$c)`$ and $1 - c_f/(T\hat{q}) = `r sprintf("%.3f", cm_full$factor)`$: each deviation from the grand mean is kept at `r sprintf("%.0f%%", 100 * cm_full$factor)` of its size.
+
+```{r bayes-stein}
+#| include: false
+```
+
+Bayes-Stein shrinks `r sprintf("%.0f%%", 100 * bs_full$v)` toward the minimum-variance mean, the corrected mean `r sprintf("%.0f%%", 100 * (1 - cm_full$factor))` toward the grand mean; only the second has the exact risk behind it.
+
+## The Intensity Across Window Lengths
+
+```{r tbl-27-intensity}
+```
+
+The constant falls with $T$ toward the oracle value $N - 3 = `r N - 3`$; at $T = 36$ it is `r sprintf("%.2f", at_T(36L, "ratio"))` times that value. The factor applied is small at every window, `r sprintf("%.2f", min(intensity$factor))` to `r sprintf("%.2f", max(intensity$factor))` on average, and on `r sprintf("%.0f%%", 100 * at_T(60L, "at_zero"))` of the sixty-month windows the positive part binds.
+
+::: {.notes}
+Windows of 36, 60, 120 months and the full sample. A factor at zero means every deviation from the grand mean is removed.
+:::
+
+## Four Means in the Tangency Rule
+
+```{r qp-rules}
+#| include: false
+```
+
+```{r rolling-means}
+#| include: false
+# two window lengths over every out-of-sample month; this is the slow chunk
+```
+
+```{r means-facts}
+#| include: false
+```
+
+The long-only tangency portfolio on rolling windows, as the quadratic program of chapter 8, reproduces the register of chapter 25; the covariance matrix is the same for every mean.
+
+```{r tbl-27-means}
+```
+
+- Sharpe ratio, sixty months: `r sprintf("%.3f", g_m("sample", 60L))` on the sample mean (the register's figure), `r sprintf("%.3f", g_m("bayes_stein", 60L))` on Bayes-Stein, `r sprintf("%.3f", g_m("corrected", 60L))` on the corrected mean, against `r sprintf("%.3f", g_m("min_variance", 60L))` for minimum variance.
+- On `r sprintf("%.0f%%", 100 * share_gmv(60L))` of the sixty-month windows the factor is zero and the corrected tangency portfolio *is* minimum variance.
+
+::: {.notes}
+The certainty-equivalent columns reorder: equal weighting is highest because a fully invested tangency portfolio is far below the risk an investor with a gamma of 5 would choose, and the Sharpe ratio cannot see that.
+:::
+
+## The Information Coefficient and the Number of Groups
+
+The forecast is the term-spread regression of chapter 16, turned into weights by that chapter's tilt, with the reduction inserted after the forecast is in volatility units and before it is clipped. At each out-of-sample month the information coefficient is measured on the months before it.
+
+```{r term-forecast}
+#| include: false
+```
+
+```{r tilt}
+#| include: false
+```
+
+```{r information-coefficient}
+#| echo: true
+```
+
+The coefficient realized on the forecasts actually made, `r sprintf("%.3f", ic_oos)`, is lower than on any estimation window; at that value the formula gives `r sprintf("%.1f", G_oos)` groups.
+
+## Granularity of the Term-Spread Tilt
+
+```{r tbl-27-granularity}
+```
+
+```{r granularity-facts}
+#| include: false
+```
+
+- All forecast cells stand above equal weighting by `r sprintf("%.3f", min(gain_sr))` to `r sprintf("%.3f", max(gain_sr))` in Sharpe ratio.
+- Among themselves they are indistinguishable: the spread is `r sprintf("%.3f", spread_sr)`, against a standard error of about `r sprintf("%.2f", se_sr)` (Lo, 2002).
+- The term spread lifts every bond series together, so there is little for the reduction to discard and little to retain: the band of the tilt, not the granularity, sets what the forecast is worth.
+
+## The Elastic Net Tuned on Two Losses
+
+```{r enet-tuning}
+#| include: false
+# re-tunes once a year; the penalty is the only parameter the loop chooses
+```
+
+```{r lambda-facts}
+#| include: false
+```
+
+```{r enet-forecast}
+#| include: false
+```
+
+```{r training-facts}
+#| include: false
+```
+
+The elastic net of Zou and Hastie (2005) on seven predictors, with the same folds and penalty grid for both criteria. Squared error selects the null model in `r sum(null_mse)` of `r length(null_mse)` re-tunings; the certainty equivalent wanders over `r sprintf("%.0f", ce_orders)` orders of magnitude.
+
+```{r tbl-27-training}
+```
+
+- The decision-trained forecast has the worse squared error and the better portfolio: `r sprintf("%.0f", 1e4 * (g_t(2, "ce_net") - g_t(1, "ce_net")))` basis points of net certainty equivalent a year.
+- It turns the portfolio over `r sprintf("%.0f", turn_x)` times as much, and the Sharpe gain of `r sprintf("%.3f", g_t(2, "sharpe") - g_t(1, "sharpe"))` is inside the standard error of `r sprintf("%.2f", se_sr)`.
+
+::: {.notes}
+The prediction is confirmed in sign and not established in significance, which on this many months is as much as any forecast comparison in the book can say.
+:::
+
+## What Each Answer Buys
+
+```{r fig-27-scoreboard}
+#| fig-asp: 0.62
+#| fig-alt: "Out-of-sample Sharpe ratio of every rule of the chapter and every line of the register, sixty-month windows, with equal weighting as a dashed line."
+```
+
+```{r board-facts}
+#| include: false
+```
+
+- By Sharpe ratio added to the rule it corrects, the first answer buys most: `r sprintf("%.2f", gain_a)` for the corrected mean, against `r sprintf("%.2f", gain_c)` for the training loop and `r sprintf("%.2f", gain_b)` for granularity.
+- None beats the register's rules that use no mean.
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** A mean-variance investor pays for forecast error in the metric $\boldsymbol{\Sigma}^{-1}$, not the identity: the same squared error costs $10^{`r sprintf("%.1f", log10(cost_bottom / cost_top))`}$ times more in the least volatile direction than in the most.
+- **Outcome 2.** Shrinking the sample mean toward the grand mean in estimated risk units has an exact risk; the best constant is $(N-3)(T-1)/(T-N+2)$, and the corrected mean dominates the sample mean whenever $T > N$. It lifts the sixty-month tangency Sharpe ratio from `r sprintf("%.2f", g_m("sample", 60L))` to `r sprintf("%.2f", g_m("corrected", 60L))`.
+- **Outcome 3.** Every dimension acted on costs $1/T$ whatever it carries, so the number of rank groups worth forming is $(2NT\rho^2/(1-\rho^2))^{1/3}$. On the term spread every granularity earns the same few basis points.
+- **Outcome 4.** Tuning the elastic net on the certainty equivalent gives a worse $R^2_{\text{OS}}$ and a better portfolio, `r sprintf("%.0f", 1e4 * (g_t(2, "ce_net") - g_t(1, "ce_net")))` basis points net a year, inside the sampling error of the Sharpe ratio and at `r sprintf("%.0f", turn_x)` times the turnover.
+- **Outcome 4.** None of the three answers beats the register's rules that use no mean; the covariance channel is where the rest of the plug-in rule's loss lives.
+
+## Exercises {.smaller}
+
+Work these in `code/27-decision-aware-forecasting-exercises.R`; solutions are in appendix G of the book.
+
+1. Run the sixty-month backtest with the zero target in place of the grand mean. Verify that the long-only tangency Sharpe ratio equals the sample mean's except where the factor is zero, count the exceptions, and compare realized certainty equivalents of the unconstrained positions.
+2. Simulate two thousand sixty-month samples from the full-sample moments and measure the squared RAFE of the corrected mean at $c \in \{c_f/2,\, c_f,\, 1.5\,c_f,\, 2.5\,c_f\}$. Which lies above $N/T$?
+3. Double the band of the tilt to $\delta = 1/N$ and recompute the granularity table. Does granularity begin to matter?
+4. Replace the in-sample information coefficient, from the second out-of-sample year on, with the trailing coefficient of the forecasts actually made. How often does the rule now hold $1/N$?

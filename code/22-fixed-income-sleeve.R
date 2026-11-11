@@ -29,9 +29,8 @@ wk <- as.Date(zoo::index(A)); dates <- zoo::index(R); Tn <- length(dates)
 stopifnot(ncol(A) == 45L, nrow(cv) == nrow(A) + 1L, all(cv$date[-1] == wk),
           all(fx$date == wk), identical(zoo::index(Am), dates), !anyNA(A))
 
-# ===== Currency, and why the two decisions are not separable abroad =====
-
 ## ---- currency-share ----
+# ===== Currency, and why the two decisions are not separable abroad =====
 fx_share <- function(series, region) {
   f <- sim_fx_monthly[sim_fx_monthly$region == region, ]
   stopifnot(all(f$date == dates))
@@ -41,9 +40,8 @@ fx_share <- function(series, region) {
 round(c(JP_government = fx_share("JP_government", "JP"),
         EU_government = fx_share("EU_government", "EU")), 3)
 
-# ===== The factor series and their units =====
-
 ## ---- units ----
+# ===== The factor series and their units =====
 units <- sim_curve_weekly |>
   dplyr::mutate(kind = sub("^[A-Z]+_", "", series)) |>
   dplyr::group_by(kind) |>
@@ -72,9 +70,8 @@ ggplot2::ggplot(fac, ggplot2::aes(date, value)) +
   scale_x_model() +
   ggplot2::labs(y = "percentage points")
 
-# ===== Factor exposures, and which bond is which =====
-
 ## ---- exposures ----
+# ===== Factor exposures, and which bond is which =====
 dcv <- as.data.frame(lapply(cv[-1], diff))                 # factor changes, aligned with the returns
 exposure <- function(id) {
   rg <- bonds$region[bonds$asset_id == id]; gr <- bonds$credit_grade[bonds$asset_id == id]
@@ -151,9 +148,8 @@ stopifnot(length(unique(sign(pc$rotation[, 1]))) == 1L,            # a level: al
           sign(pc$rotation["y2", 2]) != sign(pc$rotation["y10", 2]), # a slope: ends opposed
           sign(pc$rotation["y5", 3]) != sign(pc$rotation["y2", 3]))  # a curvature: middle opposed
 
-# ===== Worked: the week the ten-year moved most =====
-
 ## ---- worked-week ----
+# ===== Worked: the week the ten-year moved most =====
 yc  <- log(1 + Y_us[, "y10"])                                  # continuously compounded
 i   <- which.max(abs(diff(yc)))                                # the week of the largest move
 dy  <- diff(yc)[i]; y0 <- yc[i]; tau <- 10; d <- 1 / 52
@@ -165,9 +161,8 @@ round(c(yield_change_bp = 1e4 * dy, carry = carry, duration = duration,
         convexity = convexity, first_order = carry + duration,
         second_order = carry + duration + convexity, actual = r_actual), 5)
 
-# ===== What the currency does to the fit =====
-
 ## ---- tbl-22-regions ----
+# ===== What the currency does to the fit =====
 # Government bonds by region: the implied durations from the hedged
 # regressions, and the mean R² of the three regressions on the region's own
 # curve factors, hedged and unhedged.
@@ -190,9 +185,8 @@ r2_f <- expo |>
 worst <- expo |> dplyr::filter(class == "government") |> dplyr::slice_min(r2_hedged, n = 1)
 stopifnot(r2_f$hedged > 0.9, r2_f$unhedged < 0.3)
 
-# ===== The sleeve as a set of exposures =====
-
 ## ---- sleeve ----
+# ===== The sleeve as a set of exposures =====
 gov <- expo$asset[expo$class == "government"]
 G   <- A[, gov]
 B   <- cbind(duration = -expo$level, slope = -expo$slope)[match(gov, expo$asset), ]
@@ -219,9 +213,8 @@ round(w_five[w_five > 0.005], 3)
 rbind(unconstrained = c(exposures(w_free), vol = ann_vol(w_free)),
       duration_5    = c(exposures(w_five), vol = ann_vol(w_five))) |> round(3)
 
-# ===== `factor_exposure_constraint()` binds `B` by position, not by name =====
-
 ## ---- positional ----
+# ===== `factor_exposure_constraint()` binds `B` by position, not by name =====
 B_rev  <- B[rev(rownames(B)), "duration"]                    # same numbers, reversed order
 w_rev  <- extractWeights(optimize.portfolio(G, sleeve(rev(gov), B_rev, 5),
                                             optimize_method = "ROI"))
@@ -238,9 +231,8 @@ rbind(barbell = c(exposures(w_five), vol = ann_vol(w_five)),
 o_bad <- optimize.portfolio(G, sleeve(gov, B[, "duration"], 12), optimize_method = "ROI")
 c(class = class(o_bad)[1], weights_are_na = anyNA(o_bad$weights), status = o_bad$solver_status)
 
-# ===== The duration overlay as a parametric policy =====
-
 ## ---- overlay-data ----
+# ===== The duration overlay as a parametric policy =====
 i_last <- findInterval(dates, cv$date)                      # last weekly curve point in each month
 stopifnot(all(format(cv$date[i_last], "%Y-%m") == format(dates, "%Y-%m")))
 term    <- -cv$US_Slope[i_last]                             # ten-year less two-year, decimal
@@ -274,9 +266,8 @@ ce    <- function(theta)                                    # monthly certainty 
 round(c(theta = theta_hat, se_block_bootstrap = stats::sd(boot), t = theta_hat / stats::sd(boot),
         ce_gain_annual = 12 * (ce(theta_hat) - ce(0))), 3)
 
-# ===== The Sleeve Out of Sample =====
-
 ## ---- overlay-path ----
+# ===== The Sleeve Out of Sample =====
 tilt <- vapply(120:Tn, function(t) {                           # everything indexed <= t
   zt <- (term[1:t] - mean(term[1:t])) / stats::sd(term[1:t])
   th <- stats::optimize(policy_utility, c(-3, 3), z = zt[-t],
@@ -358,9 +349,8 @@ failed <- vapply(ends, function(e) {                         # the same windows,
 stopifnot(length(ends) == bt$sleeve$metrics$n_periods[1])
 c(windows = length(ends), failed_with_exact_target = sum(failed))
 
-# ===== An exact exposure target can be reported infeasible in a third of the windows =====
-
 ## ---- tbl-22-oos ----
+# ===== An exact exposure target can be reported infeasible in a third of the windows =====
 # The sleeves out of sample from observation 121, sixty-month window, monthly
 # rebalancing. Sharpe ratios are over the bill, gross and net of the per-class
 # costs of chapter 23; turnover is annual one-way.

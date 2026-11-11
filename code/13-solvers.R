@@ -17,9 +17,8 @@ Re <- R - sim_riskfree_monthly$return
 S  <- stats::cov(Re)
 mu <- colMeans(Re)
 
-# ===== A problem whose answer we already know =====
-
 ## ---- truth ----
+# ===== A problem whose answer we already know =====
 N <- ncol(Re)
 
 # The long-only tangency portfolio, solved directly:
@@ -34,9 +33,8 @@ w_true <- setNames(w_true / sum(w_true), colnames(Re))
 sharpe <- function(w) sum(mu * w) / sqrt(as.numeric(t(w) %*% S %*% w))
 c(monthly_sharpe = sharpe(w_true), holdings = sum(w_true > 1e-6))
 
-# ===== Racing them on a problem with an answer =====
-
 ## ---- race ----
+# ===== Racing them on a problem with an answer =====
 spec <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "full_investment") |>
   add.constraint(type = "long_only") |>
@@ -94,9 +92,8 @@ stopifnot(all(abs(race$share[convex] - 1) < 1e-3), all(srch$share < 0.95),
           all(srch$seconds > 10 * race$seconds[race$solver == "ROI"]))
 rng <- range(srch$share)
 
-# ===== The searches complain about the budget constraint, and the complaint is informative =====
-
 ## ---- fig-13-race ----
+# ===== The searches complain about the budget constraint, and the complaint is informative =====
 # What each solver achieved against what it cost. The two convex solvers sit
 # alone in the top-left corner; nothing buys its way out of the bottom-right.
 race |>
@@ -112,9 +109,8 @@ race |>
   ggplot2::labs(x = "time relative to ROI (log scale)", y = "share of the attainable Sharpe",
                 colour = NULL)
 
-# ===== Which solver honors the constraint =====
-
 ## ---- poslimit ----
+# ===== Which solver honors the constraint =====
 # One position fewer than the unconstrained answer holds, so the limit binds.
 k_lim    <- sum(w_true > 1e-6) - 1L
 stopifnot(k_lim >= 1L, k_lim < sum(w_true > 1e-6))
@@ -150,9 +146,8 @@ stopifnot(feasible$verdict[feasible$solver == "ROI"] == "VIOLATES", n_viol == 3,
           feasible$holdings[feasible$solver == "ROI"] == sum(w_true > 1e-6),
           all(feasible$holdings[feasible$solver %in% ignore] >= N - 1))
 
-# ===== Auditing the answer =====
-
 ## ---- audit ----
+# ===== Auditing the answer =====
 audit <- function(opt, max_pos = NULL, sum_target = 1, tol = 1e-6) {
   w <- extractWeights(opt)
   if (is.null(w) || anyNA(w)) return("no usable weights returned")
@@ -169,9 +164,8 @@ audit <- function(opt, max_pos = NULL, sum_target = 1, tol = 1e-6) {
 
 audit(optimize.portfolio(Re, spec, optimize_method = "ROI", maxSR = TRUE))
 
-# ===== Comparing specifications as one object =====
-
 ## ---- combine ----
+# ===== Comparing specifications as one object =====
 opts <- combine.optimizations(list(
   ROI     = optimize.portfolio(Re, spec, optimize_method = "ROI", maxSR = TRUE),
   CVXR    = optimize.portfolio(Re, spec, optimize_method = "CVXR", maxSR = TRUE)
@@ -179,9 +173,8 @@ opts <- combine.optimizations(list(
 
 round(extractWeights(opts), 4)[, 1:6]
 
-# ===== Why the Searches Fall Short =====
-
 ## ---- budget ----
+# ===== Why the Searches Fall Short =====
 set.seed(1602)
 budget <- dplyr::bind_rows(
   run("random", search_size = 20000),

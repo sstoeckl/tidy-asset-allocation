@@ -30,9 +30,8 @@ stopifnot(identical(d, zoo::index(R)), !anyNA(A), !anyNA(Cap), identical(colname
 cap_w_of <- function(t, j) Cap[t, j] / sum(Cap[t, j])      # the benchmark's weights for month t, by name
 c(instruments = N, months = nrow(X))
 
-# ===== The market ships rating changes, not ratings =====
-
 ## ---- esg-levels ----
+# ===== The market ships rating changes, not ratings =====
 esg_start <- function(assets, dist = function(n) stats::rnorm(n, mean = 4, sd = 1.2),
                       seed = 1602, scale = c(1, 7)) {
   set.seed(seed)
@@ -87,9 +86,8 @@ ggplot2::ggplot(drift, ggplot2::aes(date, value)) +
   scale_x_model() +
   ggplot2::labs(y = NULL)
 
-# ===== The sleeve, its benchmark, and its covariance =====
-
 ## ---- sleeve ----
+# ===== The sleeve, its benchmark, and its covariance =====
 W <- 120L
 shrunk <- function(X) {
   S <- corpcor::cov.shrink(X, verbose = FALSE)
@@ -111,9 +109,8 @@ p_vol    <- function(w, S)    sqrt(12 * as.numeric(t(w) %*% S %*% w))
 score_of <- function(w, s)    sum(w * s) / sum(w)
 c(benchmark_score = score_of(b, s), benchmark_vol = p_vol(b, S))
 
-# ===== Exclusion =====
-
 ## ---- exclusion ----
+# ===== Exclusion =====
 bottom_of <- function(s, q = 0.2)                    # the names in the bottom fifth of their region
   unlist(lapply(split(names(s), region[names(s)]), function(j)
     j[rank(s[j], ties.method = "first") <= ceiling(q * length(j))]), use.names = FALSE)
@@ -155,9 +152,8 @@ c(reproduced_to = max(abs(w_jm - w_mvx)), excluded = length(excl), binding = len
   vol_unconstrained = p_vol(w_mv, S), vol_screened = p_vol(w_mvx, S))
 round(sort(-delta[wanted] * 12 * 1e4, decreasing = TRUE)[1:3], 2)   # the dearest exclusions, annualized variance x 1e4
 
-# ===== A floor on the sleeve's rating =====
-
 ## ---- floor-specs ----
+# ===== A floor on the sleeve's rating =====
 shrinkage_moments <- function(R, portfolio) {
   S <- shrunk(zoo::coredata(R))
   list(mu = colMeans(R), sigma = S, m3 = NULL, m4 = NULL)
@@ -196,9 +192,8 @@ floors <- seq(4, 6, by = 0.5); floors <- floors[floors < min(s_max)]
 w_mv0 <- pa_minvar(base_sleeve)
 round(c(s_max, unconstrained_score = score_of(w_mv0, s)), 3)
 
-# ===== The package has no tracking-error objective, so the second frontier is solved by hand =====
-
 ## ---- min-te ----
+# ===== The package has no tracking-error objective, so the second frontier is solved by hand =====
 min_te <- function(S, b, cap = pmax(0.10, b), B = NULL, lower = NULL, budget, mu = NULL) {
   # min (w-b)'S(w-b)  s.t. regional budgets, 0 <= w <= cap, B'w >= lower; with mu: min w'Sw instead
   n <- length(b); G <- sapply(names(budget), function(g) as.numeric(region[names(b)] == g))
@@ -261,9 +256,8 @@ stopifnot(all(cost_at("across the universe", slack_floors) < 1e-4),  # slack flo
           all(diff(cost_at("across the universe", tight)) > 0))      # the frontier is convex upward
 top_f <- max(floors)
 
-# ===== The multiplier, checked by perturbation =====
-
 ## ---- shadow ----
+# ===== The multiplier, checked by perturbation =====
 f_chk <- top_f
 w_f   <- min_te(S, b, B = s, lower = f_chk, budget = gbud)
 w_fh  <- min_te(S, b, B = s, lower = f_chk + 0.01, budget = gbud)
@@ -273,9 +267,8 @@ lam   <- attr(w_f, "lambda")[1]
 stopifnot(lam > 0, abs(fd / lam - 1) < 0.05)
 c(multiplier = lam, finite_difference = fd, ratio = fd / lam)
 
-# ===== The audit =====
-
 ## ---- audit ----
+# ===== The audit =====
 audit_spec <- function(w, spec, tol = 1e-6) {
   w <- w[names(spec$assets)]
   dplyr::bind_rows(lapply(spec$constraints, function(cn) {
@@ -303,17 +296,15 @@ slack <- tibble::tibble(
             vapply(names(grp), function(g) score_of(w_b5[grp[[g]]], s[grp[[g]]]) - 5, numeric(1))))
 slack |> dplyr::mutate(binds = abs(slack) < 1e-6)
 
-# ===== The same constructions on real data =====
-
 ## ---- real-data ----
+# ===== The same constructions on real data =====
 # Not run in the book; shown for the reader to try.
 # ind      <- pm_universe("industries49", from = "1990-07-01")       # downloads, then caches
 # screened <- ind[, setdiff(names(ind), pm_screen(c("sin", "fossil")))]
 # c(before = ncol(ind), after = ncol(screened))
 
-# ===== What the Constraints Cost Out of Sample =====
-
 ## ---- policy ----
+# ===== What the Constraints Cost Out of Sample =====
 Re <- R - rf; S16 <- stats::cov(Re); mu16 <- colMeans(Re)
 qp <- function(S, a) {       # min w'Sw s.t. a'w = 1, w >= 0, rescaled: a = 1 gives GMV, a = mu the tangency
   n <- ncol(S)
@@ -473,9 +464,8 @@ ggplot2::ggplot(slack_frame, ggplot2::aes(date, value)) +
   scale_x_model() +
   ggplot2::labs(y = NULL)
 
-# ===== A second rater =====
-
 ## ---- disagreement ----
+# ===== A second rater =====
 flip_share <- function(rho, seed, t) {
   L2 <- esg_levels(second_rater(rho, seed))
   e1 <- bottom_of(L[t, js]); e2 <- bottom_of(L2[t, js])

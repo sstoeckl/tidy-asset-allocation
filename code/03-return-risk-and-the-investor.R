@@ -18,15 +18,13 @@ Re <- R - rf                                                       # excess retu
 stopifnot(ncol(R) == 16L, !anyNA(R),
           all(sim_riskfree_monthly$date == zoo::index(R)))         # same month ends
 
-# ===== Excess returns as the basis =====
-
 ## ---- bill-path ----
+# ===== Excess returns as the basis =====
 rate <- sim_riskfree_monthly$rate_annual
 c(first = rate[1], lowest = min(rate), highest = max(rate), last = rate[length(rate)])
 
-# ===== The investor's objective =====
-
 ## ---- tbl-03-gamma ----
+# ===== The investor's objective =====
 # What the risk-aversion parameter means in units an investor recognizes. Each
 # row is computed from @eq-03-tradeoff with one percentage point of expected
 # return on one side, from cash and from a portfolio with ten percent
@@ -53,9 +51,8 @@ mu_us <- mean(Re[, "US_equity"]) * 12
 sd_us <- stats::sd(Re[, "US_equity"]) * sqrt(12)
 c(excess_return = mu_us, volatility = sd_us, implied_gamma = mu_us / sd_us^2)
 
-# ===== Return conventions in `PerformanceAnalytics` =====
-
 ## ---- prices ----
+# ===== Return conventions in `PerformanceAnalytics` =====
 us <- dplyr::filter(sim_class_returns_monthly, class == "US_equity")
 P  <- xts::xts(us$index, order.by = us$date)
 
@@ -71,17 +68,15 @@ g_m  <- as.numeric(Return.annualized(x, scale = 1))      # geometric, monthly
 s2_m <- stats::var(as.numeric(x))
 c(arithmetic = mu_m, geometric = g_m, gap = mu_m - g_m, half_variance = s2_m / 2)
 
-# ===== Worked: the drag of @eq-03-drag on `US_equity` =====
-
 ## ---- annualized ----
+# ===== Worked: the drag of @eq-03-drag on `US_equity` =====
 c(arithmetic_x12    = as.numeric(Return.annualized(x, scale = 12, geometric = FALSE)),
   compounded        = as.numeric(Return.annualized(x, scale = 12)),          # the default
   cumulative        = as.numeric(Return.cumulative(x)),
   volatility_sqrt12 = as.numeric(StdDev.annualized(x, scale = 12)))
 
-# ===== The Sharpe ratio, in two conventions =====
-
 ## ---- excess ----
+# ===== The Sharpe ratio, in two conventions =====
 bill  <- xts::xts(rf, order.by = zoo::index(R)); colnames(bill) <- "bill"
 Re_pa <- Return.excess(R, Rf = bill)
 stopifnot(all.equal(zoo::coredata(Re_pa), zoo::coredata(Re), check.attributes = FALSE))
@@ -91,9 +86,8 @@ three <- c("US_equity", "US_credit", "US_government")
 table.AnnualizedReturns(R[, three], scale = 12, Rf = bill)
 SharpeRatio.annualized(R[, three], Rf = bill, scale = 12)
 
-# ===== Two functions, two defaults for the same ratio =====
-
 ## ---- sharpe-rank ----
+# ===== Two functions, two defaults for the same ratio =====
 sr_compounded <- SharpeRatio.annualized(R, Rf = bill, scale = 12, geometric = TRUE)[1, colnames(R)]
 sr_arithmetic <- SharpeRatio.annualized(R, Rf = bill, scale = 12, geometric = FALSE)[1, colnames(R)]
 rank_of <- function(s, a) as.integer(rank(-s)[[a]])
@@ -118,9 +112,8 @@ stopifnot(2L * nrow(swaps) == nrow(moved), nrow(swaps) > 0L,       # every move 
           rank_of(sr_compounded, "US_credit") == rank_of(sr_arithmetic, "US_credit"))
 dplyr::select(swaps, asset_falls, asset_rises, rank_arithmetic, rank_compounded)
 
-# ===== Aggregation over horizons =====
-
 ## ---- sharpe-horizon ----
+# ===== Aggregation over horizons =====
 sr <- function(v) mean(v) / stats::sd(v)
 by_horizon <- function(series) {
   z <- Re[, series]
@@ -151,9 +144,8 @@ stopifnot(n_lead >= 5L, all(lo_sorted[seq_len(n_lead)] < 1),
           all(rho1[names(lo_sorted)[seq_len(n_lead)]] > 0),
           all(1 - lo_ratio[names(shortfall)] < shortfall))
 
-# ===== The bill is not a seventeenth asset =====
-
 ## ---- bill-column ----
+# ===== The bill is not a seventeenth asset =====
 gmv_of <- function(X) {
   spec <- portfolio.spec(assets = colnames(X)) |>
     add.constraint(type = "full_investment") |>
@@ -169,9 +161,8 @@ w_bill <- gmv_of(R_bill)
 round(w_bill[w_bill > 0.001], 4)
 c(rank_with_bill = qr(stats::cov(R_bill))$rank, rank_with_constant = qr(stats::cov(R_const))$rank)
 
-# ===== Hedging a foreign government bond =====
-
 ## ---- hedge ----
+# ===== Hedging a foreign government bond =====
 fx <- sim_fx_monthly
 hedge_stats <- function(series, region) {
   f <- fx$fx_return[fx$region == region]
@@ -189,9 +180,8 @@ hedged_govs <- govs |>
   dplyr::select(series, unhedged, hedged, removed)
 hedged_govs
 
-# ===== `risk_aversion` is $\gamma/2$, not $\gamma$ =====
-
 ## ---- spec ----
+# ===== `risk_aversion` is $\gamma/2$, not $\gamma$ =====
 base_spec <- portfolio.spec(assets = colnames(Re)) |>
   add.constraint(type = "full_investment") |>
   add.constraint(type = "long_only")
@@ -235,9 +225,8 @@ w_pa   <- pa_weights(relaxed_spec, gamma0)                  # passes risk_aversi
 c(gap_if_argument_is_half_gamma = max(abs(w_pa - qp_weights(gamma0))),
   gap_if_argument_is_gamma      = max(abs(w_pa - qp_weights(gamma0 / 2))))
 
-# ===== The northwest rule applied =====
-
 ## ---- moments ----
+# ===== The northwest rule applied =====
 mom <- tibble::tibble(
   asset = colnames(Re),
   mu    = as.numeric(colMeans(Re)) * 12,                # arithmetic excess, annualized
@@ -312,9 +301,8 @@ flip_lead <- flip$mu - mom$mu[mom$asset == flip$gained]
 flip_comp <- setNames(mom_comp$mu, mom_comp$asset)[c(flip$asset, flip$gained)]
 stopifnot(flip_lead > 0, flip$sigma^2 / 2 > flip_lead, flip_comp[[1]] < flip_comp[[2]])
 
-# ===== Raising $\gamma$ under full investment =====
-
 ## ---- sweep-full ----
+# ===== Raising $\gamma$ under full investment =====
 p_vol <- function(w) sqrt(as.numeric(t(w) %*% S %*% w)) * sqrt(12)
 p_ret <- function(w) sum(mu * w) * 12
 
@@ -344,9 +332,8 @@ sweep_full |>
         col.names = c("$\\gamma$", "volatility", "excess return", "largest weight",
                       "distance to minimum variance"))
 
-# ===== Relaxing full investment =====
-
 ## ---- sweep-relaxed ----
+# ===== Relaxing full investment =====
 sweep_relaxed <- purrr::map_dfr(c(gammas, 1e5), function(g) {
   w <- pa_weights(relaxed_spec, g)
   tibble::tibble(gamma = g, rule = "budget relaxed", invested = sum(w),
@@ -388,9 +375,8 @@ ggplot2::ggplot(sweep, ggplot2::aes(gamma, value, colour = rule, linetype = rule
   scale_colour_tidyaa(name = NULL) +
   ggplot2::labs(x = expression(gamma ~ "(log scale)"), y = NULL)
 
-# ===== The basis, once more, in the invested fraction =====
-
 ## ---- basis-invested ----
+# ===== The basis, once more, in the invested fraction =====
 invested_on <- function(X, gamma) {
   spec <- portfolio.spec(assets = colnames(X)) |>
     add.constraint(type = "weight_sum", min_sum = 0, max_sum = 1) |>

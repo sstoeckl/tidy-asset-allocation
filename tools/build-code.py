@@ -194,13 +194,11 @@ def setup_chunks(chs):
 # --- main -----------------------------------------------------------------------
 
 def main():
-    if os.path.isdir(CODE):
-        for name in os.listdir(CODE):
-            p = os.path.join(CODE, name)
-            if os.path.isdir(p):
-                shutil.rmtree(p)
-            else:
-                os.remove(p)
+    # Clear the files, not the folders: the synced drive holds a folder handle
+    # open now and then and rmdir fails with "access denied".
+    for dirpath, _, names in os.walk(CODE):
+        for name in names:
+            os.remove(os.path.join(dirpath, name))
     os.makedirs(CODE, exist_ok=True)
 
     files = chapter_files()

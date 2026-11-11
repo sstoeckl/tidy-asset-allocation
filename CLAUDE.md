@@ -794,10 +794,18 @@ the shared `slides/tidyaa-slides.scss`). A file outside the chapter list
 renders standalone, from the project root with renv active, and lands next
 to its source as `slides/<slug>.html` (gitignored); the banner links a deck
 as soon as `slides/<slug>.qmd` exists. A deck reuses the chapter's code
-through `knitr::opts_knit$set(root.dir = "code")` and
-`knitr::read_chunk("<slug>.R")`, so a figure on a slide is the chapter's
-figure and nothing is maintained twice. Chapter 9 is the pilot
+through `knitr::opts_knit$set(root.dir = normalizePath("../code"))` (a
+standalone render runs R from `slides/`, so the plain `"code"` fails) and
+`knitr::read_chunk("<slug>.R")` in the next chunk, so a figure on a slide is
+the chapter's figure and nothing is maintained twice. A deck executes the
+chapter's code in full (chapter 9: about 12 minutes), and MathJax comes
+from a CDN, so equations need the internet. Chapter 9 is the pilot
 (2026-11-11); the rest follow once its format is approved.
+
+`tools/build-code.py` clears the files in `code/`, never the folders: the
+synced drive holds a folder handle open now and then and `rmdir` fails with
+"access denied" halfway through, which once left `code/` empty under a
+starting render.
 
 To publish, `bash tools/publish-gh-pages.sh` (fixes the theme links, copies
 `slides/*.html` into the site, mirrors the output into a clone of the

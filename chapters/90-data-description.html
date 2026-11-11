@@ -1,0 +1,1864 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<meta name="description" content="Every series in the modeled market: construction, units, coverage and known limitations.">
+<title>Data Description – Tidy Asset Allocation in R</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../chapters/91-proofs.html" rel="next">
+<link href="../chapters/99-references.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-0f05cba98e93abd5bfacabf37e46c573.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-36489fe9f95e83378e31b3375ef0b6a4.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-0f05cba98e93abd5bfacabf37e46c573.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-189f37bffb98b27434de1cced1e4d8c0.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light"><script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script><style>html{ scroll-behavior: smooth; }</style>
+<script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script><script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script><script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+</head>
+<body class="nav-sidebar docked quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top"><nav class="quarto-secondary-nav"><div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/90-data-description.html">Appendices</a></li><li class="breadcrumb-item"><a href="../chapters/90-data-description.html"><span class="chapter-number">A</span>&nbsp; <span class="chapter-title">Data Description</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav></header><!-- content --><div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto"><div class="pt-lg-2 mt-2 text-left sidebar-header">
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../">Tidy Asset Allocation in R</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/sstoeckl/tidy-asset-allocation" title="Source Code" class="quarto-navigation-tool px-1" aria-label="Source Code"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-reader-toggle quarto-navigation-tool px-1" onclick="window.quartoToggleReader(); return false;" title="Toggle reader mode">
+  <div class="quarto-reader-toggle-btn">
+  <i class="bi"></i>
+  </div>
+</a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Preface</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">Prerequisites</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/01-setting-up.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">1</span>&nbsp; <span class="chapter-title">Setting Up Your Environment</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/02-notation-and-data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">2</span>&nbsp; <span class="chapter-title">Notation and Data</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">Foundations of Portfolio Choice</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/03-return-risk-and-the-investor.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">3</span>&nbsp; <span class="chapter-title">Return, Risk, and the Investor’s Problem</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/04-descriptive-analysis.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">4</span>&nbsp; <span class="chapter-title">Descriptive Analysis of Asset Returns</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/05-factor-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">5</span>&nbsp; <span class="chapter-title">Factor Models and Beta Estimation</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">Estimating the Inputs</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/06-expected-returns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">Expected Returns</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/07-covariance-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">The Covariance Matrix</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/08-estimation-error.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">8</span>&nbsp; <span class="chapter-title">Estimation Error and Its Cost</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">Portfolio Optimization</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/09-mean-variance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">9</span>&nbsp; <span class="chapter-title">Mean-Variance Optimization</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/10-risk-measures.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">10</span>&nbsp; <span class="chapter-title">Risk Measures Beyond Variance</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/11-higher-moments.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">11</span>&nbsp; <span class="chapter-title">Higher Moments</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/12-constraints.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">12</span>&nbsp; <span class="chapter-title">Portfolio Constraints</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/13-solvers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">13</span>&nbsp; <span class="chapter-title">Numerical Optimization and Solvers</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/14-risk-based-allocation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">14</span>&nbsp; <span class="chapter-title">Risk-Based Allocation</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false">
+ <span class="menu-text">Allocation Strategies</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/15-hierarchical-allocation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">15</span>&nbsp; <span class="chapter-title">Hierarchical and Sleeve-Based Allocation</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/16-signals-and-forecasts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">16</span>&nbsp; <span class="chapter-title">Signals and Return Forecasts</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/17-expressing-views.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">17</span>&nbsp; <span class="chapter-title">Expressing Views</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/18-parametric-policies.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">18</span>&nbsp; <span class="chapter-title">Parametric Portfolio Policies</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/19-regimes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">19</span>&nbsp; <span class="chapter-title">Regime-Dependent Allocation</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/20-sustainability.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">20</span>&nbsp; <span class="chapter-title">Sustainable Investing Constraints</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false">
+ <span class="menu-text">Inside the Sleeves</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/21-equity-sleeve.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">21</span>&nbsp; <span class="chapter-title">The Equity Sleeve</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/22-fixed-income-sleeve.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">22</span>&nbsp; <span class="chapter-title">The Fixed Income Sleeve</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false">
+ <span class="menu-text">Implementation and Evaluation</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/23-rebalancing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">23</span>&nbsp; <span class="chapter-title">Rebalancing and Transaction Costs</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/24-benchmarks-and-active-risk.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">24</span>&nbsp; <span class="chapter-title">Benchmarks and Active Risk</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/25-backtesting.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">25</span>&nbsp; <span class="chapter-title">Backtesting and Diagnostics</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false">
+ <span class="menu-text">Advanced Topics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/26-forecast-error-cost.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">26</span>&nbsp; <span class="chapter-title">The Cost of Forecast Error</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/27-decision-aware-forecasting.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">27</span>&nbsp; <span class="chapter-title">Decision-Aware Forecasting</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/28-robustness.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">28</span>&nbsp; <span class="chapter-title">Robustness and Model Uncertainty</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/99-references.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">References</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true">
+ <span class="menu-text">Appendices</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 show">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/90-data-description.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text"><span class="chapter-number">A</span>&nbsp; <span class="chapter-title">Data Description</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/91-proofs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">B</span>&nbsp; <span class="chapter-title">Proofs</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/92-solver-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">C</span>&nbsp; <span class="chapter-title">Solver and Constraint Support</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/93-package-notes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">D</span>&nbsp; <span class="chapter-title">Package Notes</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/94-r-primer.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">E</span>&nbsp; <span class="chapter-title">A Short R Refresher</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/95-coverage-ledger.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">F</span>&nbsp; <span class="chapter-title">Coverage Ledger</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/96-solutions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">G</span>&nbsp; <span class="chapter-title">Solutions to Exercises</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/965-scenario-analysis.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">H</span>&nbsp; <span class="chapter-title">Scenario Analysis</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/97-colophon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/98-acknowledgements.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+    </ul>
+</div>
+</nav><div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active"><h2 id="toc-title">On this page</h2>
+   
+  <ul>
+<li><a href="#sec-90-data-description-class-series" id="toc-sec-90-data-description-class-series" class="nav-link active" data-scroll-target="#sec-90-data-description-class-series"><span class="header-section-number">A.1</span> Class Series</a></li>
+  <li><a href="#sec-90-data-description-instruments" id="toc-sec-90-data-description-instruments" class="nav-link" data-scroll-target="#sec-90-data-description-instruments"><span class="header-section-number">A.2</span> Instrument Series</a></li>
+  <li><a href="#sec-90-data-description-rates" id="toc-sec-90-data-description-rates" class="nav-link" data-scroll-target="#sec-90-data-description-rates"><span class="header-section-number">A.3</span> Risk-Free Rate and Exchange Rates</a></li>
+  <li><a href="#sec-90-data-description-limitations" id="toc-sec-90-data-description-limitations" class="nav-link" data-scroll-target="#sec-90-data-description-limitations"><span class="header-section-number">A.4</span> Known Limitations</a></li>
+  </ul><div class="toc-actions"><ul><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/edit/main/chapters/90-data-description.qmd" class="toc-action"><i class="bi bi-github"></i>Edit this page</a></li><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/90-data-description.html">Appendices</a></li><li class="breadcrumb-item"><a href="../chapters/90-data-description.html"><span class="chapter-number">A</span>&nbsp; <span class="chapter-title">Data Description</span></a></li></ol></nav><div class="quarto-title">
+<h1 class="title"><span id="sec-90-data-description" class="quarto-section-identifier">Appendix A — Data Description</span></h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header><p>This appendix documents the modeled market in full. Chapter 2 (<a href="02-notation-and-data.html#sec-02-notation-and-data-simulated-market" class="quarto-xref"><span>Section 2.2</span></a>) introduces it and says why the book runs on it; chapter 4 (<a href="04-descriptive-analysis.html#sec-04-descriptive-analysis-implementation" class="quarto-xref"><span>Section 4.2</span></a>) measures its properties. Here we record what each shipped object contains, how it was constructed, and what it cannot support. Everything below is computed from the objects as they ship in <code>tidypm</code>, so the appendix cannot drift from the data.</p>
+<p>The dataset is modeled and contains no real data. Factor models for government bonds, credit, equities and commodities were estimated by historical simulation on market data from 1992 to 2022; the factors were replayed, the idiosyncratic components drawn afresh, and the asset paths reassembled, so that no series is the history of a real security. The market therefore runs on its own calendar, model years 1 to 31, read with the tools of <a href="02-notation-and-data.html#sec-02-notation-and-data-model-calendar" class="quarto-xref"><span>Section 2.2.1</span></a>. Its stress episodes are named for what happens in them and ship as <code>sim_episodes</code>. And because every series is the output of a factor model, the market can be re-run with its factors shocked, which a history cannot, and <a href="965-scenario-analysis.html" class="quarto-xref"><span>Appendix H</span></a> does so.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">objects</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">"sim_assets"</span>,</span>
+<span>             <span class="st">"sim_class_returns_monthly"</span>, <span class="st">"sim_class_returns_weekly"</span>,</span>
+<span>             <span class="st">"sim_money_market_monthly"</span>, <span class="st">"sim_money_market_weekly"</span>,</span>
+<span>             <span class="st">"sim_asset_returns_monthly"</span>, <span class="st">"sim_asset_returns_weekly"</span>,</span>
+<span>             <span class="st">"sim_riskfree_monthly"</span>, <span class="st">"sim_riskfree_weekly"</span>,</span>
+<span>             <span class="st">"sim_fx_monthly"</span>, <span class="st">"sim_fx_weekly"</span>,</span>
+<span>             <span class="st">"sim_curve_weekly"</span>, <span class="st">"sim_marketcap_weekly"</span>,</span>
+<span>             <span class="st">"sim_esg_changes_quarterly"</span>, <span class="st">"sim_episodes"</span><span class="op">)</span></span>
+<span><span class="co"># The model years an object covers, from whichever date columns it carries.</span></span>
+<span><span class="va">years_of</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">o</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/get.html">get</a></span><span class="op">(</span><span class="va">o</span><span class="op">)</span></span>
+<span>  <span class="va">d</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/do.call.html">do.call</a></span><span class="op">(</span><span class="va">c</span>, <span class="fu"><a href="https://rdrr.io/r/base/unname.html">unname</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html">as.list</a></span><span class="op">(</span><span class="va">x</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/sets.html">intersect</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html">names</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">"date"</span>, <span class="st">"start"</span>, <span class="st">"end"</span><span class="op">)</span><span class="op">)</span><span class="op">]</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/NULL.html">is.null</a></span><span class="op">(</span><span class="va">d</span><span class="op">)</span><span class="op">)</span> <span class="kw"><a href="https://rdrr.io/r/base/function.html">return</a></span><span class="op">(</span><span class="st">""</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/paste.html">paste</a></span><span class="op">(</span><span class="fu">model_year</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/range.html">range</a></span><span class="op">(</span><span class="va">d</span><span class="op">)</span><span class="op">)</span>, collapse <span class="op">=</span> <span class="st">" to "</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="va">inventory</span> <span class="op">&lt;-</span> <span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/tibble.html">tibble</a></span><span class="op">(</span></span>
+<span>  object  <span class="op">=</span> <span class="va">objects</span>,</span>
+<span>  rows    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html">vapply</a></span><span class="op">(</span><span class="va">objects</span>, <span class="kw">function</span><span class="op">(</span><span class="va">o</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">nrow</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/get.html">get</a></span><span class="op">(</span><span class="va">o</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/integer.html">integer</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  years   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html">vapply</a></span><span class="op">(</span><span class="va">objects</span>, <span class="va">years_of</span>, <span class="fu"><a href="https://rdrr.io/r/base/character.html">character</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  columns <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html">vapply</a></span><span class="op">(</span><span class="va">objects</span>, <span class="kw">function</span><span class="op">(</span><span class="va">o</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html">paste</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/names.html">names</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/get.html">get</a></span><span class="op">(</span><span class="va">o</span><span class="op">)</span><span class="op">)</span>, collapse <span class="op">=</span> <span class="st">", "</span><span class="op">)</span>,</span>
+<span>                   <span class="fu"><a href="https://rdrr.io/r/base/character.html">character</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">first_week</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">sim_class_returns_weekly</span><span class="op">$</span><span class="va">date</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html">stopifnot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/all.html">all</a></span><span class="op">(</span><span class="va">inventory</span><span class="op">$</span><span class="va">years</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/grep.html">grepl</a></span><span class="op">(</span><span class="st">"returns|money_market|fx"</span>, <span class="va">objects</span><span class="op">)</span><span class="op">]</span> <span class="op">==</span> <span class="st">"1 to 31"</span><span class="op">)</span>,</span>
+<span>          <span class="va">first_week</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">sim_riskfree_weekly</span><span class="op">$</span><span class="va">date</span><span class="op">)</span> <span class="op">==</span> <span class="fl">7</span>,</span>
+<span>          <span class="va">first_week</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">sim_curve_weekly</span><span class="op">$</span><span class="va">date</span><span class="op">)</span> <span class="op">==</span> <span class="fl">7</span>,</span>
+<span>          <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">sim_marketcap_weekly</span><span class="op">$</span><span class="va">date</span><span class="op">)</span> <span class="op">&lt;</span> <span class="va">first_week</span> <span class="op">-</span> <span class="fl">7</span>,</span>
+<span>          <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="va">sim_marketcap_weekly</span><span class="op">$</span><span class="va">date</span><span class="op">)</span> <span class="op">&gt;</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="va">sim_class_returns_weekly</span><span class="op">$</span><span class="va">date</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">inventory</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">kable</span><span class="op">(</span>align <span class="op">=</span> <span class="st">"lrrl"</span>, col.names <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">"object"</span>, <span class="st">"rows"</span>, <span class="st">"model years"</span>, <span class="st">"columns"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 21%">
+<col style="width: 5%">
+<col style="width: 9%">
+<col style="width: 63%">
+</colgroup>
+<thead><tr class="header">
+<th style="text-align: left;">object</th>
+<th style="text-align: right;">rows</th>
+<th style="text-align: right;">model years</th>
+<th style="text-align: left;">columns</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">sim_assets</td>
+<td style="text-align: right;">181</td>
+<td style="text-align: right;"></td>
+<td style="text-align: left;">asset_id, region, currency, currency_basis, asset_class, sector, credit_grade</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">sim_class_returns_monthly</td>
+<td style="text-align: right;">5952</td>
+<td style="text-align: right;">1 to 31</td>
+<td style="text-align: left;">date, class, return, index</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">sim_class_returns_weekly</td>
+<td style="text-align: right;">25888</td>
+<td style="text-align: right;">1 to 31</td>
+<td style="text-align: left;">date, class, return, index</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">sim_money_market_monthly</td>
+<td style="text-align: right;">1860</td>
+<td style="text-align: right;">1 to 31</td>
+<td style="text-align: left;">date, class, return, index</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">sim_money_market_weekly</td>
+<td style="text-align: right;">8090</td>
+<td style="text-align: right;">1 to 31</td>
+<td style="text-align: left;">date, class, return, index</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">sim_asset_returns_monthly</td>
+<td style="text-align: right;">67332</td>
+<td style="text-align: right;">1 to 31</td>
+<td style="text-align: left;">date, asset, return</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">sim_asset_returns_weekly</td>
+<td style="text-align: right;">292858</td>
+<td style="text-align: right;">1 to 31</td>
+<td style="text-align: left;">date, asset, return</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">sim_riskfree_monthly</td>
+<td style="text-align: right;">372</td>
+<td style="text-align: right;">1 to 31</td>
+<td style="text-align: left;">date, rate_annual, return</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">sim_riskfree_weekly</td>
+<td style="text-align: right;">1619</td>
+<td style="text-align: right;">0 to 31</td>
+<td style="text-align: left;">date, rate_annual, return</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">sim_fx_monthly</td>
+<td style="text-align: right;">1488</td>
+<td style="text-align: right;">1 to 31</td>
+<td style="text-align: left;">date, region, fx_return</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">sim_fx_weekly</td>
+<td style="text-align: right;">6472</td>
+<td style="text-align: right;">1 to 31</td>
+<td style="text-align: left;">date, region, rate, fx_return</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">sim_curve_weekly</td>
+<td style="text-align: right;">40475</td>
+<td style="text-align: right;">0 to 31</td>
+<td style="text-align: left;">date, series, value</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">sim_marketcap_weekly</td>
+<td style="text-align: right;">294374</td>
+<td style="text-align: right;">-16 to 32</td>
+<td style="text-align: left;">date, asset, market_cap</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">sim_esg_changes_quarterly</td>
+<td style="text-align: right;">1113</td>
+<td style="text-align: right;">11 to 31</td>
+<td style="text-align: left;">date, asset, esg_change</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">sim_episodes</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">9 to 31</td>
+<td style="text-align: left;">episode, label, start, end, description</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>The return tables and the exchange rates cover model years 1 to 31 exactly. The weekly bill and the curve start one week before the first weekly return, and the capitalizations extend past both ends of the sample, so that a lagged capitalization exists for the first return.</p>
+<section id="sec-90-data-description-class-series" class="level2" data-number="A.1"><h2 data-number="A.1" class="anchored" data-anchor-id="sec-90-data-description-class-series">
+<span class="header-section-number">A.1</span> Class Series</h2>
+<p>The allocation universe is the sixteen risky class series in <code>sim_class_returns_monthly</code>: five currencies, each with a government bond, a credit and an equity series, plus one global commodity index. The five money-market series ship beside them in <code>sim_money_market_monthly</code> and are not part of the universe, for the reason given in <a href="02-notation-and-data.html#sec-02-notation-and-data-vocabulary" class="quarto-xref"><span>Section 2.4</span></a>. Both tables carry <code>date</code>, <code>class</code>, <code>return</code> (a simple total return in decimal) and <code>index</code> (a total-return index with base 100 one period before the first observation).</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">R</span>  <span class="op">&lt;-</span> <span class="fu">as_xts_pm</span><span class="op">(</span><span class="va">sim_class_returns_monthly</span>, <span class="va">date</span>, <span class="va">class</span>, <span class="va">return</span><span class="op">)</span></span>
+<span><span class="va">M</span>  <span class="op">&lt;-</span> <span class="fu">as_xts_pm</span><span class="op">(</span><span class="va">sim_money_market_monthly</span>, <span class="va">date</span>, <span class="va">class</span>, <span class="va">return</span><span class="op">)</span></span>
+<span><span class="va">rf</span> <span class="op">&lt;-</span> <span class="va">sim_riskfree_monthly</span><span class="op">$</span><span class="va">return</span></span>
+<span><span class="va">d</span>  <span class="op">&lt;-</span> <span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/index.html">index</a></span><span class="op">(</span><span class="va">R</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html">stopifnot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html">ncol</a></span><span class="op">(</span><span class="va">R</span><span class="op">)</span> <span class="op">==</span> <span class="fl">16L</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">ncol</a></span><span class="op">(</span><span class="va">M</span><span class="op">)</span> <span class="op">==</span> <span class="fl">5L</span>,</span>
+<span>          <span class="fu"><a href="https://rdrr.io/r/base/identical.html">identical</a></span><span class="op">(</span><span class="va">d</span>, <span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/index.html">index</a></span><span class="op">(</span><span class="va">M</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>          <span class="fu"><a href="https://rdrr.io/r/base/all.html">all</a></span><span class="op">(</span><span class="va">d</span> <span class="op">==</span> <span class="va">sim_riskfree_monthly</span><span class="op">$</span><span class="va">date</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># The index is the compounded return series, in both tables.</span></span>
+<span><span class="va">rebuilt</span> <span class="op">&lt;-</span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/bind_rows.html">bind_rows</a></span><span class="op">(</span><span class="va">sim_class_returns_monthly</span>, <span class="va">sim_money_market_monthly</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/group_by.html">group_by</a></span><span class="op">(</span><span class="va">class</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/arrange.html">arrange</a></span><span class="op">(</span><span class="va">date</span>, .by_group <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html">mutate</a></span><span class="op">(</span>rebuilt <span class="op">=</span> <span class="fl">100</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/cumsum.html">cumprod</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">return</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/group_by.html">ungroup</a></span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html">stopifnot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">abs</a></span><span class="op">(</span><span class="va">rebuilt</span><span class="op">$</span><span class="va">rebuilt</span> <span class="op">-</span> <span class="va">rebuilt</span><span class="op">$</span><span class="va">index</span><span class="op">)</span><span class="op">)</span> <span class="op">&lt;</span> <span class="fl">1e-8</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>months <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">nrow</a></span><span class="op">(</span><span class="va">R</span><span class="op">)</span>, first_model_year <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="fu">model_year</span><span class="op">(</span><span class="va">d</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  last_model_year <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="fu">model_year</span><span class="op">(</span><span class="va">d</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;           months first_model_year  last_model_year </span></span>
+<span><span class="co">#&gt;              372                1               31</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell" data-layout-align="center">
+<div id="tbl-90-classes" class="cell quarto-float quarto-figure quarto-figure-center anchored" data-layout-align="center">
+<figure class="quarto-float quarto-float-tbl figure"><figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-90-classes-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;A.1: The sixteen risky class series and the five money markets, annualized from monthly data over the full sample. Sharpe ratios are over the Treasury bill.
+</figcaption><div aria-describedby="tbl-90-classes-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="cell caption-top table table-sm table-striped small">
+<thead><tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: left;"></th>
+<th style="text-align: right;">return</th>
+<th style="text-align: right;">volatility</th>
+<th style="text-align: right;">Sharpe</th>
+<th style="text-align: right;">max drawdown</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">CH_money_market</td>
+<td style="text-align: left;">beside it</td>
+<td style="text-align: right;">2.2%</td>
+<td style="text-align: right;">10.4%</td>
+<td style="text-align: right;">-0.00</td>
+<td style="text-align: right;">-30.1%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">EU_money_market</td>
+<td style="text-align: left;">beside it</td>
+<td style="text-align: right;">1.1%</td>
+<td style="text-align: right;">9.6%</td>
+<td style="text-align: right;">-0.12</td>
+<td style="text-align: right;">-39.2%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">JP_money_market</td>
+<td style="text-align: left;">beside it</td>
+<td style="text-align: right;">0.1%</td>
+<td style="text-align: right;">10.1%</td>
+<td style="text-align: right;">-0.21</td>
+<td style="text-align: right;">-48.3%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">UK_money_market</td>
+<td style="text-align: left;">beside it</td>
+<td style="text-align: right;">1.7%</td>
+<td style="text-align: right;">9.2%</td>
+<td style="text-align: right;">-0.06</td>
+<td style="text-align: right;">-44.1%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">US_money_market</td>
+<td style="text-align: left;">beside it</td>
+<td style="text-align: right;">2.5%</td>
+<td style="text-align: right;">0.7%</td>
+<td style="text-align: right;">0.28</td>
+<td style="text-align: right;">-0.9%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">GLOBAL_commodity</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">4.6%</td>
+<td style="text-align: right;">14.0%</td>
+<td style="text-align: right;">0.17</td>
+<td style="text-align: right;">-54.9%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">CH_credit</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">5.2%</td>
+<td style="text-align: right;">11.8%</td>
+<td style="text-align: right;">0.25</td>
+<td style="text-align: right;">-24.2%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">EU_credit</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">5.1%</td>
+<td style="text-align: right;">12.5%</td>
+<td style="text-align: right;">0.23</td>
+<td style="text-align: right;">-34.9%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">JP_credit</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">3.5%</td>
+<td style="text-align: right;">11.2%</td>
+<td style="text-align: right;">0.11</td>
+<td style="text-align: right;">-36.1%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">UK_credit</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">5.5%</td>
+<td style="text-align: right;">13.6%</td>
+<td style="text-align: right;">0.24</td>
+<td style="text-align: right;">-44.2%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">US_credit</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">6.3%</td>
+<td style="text-align: right;">7.3%</td>
+<td style="text-align: right;">0.56</td>
+<td style="text-align: right;">-18.8%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">CH_equity</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">10.7%</td>
+<td style="text-align: right;">18.2%</td>
+<td style="text-align: right;">0.46</td>
+<td style="text-align: right;">-54.1%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">EU_equity</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">14.2%</td>
+<td style="text-align: right;">21.1%</td>
+<td style="text-align: right;">0.57</td>
+<td style="text-align: right;">-56.8%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">JP_equity</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">6.1%</td>
+<td style="text-align: right;">19.6%</td>
+<td style="text-align: right;">0.20</td>
+<td style="text-align: right;">-58.0%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">UK_equity</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">11.1%</td>
+<td style="text-align: right;">17.7%</td>
+<td style="text-align: right;">0.50</td>
+<td style="text-align: right;">-47.0%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">US_equity</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">13.0%</td>
+<td style="text-align: right;">15.6%</td>
+<td style="text-align: right;">0.69</td>
+<td style="text-align: right;">-42.3%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">CH_government</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">4.2%</td>
+<td style="text-align: right;">10.9%</td>
+<td style="text-align: right;">0.18</td>
+<td style="text-align: right;">-25.2%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">EU_government</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">3.6%</td>
+<td style="text-align: right;">9.8%</td>
+<td style="text-align: right;">0.14</td>
+<td style="text-align: right;">-32.4%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">JP_government</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">2.3%</td>
+<td style="text-align: right;">10.7%</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">-44.2%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">UK_government</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">3.8%</td>
+<td style="text-align: right;">9.5%</td>
+<td style="text-align: right;">0.17</td>
+<td style="text-align: right;">-36.2%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">US_government</td>
+<td style="text-align: left;">universe</td>
+<td style="text-align: right;">4.5%</td>
+<td style="text-align: right;">4.8%</td>
+<td style="text-align: right;">0.48</td>
+<td style="text-align: right;">-14.9%</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+<p><strong>Weighting.</strong> Equity class series are value-weighted on the market capitalization of the <em>previous</em> weekly observation, so no portfolio is formed with information it could not have had; government, credit, money-market and commodity series are equally weighted across their instruments, because no capitalization exists for them. The portfolio is rebalanced weekly, and the monthly return is the compounded weekly one, so the monthly series is a weekly-rebalanced portfolio observed at month ends rather than a monthly-rebalanced one.</p>
+<p><strong>The money market is a duration asset.</strong> Each <code>*_money_market</code> series is the 0.25-year point on a Nelson–Siegel curve fitted to 2-, 5- and 10-year yields, marked to market. The US series tracks the bill closely but is not the bill:</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">mm</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html">as.numeric</a></span><span class="op">(</span><span class="va">M</span><span class="op">[</span>, <span class="st">"US_money_market"</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>mm_negative_months   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html">mean</a></span><span class="op">(</span><span class="va">mm</span> <span class="op">&lt;</span> <span class="fl">0</span><span class="op">)</span>,</span>
+<span>  bill_negative_months <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html">mean</a></span><span class="op">(</span><span class="va">rf</span> <span class="op">&lt;</span> <span class="fl">0</span><span class="op">)</span>,</span>
+<span>  correlation          <span class="op">=</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cor</a></span><span class="op">(</span><span class="va">mm</span>, <span class="va">rf</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   mm_negative_months bill_negative_months          correlation </span></span>
+<span><span class="co">#&gt;             0.188172             0.002688             0.930009</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Abroad, a three-month instrument has almost no duration, so unhedged in dollars it is close to a pure currency position:</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html">vapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">"EU"</span>, <span class="st">"UK"</span>, <span class="st">"CH"</span>, <span class="st">"JP"</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">rg</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">fx</span> <span class="op">&lt;-</span> <span class="va">sim_fx_monthly</span><span class="op">[</span><span class="va">sim_fx_monthly</span><span class="op">$</span><span class="va">region</span> <span class="op">==</span> <span class="va">rg</span>, <span class="op">]</span></span>
+<span>  <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/numeric.html">as.numeric</a></span><span class="op">(</span><span class="va">M</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/paste.html">paste0</a></span><span class="op">(</span><span class="va">rg</span>, <span class="st">"_money_market"</span><span class="op">)</span><span class="op">]</span><span class="op">)</span>,</span>
+<span>             <span class="va">fx</span><span class="op">$</span><span class="va">fx_return</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/match.html">match</a></span><span class="op">(</span><span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/index.html">index</a></span><span class="op">(</span><span class="va">M</span><span class="op">)</span>, <span class="va">fx</span><span class="op">$</span><span class="va">date</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="op">}</span>, <span class="fu"><a href="https://rdrr.io/r/base/numeric.html">numeric</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;     EU     UK     CH     JP </span></span>
+<span><span class="co">#&gt; 0.9970 0.9953 0.9984 0.9994</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><strong>Episodes.</strong> Four stress episodes are kept apart throughout the book because they are economically different. They ship as <code>sim_episodes</code>, each named for what happens in it, and <code>in_episode()</code> selects the dates of one, so that no chapter types a window (<a href="02-notation-and-data.html#sec-02-notation-and-data-model-calendar" class="quarto-xref"><span>Section 2.2.1</span></a>).</p>
+<div class="cell" data-layout-align="center">
+<div id="tbl-90-episode-windows" class="cell quarto-float quarto-figure quarto-figure-center anchored" data-layout-align="center">
+<figure class="quarto-float quarto-float-tbl figure"><figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-90-episode-windows-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;A.2: The four named episodes of <code>sim_episodes</code> on the model calendar. Each window is a closed interval of dates; the count is of monthly observations.
+</figcaption><div aria-describedby="tbl-90-episode-windows-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="cell caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 7%">
+<col style="width: 8%">
+<col style="width: 11%">
+<col style="width: 11%">
+<col style="width: 2%">
+<col style="width: 58%">
+</colgroup>
+<thead><tr class="header">
+<th style="text-align: left;">key</th>
+<th style="text-align: left;">label</th>
+<th style="text-align: left;">from</th>
+<th style="text-align: left;">to</th>
+<th style="text-align: right;">months</th>
+<th style="text-align: left;">description</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;"><code>equity_bear</code></td>
+<td style="text-align: left;">equity bear market</td>
+<td style="text-align: left;">April of model year 9</td>
+<td style="text-align: left;">September of model year 11</td>
+<td style="text-align: right;">30</td>
+<td style="text-align: left;">A long decline in equities, led by the most highly valued markets, while the safest government bonds rise.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>credit_crisis</code></td>
+<td style="text-align: left;">credit crisis</td>
+<td style="text-align: left;">September of model year 17</td>
+<td style="text-align: left;">March of model year 18</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: left;">A flight to quality: equities and most credit fall together, the safest government bonds rally, and correlations among risky assets rise.</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;"><code>liquidity_shock</code></td>
+<td style="text-align: left;">liquidity shock</td>
+<td style="text-align: left;">February of model year 29</td>
+<td style="text-align: left;">April of model year 29</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: left;">A sudden, short sell-off across every risky class, followed by a fast recovery.</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;"><code>rates_shock</code></td>
+<td style="text-align: left;">rates shock</td>
+<td style="text-align: left;">January of model year 31</td>
+<td style="text-align: left;">December of model year 31</td>
+<td style="text-align: right;">12</td>
+<td style="text-align: left;">A rise in yields in which government bonds and credit lose in every region, most equity markets fall, and commodities gain.</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+<p><a href="#tbl-90-episodes" class="quarto-xref">Table&nbsp;<span>A.3</span></a> gives the cumulative return of every class through each episode, compounded over the months <code>in_episode()</code> selects.</p>
+<div class="cell" data-layout-align="center">
+<div id="tbl-90-episodes" class="cell quarto-float quarto-figure quarto-figure-center anchored" data-layout-align="center">
+<figure class="quarto-float quarto-float-tbl figure"><figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-90-episodes-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;A.3: Cumulative returns of the sixteen class series through the four episodes of <code>sim_episodes</code>, in dollars and unhedged.
+</figcaption><div aria-describedby="tbl-90-episodes-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="cell caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 21%">
+<col style="width: 24%">
+<col style="width: 17%">
+<col style="width: 20%">
+<col style="width: 15%">
+</colgroup>
+<thead><tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: right;">equity bear market</th>
+<th style="text-align: right;">credit crisis</th>
+<th style="text-align: right;">liquidity shock</th>
+<th style="text-align: right;">rates shock</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">GLOBAL_commodity</td>
+<td style="text-align: right;">+20.7%</td>
+<td style="text-align: right;">-19.6%</td>
+<td style="text-align: right;">-1.9%</td>
+<td style="text-align: right;">+11.8%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">CH_credit</td>
+<td style="text-align: right;">+29.9%</td>
+<td style="text-align: right;">-4.9%</td>
+<td style="text-align: right;">-5.9%</td>
+<td style="text-align: right;">-12.7%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">EU_credit</td>
+<td style="text-align: right;">+17.3%</td>
+<td style="text-align: right;">-13.1%</td>
+<td style="text-align: right;">-8.4%</td>
+<td style="text-align: right;">-23.3%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">JP_credit</td>
+<td style="text-align: right;">-8.8%</td>
+<td style="text-align: right;">+5.0%</td>
+<td style="text-align: right;">-2.1%</td>
+<td style="text-align: right;">-18.4%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">UK_credit</td>
+<td style="text-align: right;">+12.2%</td>
+<td style="text-align: right;">-28.0%</td>
+<td style="text-align: right;">-12.4%</td>
+<td style="text-align: right;">-26.5%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">US_credit</td>
+<td style="text-align: right;">+28.1%</td>
+<td style="text-align: right;">-8.5%</td>
+<td style="text-align: right;">-2.0%</td>
+<td style="text-align: right;">-15.1%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">CH_equity</td>
+<td style="text-align: right;">-20.9%</td>
+<td style="text-align: right;">-41.4%</td>
+<td style="text-align: right;">-8.7%</td>
+<td style="text-align: right;">-6.1%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">EU_equity</td>
+<td style="text-align: right;">-28.1%</td>
+<td style="text-align: right;">-37.8%</td>
+<td style="text-align: right;">-22.5%</td>
+<td style="text-align: right;">-6.8%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">JP_equity</td>
+<td style="text-align: right;">-55.1%</td>
+<td style="text-align: right;">-27.5%</td>
+<td style="text-align: right;">-4.2%</td>
+<td style="text-align: right;">-29.4%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">UK_equity</td>
+<td style="text-align: right;">-28.1%</td>
+<td style="text-align: right;">-29.2%</td>
+<td style="text-align: right;">-19.1%</td>
+<td style="text-align: right;">+10.2%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">US_equity</td>
+<td style="text-align: right;">-33.6%</td>
+<td style="text-align: right;">-27.9%</td>
+<td style="text-align: right;">-10.0%</td>
+<td style="text-align: right;">-13.8%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">CH_government</td>
+<td style="text-align: right;">+33.6%</td>
+<td style="text-align: right;">+4.3%</td>
+<td style="text-align: right;">-1.4%</td>
+<td style="text-align: right;">-10.2%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">EU_government</td>
+<td style="text-align: right;">+23.2%</td>
+<td style="text-align: right;">+1.6%</td>
+<td style="text-align: right;">-0.9%</td>
+<td style="text-align: right;">-19.2%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">JP_government</td>
+<td style="text-align: right;">-6.9%</td>
+<td style="text-align: right;">+14.6%</td>
+<td style="text-align: right;">+2.3%</td>
+<td style="text-align: right;">-15.9%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">UK_government</td>
+<td style="text-align: right;">+19.9%</td>
+<td style="text-align: right;">-11.0%</td>
+<td style="text-align: right;">-2.8%</td>
+<td style="text-align: right;">-21.3%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">US_government</td>
+<td style="text-align: right;">+34.0%</td>
+<td style="text-align: right;">+8.2%</td>
+<td style="text-align: right;">+6.2%</td>
+<td style="text-align: right;">-10.7%</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+<p>Every figure is in dollars and unhedged, so a foreign class carries its currency’s move with it. In the equity bear market all five equity classes fall, the worst by 55%, while four of the five government classes gain. In the credit crisis all five equity classes and four of the five credit classes fall, and <code>US_government</code> gains 8%. The liquidity shock lasts three months, in which every equity and credit class and fourteen of the sixteen classes in all fall. In the rates shock every government and credit class falls, together with four of the five equity classes, and the commodity index gains 12%.</p>
+</section><section id="sec-90-data-description-instruments" class="level2" data-number="A.2"><h2 data-number="A.2" class="anchored" data-anchor-id="sec-90-data-description-instruments">
+<span class="header-section-number">A.2</span> Instrument Series</h2>
+<p><code>sim_asset_returns_monthly</code> and <code>sim_asset_returns_weekly</code> hold the same market at instrument level, one column per <code>asset</code>, and <code>sim_assets</code> describes each instrument.</p>
+<div class="cell" data-layout-align="center">
+<div id="tbl-90-instruments" class="cell quarto-float quarto-figure quarto-figure-center anchored" data-layout-align="center">
+<figure class="quarto-float quarto-float-tbl figure"><figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-90-instruments-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;A.4: Instruments by region and asset class.
+</figcaption><div aria-describedby="tbl-90-instruments-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="cell caption-top table table-sm table-striped small">
+<thead><tr class="header">
+<th style="text-align: left;">region</th>
+<th style="text-align: right;">equity</th>
+<th style="text-align: right;">government</th>
+<th style="text-align: right;">credit</th>
+<th style="text-align: right;">money_market</th>
+<th style="text-align: right;">commodity</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">CH</td>
+<td style="text-align: right;">17</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">EU</td>
+<td style="text-align: right;">37</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">GLOBAL</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">8</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">JP</td>
+<td style="text-align: right;">17</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">UK</td>
+<td style="text-align: right;">17</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">US</td>
+<td style="text-align: right;">35</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">6</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">Ra</span> <span class="op">&lt;-</span> <span class="fu">as_xts_pm</span><span class="op">(</span><span class="va">sim_asset_returns_monthly</span>, <span class="va">date</span>, <span class="va">asset</span>, <span class="va">return</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html">stopifnot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html">ncol</a></span><span class="op">(</span><span class="va">Ra</span><span class="op">)</span> <span class="op">==</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">nrow</a></span><span class="op">(</span><span class="va">sim_assets</span><span class="op">)</span>, <span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/NA.html">anyNA</a></span><span class="op">(</span><span class="va">Ra</span><span class="op">)</span>,</span>
+<span>          <span class="fu"><a href="https://rdrr.io/r/base/sets.html">setequal</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">Ra</span><span class="op">)</span>, <span class="va">sim_assets</span><span class="op">$</span><span class="va">asset_id</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/dim.html">dim</a></span><span class="op">(</span><span class="va">Ra</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 372 181</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Identifiers are anonymized (<code>US_EQU_01</code>, <code>EU_CRE_03</code>, <code>GLOBAL_CMD_02</code>): a region, an asset class and a running number. Government bonds are zero-coupon instruments held at constant maturities of 2, 5 and 10 years; credit is the same three maturities in two grades (<code>credit_grade</code> is <code>IG</code> or <code>HY</code>); the money-market instrument is the 0.25-year point on the regional curve; the eight commodities are a broad index plus gold, energy, precious metals, silver, agriculture, industrial metals and a crypto series. Equities carry a <code>sector</code>.</p>
+<div class="cell" data-layout-align="center">
+<div id="tbl-90-sectors" class="cell quarto-float quarto-figure quarto-figure-center anchored" data-layout-align="center">
+<figure class="quarto-float quarto-float-tbl figure"><figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-90-sectors-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;A.5: Equity instruments by sector.
+</figcaption><div aria-describedby="tbl-90-sectors-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="cell caption-top table table-sm table-striped small">
+<thead><tr class="header">
+<th style="text-align: left;">sector</th>
+<th style="text-align: right;">instruments</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Financials</td>
+<td style="text-align: right;">20</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Consumer Non-Cyclicals</td>
+<td style="text-align: right;">18</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Consumer Cyclicals</td>
+<td style="text-align: right;">17</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Industrials</td>
+<td style="text-align: right;">17</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Healthcare</td>
+<td style="text-align: right;">16</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Technology</td>
+<td style="text-align: right;">16</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Basic Materials</td>
+<td style="text-align: right;">12</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Energy</td>
+<td style="text-align: right;">7</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+<p><strong>Conditioning.</strong> Three maturities per region are priced off a three-factor curve, and the two credit grades at each maturity share one credit factor, so some bond combinations are near-exact replicas of others. The instrument-level covariance is therefore close to singular, which is why every instrument-level optimization in Part VI needs a constraint or a shrinkage estimator (<a href="07-covariance-matrix.html#sec-07-covariance-matrix-theory" class="quarto-xref"><span>Section 7.1</span></a>, <a href="21-equity-sleeve.html#sec-21-equity-sleeve-theory" class="quarto-xref"><span>Section 21.1</span></a>).</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">ev</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eigen.html">eigen</a></span><span class="op">(</span><span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cov</a></span><span class="op">(</span><span class="va">Ra</span><span class="op">)</span>, symmetric <span class="op">=</span> <span class="cn">TRUE</span>, only.values <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">$</span><span class="va">values</span></span>
+<span><span class="va">ev16</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eigen.html">eigen</a></span><span class="op">(</span><span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cov</a></span><span class="op">(</span><span class="va">R</span><span class="op">)</span>, symmetric <span class="op">=</span> <span class="cn">TRUE</span>, only.values <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">$</span><span class="va">values</span></span>
+<span><span class="va">condition</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>instruments_log10_condition <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html">log10</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="va">ev</span><span class="op">)</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">ev</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>               classes_log10_condition     <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html">log10</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="va">ev16</span><span class="op">)</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">ev16</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html">stopifnot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">ev</span><span class="op">)</span> <span class="op">&gt;</span> <span class="fl">0</span><span class="op">)</span>                <span class="co"># positive definite, but only just</span></span>
+<span><span class="va">condition</span></span>
+<span><span class="co">#&gt; instruments_log10_condition     classes_log10_condition </span></span>
+<span><span class="co">#&gt;                      12.196                       4.105</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section><section id="sec-90-data-description-rates" class="level2" data-number="A.3"><h2 data-number="A.3" class="anchored" data-anchor-id="sec-90-data-description-rates">
+<span class="header-section-number">A.3</span> Risk-Free Rate and Exchange Rates</h2>
+<p><code>sim_riskfree_monthly</code> and <code>sim_riskfree_weekly</code> are a three-month Treasury bill carried onto the model’s grid: <code>rate_annual</code> is the quoted annual rate and <code>return</code> the simple return over one period. The bill enters the model as an input, and it is the risk-free rate everywhere in the book (<a href="03-return-risk-and-the-investor.html#sec-03-return-risk-and-the-investor-theory" class="quarto-xref"><span>Section 3.1</span></a>).</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>annualized <span class="op">=</span> <span class="fu">ann_ret</span><span class="op">(</span><span class="va">rf</span><span class="op">)</span>, negative_months <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">rf</span> <span class="op">&lt;</span> <span class="fl">0</span><span class="op">)</span>,</span>
+<span>  min_rate <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">sim_riskfree_monthly</span><span class="op">$</span><span class="va">rate_annual</span><span class="op">)</span>,</span>
+<span>  max_rate <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="va">sim_riskfree_monthly</span><span class="op">$</span><span class="va">rate_annual</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      annualized negative_months        min_rate        max_rate </span></span>
+<span><span class="co">#&gt;         0.02262         1.00000        -0.00010         0.06190</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>sim_fx_monthly</code> and <code>sim_fx_weekly</code> hold, for the four non-US regions, the value of one unit of local currency in dollars (<code>rate</code>, weekly only) and its return <code>fx_return</code>. Like the bill, the exchange rates enter the model as inputs. The quote direction matters: a positive <code>fx_return</code> means the local currency appreciated against the dollar, which is a gain for an unhedged dollar investor holding the local asset. Subtracting <code>fx_return</code> from an unhedged local return gives the hedged return, which is how the book hedges (<a href="04-descriptive-analysis.html#sec-04-descriptive-analysis-application" class="quarto-xref"><span>Section 4.3</span></a>).</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">sim_fx_monthly</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/group_by.html">group_by</a></span><span class="op">(</span><span class="va">region</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/summarise.html">summarise</a></span><span class="op">(</span>ann_vol <span class="op">=</span> <span class="fu">ann_vol</span><span class="op">(</span><span class="va">fx_return</span><span class="op">)</span>,</span>
+<span>                   ann_return <span class="op">=</span> <span class="fu">ann_ret</span><span class="op">(</span><span class="va">fx_return</span><span class="op">)</span>, .groups <span class="op">=</span> <span class="st">"drop"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; # A tibble: 4 × 3</span></span>
+<span><span class="co">#&gt;   region ann_vol ann_return</span></span>
+<span><span class="co">#&gt;   &lt;chr&gt;    &lt;dbl&gt;      &lt;dbl&gt;</span></span>
+<span><span class="co">#&gt; 1 CH      0.103     0.0122 </span></span>
+<span><span class="co">#&gt; 2 EU      0.0953   -0.00907</span></span>
+<span><span class="co">#&gt; 3 JP      0.101    -0.00171</span></span>
+<span><span class="co">#&gt; 4 UK      0.0915   -0.0142</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>sim_curve_weekly</code> holds the drivers of the bond block: Nelson–Siegel level, slope and curvature for each region, plus an investment-grade and a high-yield credit spread per region. Chapter 22 (<a href="22-fixed-income-sleeve.html#sec-22-fixed-income-sleeve-theory" class="quarto-xref"><span>Section 22.1</span></a>) decomposes bond returns on them.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/sort.html">sort</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unique.html">unique</a></span><span class="op">(</span><span class="va">sim_curve_weekly</span><span class="op">$</span><span class="va">series</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;  [1] "CH_Curvature" "CH_HY_Spread" "CH_IG_Spread" "CH_Level"     "CH_Slope"    </span></span>
+<span><span class="co">#&gt;  [6] "EU_Curvature" "EU_HY_Spread" "EU_IG_Spread" "EU_Level"     "EU_Slope"    </span></span>
+<span><span class="co">#&gt; [11] "JP_Curvature" "JP_HY_Spread" "JP_IG_Spread" "JP_Level"     "JP_Slope"    </span></span>
+<span><span class="co">#&gt; [16] "UK_Curvature" "UK_HY_Spread" "UK_IG_Spread" "UK_Level"     "UK_Slope"    </span></span>
+<span><span class="co">#&gt; [21] "US_Curvature" "US_HY_Spread" "US_IG_Spread" "US_Level"     "US_Slope"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>sim_marketcap_weekly</code> holds the market capitalization of the 123 equities on the weekly grid, which is what a capitalization-weighted benchmark needs (<a href="24-benchmarks-and-active-risk.html#sec-24-benchmarks-and-active-risk-application" class="quarto-xref"><span>Section 24.3</span></a>, <a href="21-equity-sleeve.html#sec-21-equity-sleeve-implementation" class="quarto-xref"><span>Section 21.2</span></a>).</p>
+<p><code>sim_esg_changes_quarterly</code> holds changes in an ESG rating of the equities: the quarter end (<code>date</code>), the instrument (<code>asset</code>) and an integer <code>esg_change</code>. It carries changes only, no starting level, and the changes have no effect on the returns.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">esg</span> <span class="op">&lt;-</span> <span class="va">sim_esg_changes_quarterly</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html">stopifnot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/all.html">all</a></span><span class="op">(</span><span class="va">esg</span><span class="op">$</span><span class="va">asset</span> <span class="op"><a href="https://rdrr.io/r/base/match.html">%in%</a></span> <span class="va">sim_assets</span><span class="op">$</span><span class="va">asset_id</span><span class="op">[</span><span class="va">sim_assets</span><span class="op">$</span><span class="va">asset_class</span> <span class="op">==</span> <span class="st">"equity"</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>changes <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">nrow</a></span><span class="op">(</span><span class="va">esg</span><span class="op">)</span>, equities <span class="op">=</span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/n_distinct.html">n_distinct</a></span><span class="op">(</span><span class="va">esg</span><span class="op">$</span><span class="va">asset</span><span class="op">)</span>,</span>
+<span>  quarters <span class="op">=</span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/n_distinct.html">n_distinct</a></span><span class="op">(</span><span class="va">esg</span><span class="op">$</span><span class="va">date</span><span class="op">)</span>,</span>
+<span>  first_model_year <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="fu">model_year</span><span class="op">(</span><span class="va">esg</span><span class="op">$</span><span class="va">date</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  last_model_year <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="fu">model_year</span><span class="op">(</span><span class="va">esg</span><span class="op">$</span><span class="va">date</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  smallest <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">esg</span><span class="op">$</span><span class="va">esg_change</span><span class="op">)</span>, largest <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="va">esg</span><span class="op">$</span><span class="va">esg_change</span><span class="op">)</span>,</span>
+<span>  share_upgrades <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/mean.html">mean</a></span><span class="op">(</span><span class="va">esg</span><span class="op">$</span><span class="va">esg_change</span> <span class="op">&gt;</span> <span class="fl">0</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;          changes         equities         quarters first_model_year </span></span>
+<span><span class="co">#&gt;          1113.00           122.00            79.00            11.00 </span></span>
+<span><span class="co">#&gt;  last_model_year         smallest          largest   share_upgrades </span></span>
+<span><span class="co">#&gt;            31.00            -4.00             5.00             0.65</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section><section id="sec-90-data-description-limitations" class="level2" data-number="A.4"><h2 data-number="A.4" class="anchored" data-anchor-id="sec-90-data-description-limitations">
+<span class="header-section-number">A.4</span> Known Limitations</h2>
+<p>The dataset is frozen at version 6.2.0. The idiosyncratic components of every instrument are one draw, so a regenerated export is a different realized path rather than an update, and every number in this book is pinned to this one. The limitations below are properties of the model and are stated rather than repaired.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">equity_ids</span> <span class="op">&lt;-</span> <span class="va">sim_assets</span><span class="op">$</span><span class="va">asset_id</span><span class="op">[</span><span class="va">sim_assets</span><span class="op">$</span><span class="va">asset_class</span> <span class="op">==</span> <span class="st">"equity"</span><span class="op">]</span></span>
+<span><span class="va">equity_vol</span> <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/quantile.html">quantile</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/apply.html">apply</a></span><span class="op">(</span><span class="va">Ra</span><span class="op">[</span>, <span class="va">equity_ids</span><span class="op">]</span>, <span class="fl">2</span>, <span class="va">ann_vol</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="fl">0.25</span>, <span class="fl">0.5</span>, <span class="fl">0.75</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">overlay</span>    <span class="op">&lt;-</span> <span class="fl">0.03</span></span>
+<span><span class="va">overlay_se</span> <span class="op">&lt;-</span> <span class="va">overlay</span> <span class="op">/</span> <span class="op">(</span><span class="fu">ann_vol</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/numeric.html">as.numeric</a></span><span class="op">(</span><span class="va">R</span><span class="op">[</span>, <span class="st">"EU_equity"</span><span class="op">]</span><span class="op">)</span><span class="op">)</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">sqrt</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html">nrow</a></span><span class="op">(</span><span class="va">R</span><span class="op">)</span> <span class="op">/</span> <span class="fl">12</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Share of variance the currency hedge removes from each foreign bond class.</span></span>
+<span><span class="va">foreign_bonds</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/grep.html">grep</a></span><span class="op">(</span><span class="st">"^(UK|EU|CH|JP)_(government|credit)$"</span>, <span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">R</span><span class="op">)</span>, value <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="va">hedge_share</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html">vapply</a></span><span class="op">(</span><span class="va">foreign_bonds</span>, <span class="kw">function</span><span class="op">(</span><span class="va">s</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">fx</span> <span class="op">&lt;-</span> <span class="va">sim_fx_monthly</span><span class="op">[</span><span class="va">sim_fx_monthly</span><span class="op">$</span><span class="va">region</span> <span class="op">==</span> <span class="fu"><a href="https://rdrr.io/r/base/grep.html">sub</a></span><span class="op">(</span><span class="st">"_.*$"</span>, <span class="st">""</span>, <span class="va">s</span><span class="op">)</span>, <span class="op">]</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html">stopifnot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/all.html">all</a></span><span class="op">(</span><span class="va">fx</span><span class="op">$</span><span class="va">date</span> <span class="op">==</span> <span class="va">d</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">u</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html">as.numeric</a></span><span class="op">(</span><span class="va">R</span><span class="op">[</span>, <span class="va">s</span><span class="op">]</span><span class="op">)</span></span>
+<span>  <span class="fl">1</span> <span class="op">-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">var</a></span><span class="op">(</span><span class="va">u</span> <span class="op">-</span> <span class="va">fx</span><span class="op">$</span><span class="va">fx_return</span><span class="op">)</span> <span class="op">/</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">var</a></span><span class="op">(</span><span class="va">u</span><span class="op">)</span></span>
+<span><span class="op">}</span>, <span class="fu"><a href="https://rdrr.io/r/base/numeric.html">numeric</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html">stopifnot</a></span><span class="op">(</span><span class="va">overlay_se</span> <span class="op">&lt;</span> <span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html">length</a></span><span class="op">(</span><span class="va">foreign_bonds</span><span class="op">)</span> <span class="op">==</span> <span class="fl">8L</span>, <span class="fu"><a href="https://rdrr.io/r/base/all.html">all</a></span><span class="op">(</span><span class="va">hedge_share</span> <span class="op">&gt;</span> <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="va">equity_vol</span>, overlay_in_se <span class="op">=</span> <span class="va">overlay_se</span>,</span>
+<span>        hedge_share_min <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">hedge_share</span><span class="op">)</span>, hedge_share_max <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="va">hedge_share</span><span class="op">)</span><span class="op">)</span>, <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="co">#&gt;             25%             50%             75%   overlay_in_se hedge_share_min </span></span>
+<span><span class="co">#&gt;            0.26            0.31            0.37            0.79            0.63 </span></span>
+<span><span class="co">#&gt; hedge_share_max </span></span>
+<span><span class="co">#&gt;            0.92</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<ul>
+<li>
+<strong>One realized path.</strong> The factor paths are fixed; only the idiosyncratic components are drawn. The market as shipped is one path, not a distribution over paths: its factors can be shocked (<a href="965-scenario-analysis.html" class="quarto-xref"><span>Appendix H</span></a>), but the data hold no second draw of them.</li>
+<li>
+<strong>The euro-area equity overlay.</strong> Every euro-area equity carries an expected-return overlay of three percentage points a year, added as a constant weekly drift. It is a stated capital-market assumption, 0.8 standard errors of the sample mean, made so that the class is not excluded by every mean-variance optimizer on the sample. No other series carries one.</li>
+<li>
+<strong>Single securities.</strong> The equity series are individual securities with a median volatility of 31 percent, half of them between 26 and 37 percent, and their idiosyncratic components are drawn independently. A portfolio of them diversifies more readily than a real index would.</li>
+<li>
+<strong>Currency.</strong> Everything is in dollars, unhedged. For a non-US bond the currency is the larger part of the risk, between 63 and 92 percent of the variance of the eight foreign bond classes, and <code>sim_fx_*</code> exists so that the hedged position can always be formed.</li>
+<li>
+<strong>Near rank deficiency.</strong> The bond block is nearly rank-deficient at instrument level: the covariance matrix of the 181 instruments has a condition number of <span class="math inline">\(10^{12.2}\)</span>. Unconstrained mean-variance on all of them produces nonsense, which is worth demonstrating rather than preventing.</li>
+<li>
+<strong>Derived Swiss credit.</strong> No Swiss credit series with usable history exists, so the Swiss credit loadings are derived from the other regions rather than measured.</li>
+<li>
+<strong>No fundamentals, no ESG levels.</strong> The dataset carries no firm fundamentals, and of ESG ratings only the 1113 changes of <code>sim_esg_changes_quarterly</code>, not the levels, so cumulating them gives a rating up to an unknown constant. Chapter 20 (<a href="20-sustainability.html#sec-20-sustainability-theory" class="quarto-xref"><span>Section 20.1</span></a>) and the value-factor material of Part VI therefore work with what returns, capitalizations and rating changes can support.</li>
+<li>
+<strong>Nominal only.</strong> There is no inflation series; the book works in nominal dollars throughout (<a href="03-return-risk-and-the-investor.html#sec-03-return-risk-and-the-investor-theory" class="quarto-xref"><span>Section 3.1</span></a>).</li>
+</ul>
+
+
+</section></main><!-- /main --><script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+    const viewSource = window.document.getElementById('quarto-view-source') ||
+                       window.document.getElementById('quarto-code-tools-source');
+    if (viewSource) {
+      const sourceUrl = viewSource.getAttribute("data-quarto-source-url");
+      viewSource.addEventListener("click", function(e) {
+        if (sourceUrl) {
+          // rstudio viewer pane
+          if (/\bcapabilities=\b/.test(window.location)) {
+            window.open(sourceUrl);
+          } else {
+            window.location.href = sourceUrl;
+          }
+        } else {
+          const modal = new bootstrap.Modal(document.getElementById('quarto-embedded-source-code-modal'));
+          modal.show();
+        }
+        return false;
+      });
+    }
+    function toggleCodeHandler(show) {
+      return function(e) {
+        const cellDetails = window.document.querySelectorAll(".cell details.code-fold");
+        for (let i=0; i<cellDetails.length; i++) {
+          const details = cellDetails[i];
+          if (show) {
+            details.open = true;
+          } else {
+            details.removeAttribute("open");
+          }
+        }
+        const cellCodeDivs = window.document.querySelectorAll(".cell div.sourceCode.cell-code");
+        const fromCls = show ? "hidden" : "unhidden";
+        const toCls = show ? "unhidden" : "hidden";
+        for (let i=0; i<cellCodeDivs.length; i++) {
+          const codeDiv = cellCodeDivs[i];
+          if (codeDiv.classList.contains(fromCls)) {
+            codeDiv.classList.remove(fromCls);
+            codeDiv.classList.add(toCls);
+          } 
+        }
+        return false;
+      }
+    }
+    const hideAllCode = window.document.getElementById("quarto-hide-all-code");
+    if (hideAllCode) {
+      hideAllCode.addEventListener("click", toggleCodeHandler(false));
+    }
+    const showAllCode = window.document.getElementById("quarto-show-all-code");
+    if (showAllCode) {
+      showAllCode.addEventListener("click", toggleCodeHandler(true));
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/www\.tidy-asset-allocation\.org");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+            // target, if specified
+            link.setAttribute("target", "_blank");
+            if (link.getAttribute("rel") === null) {
+              link.setAttribute("rel", "noopener");
+            }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script><nav class="page-navigation"><div class="nav-page nav-page-previous">
+      <a href="../chapters/99-references.html" class="pagination-link" aria-label="References">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">References</span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../chapters/91-proofs.html" class="pagination-link" aria-label="Proofs">
+        <span class="nav-page-text"><span class="chapter-number">B</span>&nbsp; <span class="chapter-title">Proofs</span></span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer"><div class="nav-footer">
+    <div class="nav-footer-left">
+<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl</p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    <div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/edit/main/chapters/90-data-description.qmd" class="toc-action"><i class="bi bi-github"></i>Edit this page</a></li><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div>
+    <div class="nav-footer-right">
+      <ul class="footer-items list-unstyled">
+<li class="nav-item">
+    <a class="nav-link active" href="https://github.com/sstoeckl/tidy-asset-allocation" aria-current="page">
+<p>Source</p>
+</a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="https://github.com/sstoeckl/tidy-asset-allocation/issues/new">
+<p>Report an issue</p>
+</a>
+  </li>  
+</ul>
+</div>
+  </div>
+</footer>
+
+
+<script src="../site_libs/quarto-html/zenscroll-min.js"></script>
+</body></html>

@@ -1,0 +1,2624 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>References – Tidy Asset Allocation in R</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../chapters/90-data-description.html" rel="next">
+<link href="../chapters/28-robustness.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-0f05cba98e93abd5bfacabf37e46c573.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-36489fe9f95e83378e31b3375ef0b6a4.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-0f05cba98e93abd5bfacabf37e46c573.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-189f37bffb98b27434de1cced1e4d8c0.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+<style>html{ scroll-behavior: smooth; }</style>
+
+
+</head>
+
+<body class="nav-sidebar docked quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/99-references.html">References</a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header">
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../">Tidy Asset Allocation in R</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/sstoeckl/tidy-asset-allocation" title="Source Code" class="quarto-navigation-tool px-1" aria-label="Source Code"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-reader-toggle quarto-navigation-tool px-1" onclick="window.quartoToggleReader(); return false;" title="Toggle reader mode">
+  <div class="quarto-reader-toggle-btn">
+  <i class="bi"></i>
+  </div>
+</a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Preface</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">Prerequisites</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/01-setting-up.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">1</span>&nbsp; <span class="chapter-title">Setting Up Your Environment</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/02-notation-and-data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">2</span>&nbsp; <span class="chapter-title">Notation and Data</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">Foundations of Portfolio Choice</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/03-return-risk-and-the-investor.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">3</span>&nbsp; <span class="chapter-title">Return, Risk, and the Investor’s Problem</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/04-descriptive-analysis.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">4</span>&nbsp; <span class="chapter-title">Descriptive Analysis of Asset Returns</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/05-factor-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">5</span>&nbsp; <span class="chapter-title">Factor Models and Beta Estimation</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">Estimating the Inputs</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/06-expected-returns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">Expected Returns</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/07-covariance-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">The Covariance Matrix</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/08-estimation-error.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">8</span>&nbsp; <span class="chapter-title">Estimation Error and Its Cost</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">Portfolio Optimization</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/09-mean-variance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">9</span>&nbsp; <span class="chapter-title">Mean-Variance Optimization</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/10-risk-measures.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">10</span>&nbsp; <span class="chapter-title">Risk Measures Beyond Variance</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/11-higher-moments.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">11</span>&nbsp; <span class="chapter-title">Higher Moments</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/12-constraints.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">12</span>&nbsp; <span class="chapter-title">Portfolio Constraints</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/13-solvers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">13</span>&nbsp; <span class="chapter-title">Numerical Optimization and Solvers</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/14-risk-based-allocation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">14</span>&nbsp; <span class="chapter-title">Risk-Based Allocation</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false">
+ <span class="menu-text">Allocation Strategies</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/15-hierarchical-allocation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">15</span>&nbsp; <span class="chapter-title">Hierarchical and Sleeve-Based Allocation</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/16-signals-and-forecasts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">16</span>&nbsp; <span class="chapter-title">Signals and Return Forecasts</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/17-expressing-views.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">17</span>&nbsp; <span class="chapter-title">Expressing Views</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/18-parametric-policies.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">18</span>&nbsp; <span class="chapter-title">Parametric Portfolio Policies</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/19-regimes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">19</span>&nbsp; <span class="chapter-title">Regime-Dependent Allocation</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/20-sustainability.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">20</span>&nbsp; <span class="chapter-title">Sustainable Investing Constraints</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false">
+ <span class="menu-text">Inside the Sleeves</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/21-equity-sleeve.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">21</span>&nbsp; <span class="chapter-title">The Equity Sleeve</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/22-fixed-income-sleeve.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">22</span>&nbsp; <span class="chapter-title">The Fixed Income Sleeve</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false">
+ <span class="menu-text">Implementation and Evaluation</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/23-rebalancing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">23</span>&nbsp; <span class="chapter-title">Rebalancing and Transaction Costs</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/24-benchmarks-and-active-risk.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">24</span>&nbsp; <span class="chapter-title">Benchmarks and Active Risk</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/25-backtesting.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">25</span>&nbsp; <span class="chapter-title">Backtesting and Diagnostics</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false">
+ <span class="menu-text">Advanced Topics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/26-forecast-error-cost.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">26</span>&nbsp; <span class="chapter-title">The Cost of Forecast Error</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/27-decision-aware-forecasting.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">27</span>&nbsp; <span class="chapter-title">Decision-Aware Forecasting</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/28-robustness.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">28</span>&nbsp; <span class="chapter-title">Robustness and Model Uncertainty</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/99-references.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text">References</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false">
+ <span class="menu-text">Appendices</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 ">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/90-data-description.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">A</span>&nbsp; <span class="chapter-title">Data Description</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/91-proofs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">B</span>&nbsp; <span class="chapter-title">Proofs</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/92-solver-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">C</span>&nbsp; <span class="chapter-title">Solver and Constraint Support</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/93-package-notes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">D</span>&nbsp; <span class="chapter-title">Package Notes</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/94-r-primer.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">E</span>&nbsp; <span class="chapter-title">A Short R Refresher</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/95-coverage-ledger.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">F</span>&nbsp; <span class="chapter-title">Coverage Ledger</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/96-solutions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">G</span>&nbsp; <span class="chapter-title">Solutions to Exercises</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/965-scenario-analysis.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">H</span>&nbsp; <span class="chapter-title">Scenario Analysis</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/97-colophon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/98-acknowledgements.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar zindex-bottom">
+        
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title"><span id="sec-99-references" class="quarto-section-identifier">References</span></h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div id="refs" class="references csl-bib-body hanging-indent" role="list">
+<div id="ref-acerbi2002" class="csl-entry" role="listitem">
+Acerbi, Carlo, and Dirk Tasche. 2002. <span>“On the Coherence of
+Expected Shortfall.”</span> <em>Journal of Banking &amp; Finance</em> 26
+(7): 1487–503. <a href="https://doi.org/10.1016/S0378-4266(02)00283-2">https://doi.org/10.1016/S0378-4266(02)00283-2</a>.
+</div>
+<div id="ref-aitsahalia2001" class="csl-entry" role="listitem">
+Aït-Sahalia, Yacine, and Michael W. Brandt. 2001. <span>“Variable
+Selection for Portfolio Choice.”</span> <em>Journal of Finance</em> 56
+(4): 1297–351. <a href="https://doi.org/10.1111/0022-1082.00369">https://doi.org/10.1111/0022-1082.00369</a>.
+</div>
+<div id="ref-alexander2008" class="csl-entry" role="listitem">
+Alexander, Carol, and Elizabeth Sheedy. 2008. <span>“Developing a Stress
+Testing Framework Based on Market Risk Models.”</span> <em>Journal of
+Banking and Finance</em> 32 (10): 2220–36. <a href="https://doi.org/10.1016/j.jbankfin.2007.12.041">https://doi.org/10.1016/j.jbankfin.2007.12.041</a>.
+</div>
+<div id="ref-allaire2022" class="csl-entry" role="listitem">
+Allaire, J. J., Charles Teague, Carlos Scheidegger, Yihui Xie, and
+Christophe Dervieux. 2022. <em>Quarto: An Open-Source Scientific and
+Technical Publishing System</em>. Computer software. <a href="https://quarto.org">https://quarto.org</a>.
+</div>
+<div id="ref-almgren2001" class="csl-entry" role="listitem">
+Almgren, Robert, and Neil Chriss. 2001. <span>“Optimal Execution of
+Portfolio Transactions.”</span> <em>Journal of Risk</em> 3 (2): 5–39. <a href="https://doi.org/10.21314/JOR.2001.041">https://doi.org/10.21314/JOR.2001.041</a>.
+</div>
+<div id="ref-almgren2006" class="csl-entry" role="listitem">
+Almgren, Robert, and Neil Chriss. 2006. <span>“Optimal Portfolios from
+Ordering Information.”</span> <em>Journal of Risk</em> 9 (1): 1–47. <a href="https://doi.org/10.21314/jor.2006.143">https://doi.org/10.21314/jor.2006.143</a>.
+</div>
+<div id="ref-amihud2002" class="csl-entry" role="listitem">
+Amihud, Yakov. 2002. <span>“Illiquidity and Stock Returns: Cross-Section
+and Time-Series Effects.”</span> <em>Journal of Financial Markets</em> 5
+(1): 31–56. <a href="https://doi.org/10.1016/S1386-4181(01)00024-6">https://doi.org/10.1016/S1386-4181(01)00024-6</a>.
+</div>
+<div id="ref-ammann2016" class="csl-entry" role="listitem">
+Ammann, Manuel, Guillaume Coqueret, and Jan-Philip Schade. 2016.
+<span>“Characteristics-Based Portfolio Choice with Leverage
+Constraints.”</span> <em>Journal of Banking &amp; Finance</em> 70:
+23–37. <a href="https://doi.org/10.1016/j.jbankfin.2016.04.019">https://doi.org/10.1016/j.jbankfin.2016.04.019</a>.
+</div>
+<div id="ref-anderson2003" class="csl-entry" role="listitem">
+Anderson, Evan W., Lars Peter Hansen, and Thomas J. Sargent. 2003.
+<span>“A Quartet of Semigroups for Model Specification, Robustness,
+Prices of Risk, and Model Detection.”</span> <em>Journal of the European
+Economic Association</em> 1 (1): 68–123. <a href="https://doi.org/10.1162/154247603322256774">https://doi.org/10.1162/154247603322256774</a>.
+</div>
+<div id="ref-ang2014" class="csl-entry" role="listitem">
+Ang, Andrew. 2014. <em>Asset Management: A Systematic Approach to Factor
+Investing</em>. Oxford University Press.
+</div>
+<div id="ref-ang2002a" class="csl-entry" role="listitem">
+Ang, Andrew, and Geert Bekaert. 2002. <span>“International Asset
+Allocation with Regime Shifts.”</span> <em>Review of Financial
+Studies</em> 15 (4): 1137–87. <a href="https://doi.org/10.1093/rfs/15.4.1137">https://doi.org/10.1093/rfs/15.4.1137</a>.
+</div>
+<div id="ref-ang2004" class="csl-entry" role="listitem">
+Ang, Andrew, and Geert Bekaert. 2004. <span>“How Regimes Affect Asset
+Allocation.”</span> <em>Financial Analysts Journal</em> 60 (2): 86–99.
+<a href="https://doi.org/10.2469/faj.v60.n2.2612">https://doi.org/10.2469/faj.v60.n2.2612</a>.
+</div>
+<div id="ref-ang2002" class="csl-entry" role="listitem">
+Ang, Andrew, and Joseph Chen. 2002. <span>“Asymmetric Correlations of
+Equity Portfolios.”</span> <em>Journal of Financial Economics</em> 63
+(3): 443–94. <a href="https://doi.org/10.1016/S0304-405X(02)00068-5">https://doi.org/10.1016/S0304-405X(02)00068-5</a>.
+</div>
+<div id="ref-ang2006" class="csl-entry" role="listitem">
+Ang, Andrew, Joseph Chen, and Yuhang Xing. 2006. <span>“Downside
+Risk.”</span> <em>Review of Financial Studies</em> 19 (4): 1191–239. <a href="https://doi.org/10.1093/rfs/hhj035">https://doi.org/10.1093/rfs/hhj035</a>.
+</div>
+<div id="ref-ang2012" class="csl-entry" role="listitem">
+Ang, Andrew, and Allan Timmermann. 2012. <span>“Regime Changes and
+Financial Markets.”</span> <em>Annual Review of Financial Economics</em>
+4 (1): 313–37. <a href="https://doi.org/10.1146/annurev-financial-110311-101808">https://doi.org/10.1146/annurev-financial-110311-101808</a>.
+</div>
+<div id="ref-ardia2011" class="csl-entry" role="listitem">
+Ardia, David, Kris Boudt, Peter Carl, Katharine M. Mullen, and Brian G.
+Peterson. 2011. <span>“Differential Evolution with DEoptim: An
+Application to Non-Convex Portfolio Optimization.”</span> <em>The R
+Journal</em> 3 (1): 27–34. <a href="https://doi.org/10.32614/RJ-2011-005">https://doi.org/10.32614/RJ-2011-005</a>.
+</div>
+<div id="ref-arrow1965" class="csl-entry" role="listitem">
+Arrow, Kenneth J. 1965. <em>Aspects of the Theory of Risk-Bearing</em>.
+Yrj<span>ö</span> Jahnsson Lectures. Yrj<span>ö</span> Jahnssonin
+S<span>ä</span><span>ä</span>ti<span>ö</span>.
+</div>
+<div id="ref-artzner1999" class="csl-entry" role="listitem">
+Artzner, Philippe, Freddy Delbaen, Jean-Marc Eber, and David Heath.
+1999. <span>“Coherent Measures of Risk.”</span> <em>Mathematical
+Finance</em> 9 (3): 203–28. <a href="https://doi.org/10.1111/1467-9965.00068">https://doi.org/10.1111/1467-9965.00068</a>.
+</div>
+<div id="ref-asness2012" class="csl-entry" role="listitem">
+Asness, Clifford S., Andrea Frazzini, and Lasse H. Pedersen. 2012.
+<span>“Leverage Aversion and Risk Parity.”</span> <em>Financial Analysts
+Journal</em> 68 (1): 47–59. <a href="https://doi.org/10.2469/faj.v68.n1.1">https://doi.org/10.2469/faj.v68.n1.1</a>.
+</div>
+<div id="ref-asness2013" class="csl-entry" role="listitem">
+Asness, Clifford S., Tobias J. Moskowitz, and Lasse Heje Pedersen. 2013.
+<span>“Value and Momentum Everywhere.”</span> <em>Journal of
+Finance</em> 68 (3): 929–85. <a href="https://doi.org/10.1111/jofi.12021">https://doi.org/10.1111/jofi.12021</a>.
+</div>
+<div id="ref-athayde2004" class="csl-entry" role="listitem">
+Athayde, Gustavo M. de, and Renato G. Flôres. 2004. <span>“Finding a
+Maximum Skewness Portfolio: A General Solution to Three-Moments
+Portfolio Choice.”</span> <em>Journal of Economic Dynamics and
+Control</em> 28 (7): 1335–52. <a href="https://doi.org/10.1016/S0165-1889(02)00084-2">https://doi.org/10.1016/S0165-1889(02)00084-2</a>.
+</div>
+<div id="ref-avramov2022" class="csl-entry" role="listitem">
+Avramov, Doron, Si Cheng, Abraham Lioui, and Andrea Tarelli. 2022.
+<span>“Sustainable Investing with <span>ESG</span> Rating
+Uncertainty.”</span> <em>Journal of Financial Economics</em> 145 (2):
+642–64. <a href="https://doi.org/10.1016/j.jfineco.2021.09.009">https://doi.org/10.1016/j.jfineco.2021.09.009</a>.
+</div>
+<div id="ref-bai2002" class="csl-entry" role="listitem">
+Bai, Jushan, and Serena Ng. 2002. <span>“Determining the Number of
+Factors in Approximate Factor Models.”</span> <em>Econometrica</em> 70
+(1): 191–221. <a href="https://doi.org/10.1111/1468-0262.00273">https://doi.org/10.1111/1468-0262.00273</a>.
+</div>
+<div id="ref-bai2016" class="csl-entry" role="listitem">
+Bai, Xi, Katya Scheinberg, and Reha Tutuncu. 2016. <span>“Least-Squares
+Approach to Risk Parity in Portfolio Selection.”</span> <em>Quantitative
+Finance</em> 16 (3): 357–76. <a href="https://doi.org/10.1080/14697688.2015.1031815">https://doi.org/10.1080/14697688.2015.1031815</a>.
+</div>
+<div id="ref-bailey2014" class="csl-entry" role="listitem">
+Bailey, David H., and Marcos López de Prado. 2014. <span>“The Deflated
+Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and
+Non-Normality.”</span> <em>Journal of Portfolio Management</em> 40 (5):
+94–107. <a href="https://doi.org/10.3905/jpm.2014.40.5.094">https://doi.org/10.3905/jpm.2014.40.5.094</a>.
+</div>
+<div id="ref-banz1981" class="csl-entry" role="listitem">
+Banz, Rolf W. 1981. <span>“The Relationship Between Return and Market
+Value of Common Stocks.”</span> <em>Journal of Financial Economics</em>
+9 (1): 3–18. <a href="https://doi.org/10.1016/0304-405X(81)90018-0">https://doi.org/10.1016/0304-405X(81)90018-0</a>.
+</div>
+<div id="ref-baum1970" class="csl-entry" role="listitem">
+Baum, Leonard E., Ted Petrie, George Soules, and Norman Weiss. 1970.
+<span>“A Maximization Technique Occurring in the Statistical Analysis of
+Probabilistic Functions of <span>M</span>arkov Chains.”</span> <em>The
+Annals of Mathematical Statistics</em> 41 (1): 164–71. <a href="https://doi.org/10.1214/aoms/1177697196">https://doi.org/10.1214/aoms/1177697196</a>.
+</div>
+<div id="ref-bawa1977" class="csl-entry" role="listitem">
+Bawa, Vijay S., and Eric B. Lindenberg. 1977. <span>“Capital Market
+Equilibrium in a Mean-Lower Partial Moment Framework.”</span>
+<em>Journal of Financial Economics</em> 5 (2): 189–200. <a href="https://doi.org/10.1016/0304-405X(77)90017-4">https://doi.org/10.1016/0304-405X(77)90017-4</a>.
+</div>
+<div id="ref-bendor2007" class="csl-entry" role="listitem">
+Ben Dor, Arik, Lev Dynkin, Jay Hyman, Patrick Houweling, Erik van
+Leeuwen, and Olaf Penninga. 2007. <span>“<span>DTS</span>
+(<span>D</span>uration <span>T</span>imes <span>S</span>pread).”</span>
+<em>Journal of Portfolio Management</em> 33 (2): 77–100. <a href="https://doi.org/10.3905/jpm.2007.674795">https://doi.org/10.3905/jpm.2007.674795</a>.
+</div>
+<div id="ref-berg2022" class="csl-entry" role="listitem">
+Berg, Florian, Julian F. Kölbel, and Roberto Rigobon. 2022.
+<span>“Aggregate Confusion: <span>The</span> Divergence of
+<span>ESG</span> Ratings.”</span> <em>Review of Finance</em> 26 (6):
+1315–44. <a href="https://doi.org/10.1093/rof/rfac033">https://doi.org/10.1093/rof/rfac033</a>.
+</div>
+<div id="ref-bertsimas2012" class="csl-entry" role="listitem">
+Bertsimas, Dimitris, Vishal Gupta, and Ioannis Ch. Paschalidis. 2012.
+<span>“Inverse Optimization: A New Perspective on the
+<span>Black-Litterman</span> Model.”</span> <em>Operations Research</em>
+60 (6): 1389–403. <a href="https://doi.org/10.1287/opre.1120.1115">https://doi.org/10.1287/opre.1120.1115</a>.
+</div>
+<div id="ref-bertsimas2020" class="csl-entry" role="listitem">
+Bertsimas, Dimitris, and Nathan Kallus. 2020. <span>“From Predictive to
+Prescriptive Analytics.”</span> <em>Management Science</em> 66 (3):
+1025–44. <a href="https://doi.org/10.1287/mnsc.2018.3253">https://doi.org/10.1287/mnsc.2018.3253</a>.
+</div>
+<div id="ref-best1991" class="csl-entry" role="listitem">
+Best, Michael J., and Robert R. Grauer. 1991. <span>“On the Sensitivity
+of Mean-Variance-Efficient Portfolios to Changes in Asset Means: Some
+Analytical and Computational Results.”</span> <em>Review of Financial
+Studies</em> 4 (2): 315–42. <a href="https://doi.org/10.1093/rfs/4.2.315">https://doi.org/10.1093/rfs/4.2.315</a>.
+</div>
+<div id="ref-bienstock1996" class="csl-entry" role="listitem">
+Bienstock, Daniel. 1996. <span>“Computational Study of a Family of
+Mixed-Integer Quadratic Programming Problems.”</span> <em>Mathematical
+Programming</em> 74 (2): 121–40. <a href="https://doi.org/10.1007/BF02592208">https://doi.org/10.1007/BF02592208</a>.
+</div>
+<div id="ref-vanbinsbergen2008" class="csl-entry" role="listitem">
+Binsbergen, Jules H. van, Michael W. Brandt, and Ralph S. J. Koijen.
+2008. <span>“Optimal Decentralized Investment Management.”</span>
+<em>Journal of Finance</em> 63 (4): 1849–95. <a href="https://doi.org/10.1111/j.1540-6261.2008.01376.x">https://doi.org/10.1111/j.1540-6261.2008.01376.x</a>.
+</div>
+<div id="ref-black1972" class="csl-entry" role="listitem">
+Black, Fischer. 1972. <span>“Capital Market Equilibrium with Restricted
+Borrowing.”</span> <em>Journal of Business</em> 45 (3): 444–55. <a href="https://doi.org/10.1086/295472">https://doi.org/10.1086/295472</a>.
+</div>
+<div id="ref-black1989" class="csl-entry" role="listitem">
+Black, Fischer. 1989. <span>“Universal Hedging: Optimizing Currency Risk
+and Reward in International Equity Portfolios.”</span> <em>Financial
+Analysts Journal</em> 45 (4): 16–22. <a href="https://doi.org/10.2469/faj.v45.n4.16">https://doi.org/10.2469/faj.v45.n4.16</a>.
+</div>
+<div id="ref-black1991" class="csl-entry" role="listitem">
+Black, Fischer, and Robert Litterman. 1991. <span>“Asset Allocation:
+Combining Investor Views with Market Equilibrium.”</span> <em>Journal of
+Fixed Income</em> 1 (2): 7–18. <a href="https://doi.org/10.3905/jfi.1991.408013">https://doi.org/10.3905/jfi.1991.408013</a>.
+</div>
+<div id="ref-black1992" class="csl-entry" role="listitem">
+Black, Fischer, and Robert Litterman. 1992. <span>“Global Portfolio
+Optimization.”</span> <em>Financial Analysts Journal</em> 48 (5): 28–43.
+<a href="https://doi.org/10.2469/faj.v48.n5.28">https://doi.org/10.2469/faj.v48.n5.28</a>.
+</div>
+<div id="ref-blake2013" class="csl-entry" role="listitem">
+Blake, David, Alberto G. Rossi, Allan Timmermann, Ian Tonks, and Russ
+Wermers. 2013. <span>“Decentralized Investment Management: Evidence from
+the Pension Fund Industry.”</span> <em>Journal of Finance</em> 68 (3):
+1133–78. <a href="https://doi.org/10.1111/jofi.12024">https://doi.org/10.1111/jofi.12024</a>.
+</div>
+<div id="ref-blume1971" class="csl-entry" role="listitem">
+Blume, Marshall E. 1971. <span>“On the Assessment of Risk.”</span>
+<em>Journal of Finance</em> 26 (1): 1–10. <a href="https://doi.org/10.1111/j.1540-6261.1971.tb00584.x">https://doi.org/10.1111/j.1540-6261.1971.tb00584.x</a>.
+</div>
+<div id="ref-bollerslev1990" class="csl-entry" role="listitem">
+Bollerslev, Tim. 1990. <span>“Modelling the Coherence in Short-Run
+Nominal Exchange Rates: A Multivariate Generalized <span>ARCH</span>
+Model.”</span> <em>Review of Economics and Statistics</em> 72 (3):
+498–505. <a href="https://doi.org/10.2307/2109358">https://doi.org/10.2307/2109358</a>.
+</div>
+<div id="ref-bolton2021" class="csl-entry" role="listitem">
+Bolton, Patrick, and Marcin Kacperczyk. 2021. <span>“Do Investors Care
+about Carbon Risk?”</span> <em>Journal of Financial Economics</em> 142
+(2): 517–49. <a href="https://doi.org/10.1016/j.jfineco.2021.05.008">https://doi.org/10.1016/j.jfineco.2021.05.008</a>.
+</div>
+<div id="ref-boudt2015" class="csl-entry" role="listitem">
+Boudt, Kris, Wanbo Lu, and Benedict Peeters. 2015. <span>“Higher Order
+Comoments of Multifactor Models and Asset Allocation.”</span>
+<em>Finance Research Letters</em> 13: 225–33. <a href="https://doi.org/10.1016/j.frl.2014.12.008">https://doi.org/10.1016/j.frl.2014.12.008</a>.
+</div>
+<div id="ref-boudt2008" class="csl-entry" role="listitem">
+Boudt, Kris, Brian G. Peterson, and Christophe Croux. 2008.
+<span>“Estimation and Decomposition of Downside Risk for Portfolios with
+Non-Normal Returns.”</span> <em>Journal of Risk</em> 11 (2): 79–103. <a href="https://doi.org/10.21314/JOR.2008.188">https://doi.org/10.21314/JOR.2008.188</a>.
+</div>
+<div id="ref-boyd2004" class="csl-entry" role="listitem">
+Boyd, Stephen, and Lieven Vandenberghe. 2004. <em>Convex
+Optimization</em>. Cambridge University Press.
+</div>
+<div id="ref-brandt1999" class="csl-entry" role="listitem">
+Brandt, Michael W. 1999. <span>“Estimating Portfolio and Consumption
+Choice: A Conditional <span>E</span>uler Equations Approach.”</span>
+<em>Journal of Finance</em> 54 (5): 1609–45. <a href="https://doi.org/10.1111/0022-1082.00162">https://doi.org/10.1111/0022-1082.00162</a>.
+</div>
+<div id="ref-brandt2010" class="csl-entry" role="listitem">
+Brandt, Michael W. 2010. <span>“Portfolio Choice Problems.”</span> In
+<em>Handbook of Financial Econometrics: Tools and Techniques</em>,
+edited by Yacine Aït-Sahalia and Lars Peter Hansen, vol. 1. Elsevier. <a href="https://doi.org/10.1016/B978-0-444-50897-3.50008-0">https://doi.org/10.1016/B978-0-444-50897-3.50008-0</a>.
+</div>
+<div id="ref-brandt2005" class="csl-entry" role="listitem">
+Brandt, Michael W., Amit Goyal, Pedro Santa-Clara, and Jonathan R.
+Stroud. 2005. <span>“A Simulation Approach to Dynamic Portfolio Choice
+with an Application to Learning about Return Predictability.”</span>
+<em>Review of Financial Studies</em> 18 (3): 831–73. <a href="https://doi.org/10.1093/rfs/hhi019">https://doi.org/10.1093/rfs/hhi019</a>.
+</div>
+<div id="ref-brandt2006" class="csl-entry" role="listitem">
+Brandt, Michael W., and Pedro Santa-Clara. 2006. <span>“Dynamic
+Portfolio Selection by Augmenting the Asset Space.”</span> <em>Journal
+of Finance</em> 61 (5): 2187–217. <a href="https://doi.org/10.1111/j.1540-6261.2006.01055.x">https://doi.org/10.1111/j.1540-6261.2006.01055.x</a>.
+</div>
+<div id="ref-brandt2009" class="csl-entry" role="listitem">
+Brandt, Michael W., Pedro Santa-Clara, and Rossen Valkanov. 2009.
+<span>“Parametric Portfolio Policies: Exploiting Characteristics in the
+Cross-Section of Equity Returns.”</span> <em>Review of Financial
+Studies</em> 22 (9): 3411–47.
+</div>
+<div id="ref-breuer2009" class="csl-entry" role="listitem">
+Breuer, Thomas, Martin Jandačka, Klaus Rheinberger, and Martin Summer.
+2009. <span>“How to Find Plausible, Severe, and Useful Stress
+Scenarios.”</span> <em>International Journal of Central Banking</em> 5
+(3): 205–24.
+</div>
+<div id="ref-brinson1985" class="csl-entry" role="listitem">
+Brinson, Gary P., and Nimrod Fachler. 1985. <span>“Measuring Non-US
+Equity Portfolio Performance.”</span> <em>Journal of Portfolio
+Management</em> 11 (3): 73–76. <a href="https://doi.org/10.3905/jpm.1985.409005">https://doi.org/10.3905/jpm.1985.409005</a>.
+</div>
+<div id="ref-brinson1986" class="csl-entry" role="listitem">
+Brinson, Gary P., L. Randolph Hood, and Gilbert L. Beebower. 1986.
+<span>“Determinants of Portfolio Performance.”</span> <em>Financial
+Analysts Journal</em> 42 (4): 39–44. <a href="https://doi.org/10.2469/faj.v42.n4.39">https://doi.org/10.2469/faj.v42.n4.39</a>.
+</div>
+<div id="ref-brinson1991" class="csl-entry" role="listitem">
+Brinson, Gary P., Brian D. Singer, and Gilbert L. Beebower. 1991.
+<span>“Determinants of Portfolio Performance II: An Update.”</span>
+<em>Financial Analysts Journal</em> 47 (3): 40–48. <a href="https://doi.org/10.2469/faj.v47.n3.40">https://doi.org/10.2469/faj.v47.n3.40</a>.
+</div>
+<div id="ref-broadie1993" class="csl-entry" role="listitem">
+Broadie, Mark. 1993. <span>“Computing Efficient Frontiers Using
+Estimated Parameters.”</span> <em>Annals of Operations Research</em> 45
+(1): 21–58. <a href="https://doi.org/10.1007/BF02282040">https://doi.org/10.1007/BF02282040</a>.
+</div>
+<div id="ref-bulla2011" class="csl-entry" role="listitem">
+Bulla, Jan, Sascha Mergner, Ingo Bulla, André Sesboüé, and Christophe
+Chesneau. 2011. <span>“Markov-Switching Asset Allocation: Do Profitable
+Strategies Exist?”</span> <em>Journal of Asset Management</em> 12 (5):
+310–21. <a href="https://doi.org/10.1057/jam.2010.27">https://doi.org/10.1057/jam.2010.27</a>.
+</div>
+<div id="ref-campbell2010" class="csl-entry" role="listitem">
+Campbell, John Y., Karine Serfaty-de Medeiros, and Luis M. Viceira.
+2010. <span>“Global Currency Hedging.”</span> <em>Journal of
+Finance</em> 65 (1): 87–121. <a href="https://doi.org/10.1111/j.1540-6261.2009.01524.x">https://doi.org/10.1111/j.1540-6261.2009.01524.x</a>.
+</div>
+<div id="ref-campbell1991" class="csl-entry" role="listitem">
+Campbell, John Y., and Robert J. Shiller. 1991. <span>“Yield Spreads and
+Interest Rate Movements: A Bird’s Eye View.”</span> <em>Review of
+Economic Studies</em> 58 (3): 495–514. <a href="https://doi.org/10.2307/2298008">https://doi.org/10.2307/2298008</a>.
+</div>
+<div id="ref-campbell2008" class="csl-entry" role="listitem">
+Campbell, John Y., and Samuel B. Thompson. 2008. <span>“Predicting
+Excess Stock Returns Out of Sample: Can Anything Beat the Historical
+Average?”</span> <em>Review of Financial Studies</em> 21 (4): 1509–31.
+<a href="https://doi.org/10.1093/rfs/hhm055">https://doi.org/10.1093/rfs/hhm055</a>.
+</div>
+<div id="ref-campbell2001" class="csl-entry" role="listitem">
+Campbell, John Y., and Luis M. Viceira. 2001. <span>“Who Should Buy
+Long-Term Bonds?”</span> <em>American Economic Review</em> 91 (1):
+99–127. <a href="https://doi.org/10.1257/aer.91.1.99">https://doi.org/10.1257/aer.91.1.99</a>.
+</div>
+<div id="ref-campbell2002" class="csl-entry" role="listitem">
+Campbell, John Y., and Luis M. Viceira. 2002. <em>Strategic Asset
+Allocation: Portfolio Choice for Long-Term Investors</em>. Oxford
+University Press. <a href="https://doi.org/10.1093/0198296940.001.0001">https://doi.org/10.1093/0198296940.001.0001</a>.
+</div>
+<div id="ref-cattaneo2020" class="csl-entry" role="listitem">
+Cattaneo, Matias D., Richard K. Crump, Max H. Farrell, and Ernst
+Schaumburg. 2020. <span>“Characteristic-Sorted Portfolios: Estimation
+and Inference.”</span> <em>The Review of Economics and Statistics</em>
+102 (3): 531–51. <a href="https://doi.org/10.1162/rest_a_00883">https://doi.org/10.1162/rest_a_00883</a>.
+</div>
+<div id="ref-cenesizoglu2012" class="csl-entry" role="listitem">
+Cenesizoglu, Tolga, and Allan Timmermann. 2012. <span>“Do Return
+Prediction Models Add Economic Value?”</span> <em>Journal of Banking
+&amp; Finance</em> 36 (11): 2974–87. <a href="https://doi.org/10.1016/j.jbankfin.2012.06.008">https://doi.org/10.1016/j.jbankfin.2012.06.008</a>.
+</div>
+<div id="ref-chang2000" class="csl-entry" role="listitem">
+Chang, T.-J., N. Meade, J. E. Beasley, and Y. M. Sharaiha. 2000.
+<span>“Heuristics for Cardinality Constrained Portfolio
+Optimisation.”</span> <em>Computers &amp; Operations Research</em> 27
+(13): 1271–302. <a href="https://doi.org/10.1016/S0305-0548(99)00074-X">https://doi.org/10.1016/S0305-0548(99)00074-X</a>.
+</div>
+<div id="ref-chauvet2008" class="csl-entry" role="listitem">
+Chauvet, Marcelle, and Jeremy Piger. 2008. <span>“A Comparison of the
+Real-Time Performance of Business Cycle Dating Methods.”</span>
+<em>Journal of Business &amp; Economic Statistics</em> 26 (1): 42–49. <a href="https://doi.org/10.1198/073500107000000296">https://doi.org/10.1198/073500107000000296</a>.
+</div>
+<div id="ref-chekhlov2005" class="csl-entry" role="listitem">
+Chekhlov, Alexei, Stanislav Uryasev, and Michael Zabarankin. 2005.
+<span>“Drawdown Measure in Portfolio Optimization.”</span>
+<em>International Journal of Theoretical and Applied Finance</em> 8 (1):
+13–58. <a href="https://doi.org/10.1142/S0219024905002767">https://doi.org/10.1142/S0219024905002767</a>.
+</div>
+<div id="ref-cheung2010" class="csl-entry" role="listitem">
+Cheung, Wing. 2010. <span>“The <span>Black-Litterman</span> Model
+Explained.”</span> <em>Journal of Asset Management</em> 11 (4): 229–43.
+<a href="https://doi.org/10.1057/jam.2009.28">https://doi.org/10.1057/jam.2009.28</a>.
+</div>
+<div id="ref-chopra1993" class="csl-entry" role="listitem">
+Chopra, Vijay K., and William T. Ziemba. 1993. <span>“The Effect of
+Errors in Means, Variances, and Covariances on Optimal Portfolio
+Choice.”</span> <em>Journal of Portfolio Management</em> 19 (2): 6–11.
+<a href="https://doi.org/10.3905/jpm.1993.409440">https://doi.org/10.3905/jpm.1993.409440</a>.
+</div>
+<div id="ref-choueifaty2008" class="csl-entry" role="listitem">
+Choueifaty, Yves, and Yves Coignard. 2008. <span>“Toward Maximum
+Diversification.”</span> <em>Journal of Portfolio Management</em> 35
+(1): 40–51. <a href="https://doi.org/10.3905/JPM.2008.35.1.40">https://doi.org/10.3905/JPM.2008.35.1.40</a>.
+</div>
+<div id="ref-chow1999" class="csl-entry" role="listitem">
+Chow, George, Eric Jacquier, Mark Kritzman, and Kenneth Lowry. 1999.
+<span>“Optimal Portfolios in Good Times and Bad.”</span> <em>Financial
+Analysts Journal</em> 55 (3): 65–73. <a href="https://doi.org/10.2469/faj.v55.n3.2273">https://doi.org/10.2469/faj.v55.n3.2273</a>.
+</div>
+<div id="ref-clark2007" class="csl-entry" role="listitem">
+Clark, Todd E., and Kenneth D. West. 2007. <span>“Approximately Normal
+Tests for Equal Predictive Accuracy in Nested Models.”</span>
+<em>Journal of Econometrics</em> 138 (1): 291–311. <a href="https://doi.org/10.1016/j.jeconom.2006.05.023">https://doi.org/10.1016/j.jeconom.2006.05.023</a>.
+</div>
+<div id="ref-clarke1998" class="csl-entry" role="listitem">
+Clarke, Roger G., and Harindra de Silva. 1998. <span>“State-Dependent
+Asset Allocation.”</span> <em>Journal of Portfolio Management</em> 24
+(2): 57–64. <a href="https://doi.org/10.3905/jpm.24.2.57">https://doi.org/10.3905/jpm.24.2.57</a>.
+</div>
+<div id="ref-clarke2002" class="csl-entry" role="listitem">
+Clarke, Roger, Harindra de Silva, and Steven Thorley. 2002.
+<span>“Portfolio Constraints and the Fundamental Law of Active
+Management.”</span> <em>Financial Analysts Journal</em> 58 (5): 48–66.
+<a href="https://doi.org/10.2469/faj.v58.n5.2468">https://doi.org/10.2469/faj.v58.n5.2468</a>.
+</div>
+<div id="ref-clarke2011" class="csl-entry" role="listitem">
+Clarke, Roger, Harindra de Silva, and Steven Thorley. 2011.
+<span>“Minimum-Variance Portfolio Composition.”</span> <em>Journal of
+Portfolio Management</em> 37 (2): 31–45. <a href="https://doi.org/10.3905/jpm.2011.37.2.031">https://doi.org/10.3905/jpm.2011.37.2.031</a>.
+</div>
+<div id="ref-clarke2013" class="csl-entry" role="listitem">
+Clarke, Roger, Harindra de Silva, and Steven Thorley. 2013. <span>“Risk
+Parity, Maximum Diversification, and Minimum Variance: An Analytic
+Perspective.”</span> <em>Journal of Portfolio Management</em> 39 (3):
+39–53. <a href="https://doi.org/10.3905/jpm.2013.39.3.039">https://doi.org/10.3905/jpm.2013.39.3.039</a>.
+</div>
+<div id="ref-cochrane2008" class="csl-entry" role="listitem">
+Cochrane, John H. 2008. <span>“The Dog That Did Not Bark: A Defense of
+Return Predictability.”</span> <em>Review of Financial Studies</em> 21
+(4): 1533–75. <a href="https://doi.org/10.1093/rfs/hhm046">https://doi.org/10.1093/rfs/hhm046</a>.
+</div>
+<div id="ref-cochrane2005" class="csl-entry" role="listitem">
+Cochrane, John H., and Monika Piazzesi. 2005. <span>“Bond Risk
+Premia.”</span> <em>American Economic Review</em> 95 (1): 138–60. <a href="https://doi.org/10.1257/0002828053828581">https://doi.org/10.1257/0002828053828581</a>.
+</div>
+<div id="ref-collindufresne2001" class="csl-entry" role="listitem">
+Collin-Dufresne, Pierre, Robert S. Goldstein, and J. Spencer Martin.
+2001. <span>“The Determinants of Credit Spread Changes.”</span>
+<em>Journal of Finance</em> 56 (6): 2177–207. <a href="https://doi.org/10.1111/0022-1082.00402">https://doi.org/10.1111/0022-1082.00402</a>.
+</div>
+<div id="ref-connor1993" class="csl-entry" role="listitem">
+Connor, Gregory, and Robert A. Korajczyk. 1993. <span>“A Test for the
+Number of Factors in an Approximate Factor Model.”</span> <em>Journal of
+Finance</em> 48 (4): 1263–91. <a href="https://doi.org/10.1111/j.1540-6261.1993.tb04754.x">https://doi.org/10.1111/j.1540-6261.1993.tb04754.x</a>.
+</div>
+<div id="ref-constantinides1986" class="csl-entry" role="listitem">
+Constantinides, George M. 1986. <span>“Capital Market Equilibrium with
+Transaction Costs.”</span> <em>Journal of Political Economy</em> 94 (4):
+842–62. <a href="https://doi.org/10.1086/261410">https://doi.org/10.1086/261410</a>.
+</div>
+<div id="ref-cont2001" class="csl-entry" role="listitem">
+Cont, Rama. 2001. <span>“Empirical Properties of Asset Returns: Stylized
+Facts and Statistical Issues.”</span> <em>Quantitative Finance</em> 1
+(2): 223–36. <a href="https://doi.org/10.1080/713665670">https://doi.org/10.1080/713665670</a>.
+</div>
+<div id="ref-coqueret2020" class="csl-entry" role="listitem">
+Coqueret, Guillaume, and Tony Guida. 2020. <em>Machine Learning for
+Factor Investing: R Version</em>. Chapman &amp; Hall/CRC Financial
+Mathematics Series. Chapman; Hall/CRC. <a href="https://www.mlfactor.com/">https://www.mlfactor.com/</a>.
+</div>
+<div id="ref-cremers2009" class="csl-entry" role="listitem">
+Cremers, K. J. Martijn, and Antti Petajisto. 2009. <span>“How Active Is
+Your Fund Manager? A New Measure That Predicts Performance.”</span>
+<em>Review of Financial Studies</em> 22 (9): 3329–65. <a href="https://doi.org/10.1093/rfs/hhp057">https://doi.org/10.1093/rfs/hhp057</a>.
+</div>
+<div id="ref-csiszar1975" class="csl-entry" role="listitem">
+Csiszár, Imre. 1975. <span>“<span><span class="math inline"><em>I</em></span></span>-Divergence Geometry of
+Probability Distributions and Minimization Problems.”</span> <em>Annals
+of Probability</em> 3 (1): 146–58. <a href="https://doi.org/10.1214/aop/1176996454">https://doi.org/10.1214/aop/1176996454</a>.
+</div>
+<div id="ref-davis1990" class="csl-entry" role="listitem">
+Davis, M. H. A., and A. R. Norman. 1990. <span>“Portfolio Selection with
+Transaction Costs.”</span> <em>Mathematics of Operations Research</em>
+15 (4): 676–713. <a href="https://doi.org/10.1287/moor.15.4.676">https://doi.org/10.1287/moor.15.4.676</a>.
+</div>
+<div id="ref-demiguel2009b" class="csl-entry" role="listitem">
+DeMiguel, Victor, Lorenzo Garlappi, Francisco J. Nogales, and Raman
+Uppal. 2009b. <span>“A Generalized Approach to Portfolio Optimization:
+Improving Performance by Constraining Portfolio Norms.”</span>
+<em>Management Science</em> 55 (5): 798–812. <a href="https://doi.org/10.1287/mnsc.1080.0986">https://doi.org/10.1287/mnsc.1080.0986</a>.
+</div>
+<div id="ref-demiguel2009a" class="csl-entry" role="listitem">
+DeMiguel, Victor, Lorenzo Garlappi, Francisco J. Nogales, and Raman
+Uppal. 2009a. <span>“A Generalized Approach to Portfolio Optimization:
+Improving Performance by Constraining Portfolio Norms.”</span>
+<em>Management Science</em> 55 (5): 798–812. <a href="https://doi.org/10.1287/mnsc.1080.0986">https://doi.org/10.1287/mnsc.1080.0986</a>.
+</div>
+<div id="ref-demiguel2009" class="csl-entry" role="listitem">
+DeMiguel, Victor, Lorenzo Garlappi, and Raman Uppal. 2009.
+<span>“Optimal Versus Naive Diversification: How Inefficient Is the 1/n
+Portfolio Strategy?”</span> <em>Review of Financial Studies</em> 22 (5):
+1915–53.
+</div>
+<div id="ref-demiguel2020" class="csl-entry" role="listitem">
+DeMiguel, Victor, Alberto Martín-Utrera, Francisco J. Nogales, and Raman
+Uppal. 2020. <span>“A Transaction-Cost Perspective on the Multitude of
+Firm Characteristics.”</span> <em>Review of Financial Studies</em> 33
+(5): 2180–222. <a href="https://doi.org/10.1093/rfs/hhz085">https://doi.org/10.1093/rfs/hhz085</a>.
+</div>
+<div id="ref-dempster1977" class="csl-entry" role="listitem">
+Dempster, A. P., N. M. Laird, and D. B. Rubin. 1977. <span>“Maximum
+Likelihood from Incomplete Data via the <span>EM</span>
+Algorithm.”</span> <em>Journal of the Royal Statistical Society: Series
+B (Methodological)</em> 39 (1): 1–22. <a href="https://doi.org/10.1111/j.2517-6161.1977.tb01600.x">https://doi.org/10.1111/j.2517-6161.1977.tb01600.x</a>.
+</div>
+<div id="ref-diebold2006" class="csl-entry" role="listitem">
+Diebold, Francis X., and Canlin Li. 2006. <span>“Forecasting the Term
+Structure of Government Bond Yields.”</span> <em>Journal of
+Econometrics</em> 130 (2): 337–64. <a href="https://doi.org/10.1016/j.jeconom.2005.03.005">https://doi.org/10.1016/j.jeconom.2005.03.005</a>.
+</div>
+<div id="ref-diebold1995" class="csl-entry" role="listitem">
+Diebold, Francis X., and Roberto S. Mariano. 1995. <span>“Comparing
+Predictive Accuracy.”</span> <em>Journal of Business &amp; Economic
+Statistics</em> 13 (3): 253–63. <a href="https://doi.org/10.1080/07350015.1995.10524599">https://doi.org/10.1080/07350015.1995.10524599</a>.
+</div>
+<div id="ref-dittmar2002" class="csl-entry" role="listitem">
+Dittmar, Robert F. 2002. <span>“Nonlinear Pricing Kernels, Kurtosis
+Preference, and Evidence from the Cross Section of Equity
+Returns.”</span> <em>Journal of Finance</em> 57 (1): 369–403. <a href="https://doi.org/10.1111/1540-6261.00425">https://doi.org/10.1111/1540-6261.00425</a>.
+</div>
+<div id="ref-donohue2003" class="csl-entry" role="listitem">
+Donohue, Christopher, and Kenneth Yip. 2003. <span>“Optimal Portfolio
+Rebalancing with Transaction Costs.”</span> <em>Journal of Portfolio
+Management</em> 29 (4): 49–63. <a href="https://doi.org/10.3905/jpm.2003.319894">https://doi.org/10.3905/jpm.2003.319894</a>.
+</div>
+<div id="ref-efron1975" class="csl-entry" role="listitem">
+Efron, Bradley, and Carl Morris. 1975. <span>“Data Analysis Using
+Stein’s Estimator and Its Generalizations.”</span> <em>Journal of the
+American Statistical Association</em> 70 (350): 311–19. <a href="https://doi.org/10.1080/01621459.1975.10479864">https://doi.org/10.1080/01621459.1975.10479864</a>.
+</div>
+<div id="ref-elliott2008" class="csl-entry" role="listitem">
+Elliott, Graham, and Allan Timmermann. 2008. <span>“Economic
+Forecasting.”</span> <em>Journal of Economic Literature</em> 46 (1):
+3–56. <a href="https://doi.org/10.1257/jel.46.1.3">https://doi.org/10.1257/jel.46.1.3</a>.
+</div>
+<div id="ref-elliott2016" class="csl-entry" role="listitem">
+Elliott, Graham, and Allan Timmermann. 2016. <em>Economic
+Forecasting</em>. Princeton University Press.
+</div>
+<div id="ref-ellsberg1961" class="csl-entry" role="listitem">
+Ellsberg, Daniel. 1961. <span>“Risk, Ambiguity, and the
+<span>Savage</span> Axioms.”</span> <em>Quarterly Journal of
+Economics</em> 75 (4): 643–69. <a href="https://doi.org/10.2307/1884324">https://doi.org/10.2307/1884324</a>.
+</div>
+<div id="ref-elmachtoub2022" class="csl-entry" role="listitem">
+Elmachtoub, Adam N., and Paul Grigas. 2022. <span>“Smart <span>‘Predict,
+Then Optimize’</span>.”</span> <em>Management Science</em> 68 (1): 9–26.
+<a href="https://doi.org/10.1287/mnsc.2020.3922">https://doi.org/10.1287/mnsc.2020.3922</a>.
+</div>
+<div id="ref-elton2004" class="csl-entry" role="listitem">
+Elton, Edwin J., and Martin J. Gruber. 2004. <span>“Optimum Centralized
+Portfolio Construction with Decentralized Portfolio Management.”</span>
+<em>Journal of Financial and Quantitative Analysis</em> 39 (3): 481–94.
+<a href="https://doi.org/10.1017/S0022109000003999">https://doi.org/10.1017/S0022109000003999</a>.
+</div>
+<div id="ref-elton2001" class="csl-entry" role="listitem">
+Elton, Edwin J., Martin J. Gruber, Deepak Agrawal, and Christopher Mann.
+2001. <span>“Explaining the Rate Spread on Corporate Bonds.”</span>
+<em>Journal of Finance</em> 56 (1): 247–77. <a href="https://doi.org/10.1111/0022-1082.00324">https://doi.org/10.1111/0022-1082.00324</a>.
+</div>
+<div id="ref-embrechts2002" class="csl-entry" role="listitem">
+Embrechts, Paul, Alexander J. McNeil, and Daniel Straumann. 2002.
+<span>“Correlation and Dependence in Risk Management: Properties and
+Pitfalls.”</span> In <em>Risk Management: Value at Risk and Beyond</em>,
+edited by M. A. H. Dempster. Cambridge University Press. <a href="https://doi.org/10.1017/CBO9780511615337.008">https://doi.org/10.1017/CBO9780511615337.008</a>.
+</div>
+<div id="ref-fama1965" class="csl-entry" role="listitem">
+Fama, Eugene F. 1965. <span>“The Behavior of Stock-Market
+Prices.”</span> <em>Journal of Business</em> 38 (1): 34–105. <a href="https://doi.org/10.1086/294743">https://doi.org/10.1086/294743</a>.
+</div>
+<div id="ref-fama1987" class="csl-entry" role="listitem">
+Fama, Eugene F., and Robert R. Bliss. 1987. <span>“The Information in
+Long-Maturity Forward Rates.”</span> <em>American Economic Review</em>
+77 (4): 680–92.
+</div>
+<div id="ref-fama1989" class="csl-entry" role="listitem">
+Fama, Eugene F., and Kenneth R. French. 1989. <span>“Business Conditions
+and Expected Returns on Stocks and Bonds.”</span> <em>Journal of
+Financial Economics</em> 25 (1): 23–49. <a href="https://doi.org/10.1016/0304-405X(89)90095-0">https://doi.org/10.1016/0304-405X(89)90095-0</a>.
+</div>
+<div id="ref-fama1992" class="csl-entry" role="listitem">
+Fama, Eugene F., and Kenneth R. French. 1992. <span>“The Cross-Section
+of Expected Stock Returns.”</span> <em>Journal of Finance</em> 47 (2):
+427–65. <a href="https://doi.org/10.1111/j.1540-6261.1992.tb04398.x">https://doi.org/10.1111/j.1540-6261.1992.tb04398.x</a>.
+</div>
+<div id="ref-fama1993" class="csl-entry" role="listitem">
+Fama, Eugene F., and Kenneth R. French. 1993. <span>“Common Risk Factors
+in the Returns on Stocks and Bonds.”</span> <em>Journal of Financial
+Economics</em> 33 (1): 3–56. <a href="https://doi.org/10.1016/0304-405X(93)90023-5">https://doi.org/10.1016/0304-405X(93)90023-5</a>.
+</div>
+<div id="ref-fama2002" class="csl-entry" role="listitem">
+Fama, Eugene F., and Kenneth R. French. 2002. <span>“The Equity
+Premium.”</span> <em>Journal of Finance</em> 57 (2): 637–59. <a href="https://doi.org/10.1111/1540-6261.00437">https://doi.org/10.1111/1540-6261.00437</a>.
+</div>
+<div id="ref-fama2012" class="csl-entry" role="listitem">
+Fama, Eugene F., and Kenneth R. French. 2012. <span>“Size, Value, and
+Momentum in International Stock Returns.”</span> <em>Journal of
+Financial Economics</em> 105 (3): 457–72. <a href="https://doi.org/10.1016/j.jfineco.2012.05.011">https://doi.org/10.1016/j.jfineco.2012.05.011</a>.
+</div>
+<div id="ref-fan2008" class="csl-entry" role="listitem">
+Fan, Jianqing, Yingying Fan, and Jinchi Lv. 2008. <span>“High
+Dimensional Covariance Matrix Estimation Using a Factor Model.”</span>
+<em>Journal of Econometrics</em> 147 (1): 186–97. <a href="https://doi.org/10.1016/j.jeconom.2008.09.017">https://doi.org/10.1016/j.jeconom.2008.09.017</a>.
+</div>
+<div id="ref-favre2002" class="csl-entry" role="listitem">
+Favre, Laurent, and José-Antonio Galeano. 2002. <span>“Mean-Modified
+Value-at-Risk Optimization with Hedge Funds.”</span> <em>Journal of
+Alternative Investments</em> 5 (2): 21–25. <a href="https://doi.org/10.3905/jai.2002.319052">https://doi.org/10.3905/jai.2002.319052</a>.
+</div>
+<div id="ref-ferson1991" class="csl-entry" role="listitem">
+Ferson, Wayne E., and Campbell R. Harvey. 1991. <span>“The Variation of
+Economic Risk Premiums.”</span> <em>Journal of Political Economy</em> 99
+(2): 385–415. <a href="https://doi.org/10.1086/261755">https://doi.org/10.1086/261755</a>.
+</div>
+<div id="ref-fisher1930" class="csl-entry" role="listitem">
+Fisher, Irving. 1930. <em>The Theory of Interest</em>. Macmillan.
+</div>
+<div id="ref-fisher1971" class="csl-entry" role="listitem">
+Fisher, Lawrence, and Roman L. Weil. 1971. <span>“Coping with the Risk
+of Interest-Rate Fluctuations: Returns to Bondholders from
+Na<span>ï</span>ve and Optimal Strategies.”</span> <em>Journal of
+Business</em> 44 (4): 408–31. <a href="https://doi.org/10.1086/295402">https://doi.org/10.1086/295402</a>.
+</div>
+<div id="ref-forbes2002" class="csl-entry" role="listitem">
+Forbes, Kristin J., and Roberto Rigobon. 2002. <span>“No Contagion, Only
+Interdependence: Measuring Stock Market Comovements.”</span> <em>Journal
+of Finance</em> 57 (5): 2223–61. <a href="https://doi.org/10.1111/0022-1082.00494">https://doi.org/10.1111/0022-1082.00494</a>.
+</div>
+<div id="ref-friede2015" class="csl-entry" role="listitem">
+Friede, Gunnar, Timo Busch, and Alexander Bassen. 2015.
+<span>“<span>ESG</span> and Financial Performance: Aggregated Evidence
+from More Than 2000 Empirical Studies.”</span> <em>Journal of
+Sustainable Finance &amp; Investment</em> 5 (4): 210–33. <a href="https://doi.org/10.1080/20430795.2015.1118917">https://doi.org/10.1080/20430795.2015.1118917</a>.
+</div>
+<div id="ref-frost1988" class="csl-entry" role="listitem">
+Frost, Peter A., and James E. Savarino. 1988. <span>“For Better
+Performance: Constrain Portfolio Weights.”</span> <em>Journal of
+Portfolio Management</em> 15 (1): 29–34. <a href="https://doi.org/10.3905/jpm.1988.409181">https://doi.org/10.3905/jpm.1988.409181</a>.
+</div>
+<div id="ref-fu2020" class="csl-entry" role="listitem">
+Fu, Anqi, Balasubramanian Narasimhan, and Stephen Boyd. 2020.
+<span>“CVXR: An r Package for Disciplined Convex Optimization.”</span>
+<em>Journal of Statistical Software</em> 94 (14): 1–34. <a href="https://doi.org/10.18637/jss.v094.i14">https://doi.org/10.18637/jss.v094.i14</a>.
+</div>
+<div id="ref-garlappi2007" class="csl-entry" role="listitem">
+Garlappi, Lorenzo, Raman Uppal, and Tan Wang. 2007. <span>“Portfolio
+Selection with Parameter and Model Uncertainty: A Multi-Prior
+Approach.”</span> <em>Review of Financial Studies</em> 20 (1): 41–81.
+</div>
+<div id="ref-garleanu2013" class="csl-entry" role="listitem">
+Gârleanu, Nicolae, and Lasse Heje Pedersen. 2013. <span>“Dynamic Trading
+with Predictable Returns and Transaction Costs.”</span> <em>Journal of
+Finance</em> 68 (6): 2309–40. <a href="https://doi.org/10.1111/jofi.12080">https://doi.org/10.1111/jofi.12080</a>.
+</div>
+<div id="ref-gibson2021" class="csl-entry" role="listitem">
+Gibson Brandon, Rajna, Philipp Krueger, and Peter Steffen Schmidt. 2021.
+<span>“<span>ESG</span> Rating Disagreement and Stock Returns.”</span>
+<em>Financial Analysts Journal</em> 77 (4): 104–27. <a href="https://doi.org/10.1080/0015198X.2021.1963186">https://doi.org/10.1080/0015198X.2021.1963186</a>.
+</div>
+<div id="ref-gilboa1989" class="csl-entry" role="listitem">
+Gilboa, Itzhak, and David Schmeidler. 1989. <span>“Maxmin Expected
+Utility with Non-Unique Prior.”</span> <em>Journal of Mathematical
+Economics</em> 18 (2): 141–53. <a href="https://doi.org/10.1016/0304-4068(89)90018-9">https://doi.org/10.1016/0304-4068(89)90018-9</a>.
+</div>
+<div id="ref-gilli2019" class="csl-entry" role="listitem">
+Gilli, Manfred, Dietmar Maringer, and Enrico Schumann. 2019.
+<em>Numerical Methods and Optimization in Finance</em>. 2nd ed. Academic
+Press. <a href="https://doi.org/10.1016/C2017-0-01621-X">https://doi.org/10.1016/C2017-0-01621-X</a>.
+</div>
+<div id="ref-glasserman2015" class="csl-entry" role="listitem">
+Glasserman, Paul, Chulmin Kang, and Wanmo Kang. 2015. <span>“Stress
+Scenario Selection by Empirical Likelihood.”</span> <em>Quantitative
+Finance</em> 15 (1): 25–41. <a href="https://doi.org/10.1080/14697688.2014.926019">https://doi.org/10.1080/14697688.2014.926019</a>.
+</div>
+<div id="ref-goldfarb1983" class="csl-entry" role="listitem">
+Goldfarb, Donald, and Ashok Idnani. 1983. <span>“A Numerically Stable
+Dual Method for Solving Strictly Convex Quadratic Programs.”</span>
+<em>Mathematical Programming</em> 27 (1): 1–33. <a href="https://doi.org/10.1007/BF02591962">https://doi.org/10.1007/BF02591962</a>.
+</div>
+<div id="ref-goldfarb2003" class="csl-entry" role="listitem">
+Goldfarb, Donald, and Garud Iyengar. 2003. <span>“Robust Portfolio
+Selection Problems.”</span> <em>Mathematics of Operations Research</em>
+28 (1): 1–38. <a href="https://doi.org/10.1287/moor.28.1.1.14260">https://doi.org/10.1287/moor.28.1.1.14260</a>.
+</div>
+<div id="ref-goodwin1998" class="csl-entry" role="listitem">
+Goodwin, Thomas H. 1998. <span>“The Information Ratio.”</span>
+<em>Financial Analysts Journal</em> 54 (4): 34–43. <a href="https://doi.org/10.2469/faj.v54.n4.2196">https://doi.org/10.2469/faj.v54.n4.2196</a>.
+</div>
+<div id="ref-goyal2024" class="csl-entry" role="listitem">
+Goyal, Amit, Ivo Welch, and Athanasse Zafirov. 2024. <span>“A
+Comprehensive 2022 Look at the Empirical Performance of Equity Premium
+Prediction.”</span> <em>Review of Financial Studies</em> 37 (11):
+3490–557. <a href="https://doi.org/10.1093/rfs/hhae044">https://doi.org/10.1093/rfs/hhae044</a>.
+</div>
+<div id="ref-granger1969" class="csl-entry" role="listitem">
+Granger, Clive W. J. 1969. <span>“Prediction with a Generalized Cost of
+Error Function.”</span> <em>Operational Research Quarterly</em> 20 (2):
+199–207. <a href="https://doi.org/10.1057/jors.1969.52">https://doi.org/10.1057/jors.1969.52</a>.
+</div>
+<div id="ref-granger2000" class="csl-entry" role="listitem">
+Granger, Clive W. J., and M. Hashem Pesaran. 2000. <span>“Economic and
+Statistical Measures of Forecast Accuracy.”</span> <em>Journal of
+Forecasting</em> 19 (7): 537–60. <a href="https://doi.org/10.1002/1099-131X(200012)19:7<537::AID-FOR769>3.0.CO;2-G">https://doi.org/10.1002/1099-131X(200012)19:7&lt;537::AID-FOR769&gt;3.0.CO;2-G</a>.
+</div>
+<div id="ref-green1992" class="csl-entry" role="listitem">
+Green, Richard C., and Burton Hollifield. 1992. <span>“When Will
+Mean-Variance Efficient Portfolios Be Well Diversified?”</span>
+<em>Journal of Finance</em> 47 (5): 1785–809. <a href="https://doi.org/10.2307/2328996">https://doi.org/10.2307/2328996</a>.
+</div>
+<div id="ref-griffin2002" class="csl-entry" role="listitem">
+Griffin, John M. 2002. <span>“Are the Fama and French Factors Global or
+Country Specific?”</span> <em>Review of Financial Studies</em> 15 (3):
+783–803. <a href="https://doi.org/10.1093/rfs/15.3.783">https://doi.org/10.1093/rfs/15.3.783</a>.
+</div>
+<div id="ref-grinold1989" class="csl-entry" role="listitem">
+Grinold, Richard C. 1989. <span>“The Fundamental Law of Active
+Management.”</span> <em>Journal of Portfolio Management</em> 15 (3):
+30–37. <a href="https://doi.org/10.3905/jpm.1989.409211">https://doi.org/10.3905/jpm.1989.409211</a>.
+</div>
+<div id="ref-grinold2000" class="csl-entry" role="listitem">
+Grinold, Richard C., and Ronald N. Kahn. 2000. <em>Active Portfolio
+Management: A Quantitative Approach for Producing Superior Returns and
+Controlling Risk</em>. 2nd ed. McGraw-Hill.
+</div>
+<div id="ref-gu2020" class="csl-entry" role="listitem">
+Gu, Shihao, Bryan Kelly, and Dacheng Xiu. 2020. <span>“Empirical Asset
+Pricing via Machine Learning.”</span> <em>Review of Financial
+Studies</em> 33 (5): 2223–73. <a href="https://doi.org/10.1093/rfs/hhaa009">https://doi.org/10.1093/rfs/hhaa009</a>.
+</div>
+<div id="ref-guidolin2007" class="csl-entry" role="listitem">
+Guidolin, Massimo, and Allan Timmermann. 2007. <span>“Asset Allocation
+Under Multivariate Regime Switching.”</span> <em>Journal of Economic
+Dynamics and Control</em> 31 (11): 3503–44. <a href="https://doi.org/10.1016/j.jedc.2006.12.004">https://doi.org/10.1016/j.jedc.2006.12.004</a>.
+</div>
+<div id="ref-guidolin2008" class="csl-entry" role="listitem">
+Guidolin, Massimo, and Allan Timmermann. 2008. <span>“International
+Asset Allocation Under Regime Switching, Skew, and Kurtosis
+Preferences.”</span> <em>Review of Financial Studies</em> 21 (2):
+889–935. <a href="https://doi.org/10.1093/rfs/hhn006">https://doi.org/10.1093/rfs/hhn006</a>.
+</div>
+<div id="ref-hamilton1989" class="csl-entry" role="listitem">
+Hamilton, James D. 1989. <span>“A New Approach to the Economic Analysis
+of Nonstationary Time Series and the Business Cycle.”</span>
+<em>Econometrica</em> 57 (2): 357–84. <a href="https://doi.org/10.2307/1912559">https://doi.org/10.2307/1912559</a>.
+</div>
+<div id="ref-hamilton1990" class="csl-entry" role="listitem">
+Hamilton, James D. 1990. <span>“Analysis of Time Series Subject to
+Changes in Regime.”</span> <em>Journal of Econometrics</em> 45 (1–2):
+39–70. <a href="https://doi.org/10.1016/0304-4076(90)90093-9">https://doi.org/10.1016/0304-4076(90)90093-9</a>.
+</div>
+<div id="ref-hansen1982" class="csl-entry" role="listitem">
+Hansen, Lars Peter. 1982. <span>“Large Sample Properties of Generalized
+Method of Moments Estimators.”</span> <em>Econometrica</em> 50 (4):
+1029–54. <a href="https://doi.org/10.2307/1912775">https://doi.org/10.2307/1912775</a>.
+</div>
+<div id="ref-hansen2008" class="csl-entry" role="listitem">
+Hansen, Lars Peter, and Thomas J. Sargent. 2008. <em>Robustness</em>.
+Princeton University Press.
+</div>
+<div id="ref-harvey2010" class="csl-entry" role="listitem">
+Harvey, Campbell R., John C. Liechty, Merrill W. Liechty, and Peter
+Müller. 2010. <span>“Portfolio Selection with Higher Moments.”</span>
+<em>Quantitative Finance</em> 10 (5): 469–85. <a href="https://doi.org/10.1080/14697681003756877">https://doi.org/10.1080/14697681003756877</a>.
+</div>
+<div id="ref-harvey2015" class="csl-entry" role="listitem">
+Harvey, Campbell R., and Yan Liu. 2015. <span>“Backtesting.”</span>
+<em>Journal of Portfolio Management</em> 42 (1): 13–28. <a href="https://doi.org/10.3905/jpm.2015.42.1.013">https://doi.org/10.3905/jpm.2015.42.1.013</a>.
+</div>
+<div id="ref-harvey2016" class="csl-entry" role="listitem">
+Harvey, Campbell R., Yan Liu, and Heqing Zhu. 2016<span>“... And the
+Cross-Section of Expected Returns.”</span> <em>Review of Financial
+Studies</em> 29 (1): 5–68. <a href="https://doi.org/10.1093/rfs/hhv059">https://doi.org/10.1093/rfs/hhv059</a>.
+</div>
+<div id="ref-harvey2000" class="csl-entry" role="listitem">
+Harvey, Campbell R., and Akhtar Siddique. 2000. <span>“Conditional
+Skewness in Asset Pricing Tests.”</span> <em>Journal of Finance</em> 55
+(3): 1263–95. <a href="https://doi.org/10.1111/0022-1082.00247">https://doi.org/10.1111/0022-1082.00247</a>.
+</div>
+<div id="ref-he1999" class="csl-entry" role="listitem">
+He, Guangliang, and Robert Litterman. 1999. <em>The Intuition Behind
+<span>Black-Litterman</span> Model Portfolios</em>. Investment
+Management Research. Goldman Sachs Asset Management. <a href="https://ssrn.com/abstract=334304">https://ssrn.com/abstract=334304</a>.
+</div>
+<div id="ref-heinkel2001" class="csl-entry" role="listitem">
+Heinkel, Robert, Alan Kraus, and Josef Zechner. 2001. <span>“The Effect
+of Green Investment on Corporate Behavior.”</span> <em>Journal of
+Financial and Quantitative Analysis</em> 36 (4): 431–49. <a href="https://doi.org/10.2307/2676219">https://doi.org/10.2307/2676219</a>.
+</div>
+<div id="ref-herold2003" class="csl-entry" role="listitem">
+Herold, Ulf. 2003. <span>“Portfolio Construction with Qualitative
+Forecasts.”</span> <em>Journal of Portfolio Management</em> 30 (1):
+61–72. <a href="https://doi.org/10.3905/jpm.2003.319920">https://doi.org/10.3905/jpm.2003.319920</a>.
+</div>
+<div id="ref-hjalmarsson2012" class="csl-entry" role="listitem">
+Hjalmarsson, Erik, and Petar Manchev. 2012. <span>“Characteristic-Based
+Mean-Variance Portfolio Choice.”</span> <em>Journal of Banking &amp;
+Finance</em> 36 (5): 1392–401. <a href="https://doi.org/10.1016/j.jbankfin.2011.12.002">https://doi.org/10.1016/j.jbankfin.2011.12.002</a>.
+</div>
+<div id="ref-hong2009" class="csl-entry" role="listitem">
+Hong, Harrison, and Marcin Kacperczyk. 2009. <span>“The Price of Sin:
+<span>The</span> Effects of Social Norms on Markets.”</span> <em>Journal
+of Financial Economics</em> 93 (1): 15–36. <a href="https://doi.org/10.1016/j.jfineco.2008.09.001">https://doi.org/10.1016/j.jfineco.2008.09.001</a>.
+</div>
+<div id="ref-hou2011" class="csl-entry" role="listitem">
+Hou, Kewei, G. Andrew Karolyi, and Bong-Chan Kho. 2011. <span>“What
+Factors Drive Global Stock Returns?”</span> <em>Review of Financial
+Studies</em> 24 (8): 2527–74. <a href="https://doi.org/10.1093/rfs/hhr013">https://doi.org/10.1093/rfs/hhr013</a>.
+</div>
+<div id="ref-ibbotson2000" class="csl-entry" role="listitem">
+Ibbotson, Roger G., and Paul D. Kaplan. 2000. <span>“Does Asset
+Allocation Policy Explain 40, 90, or 100 Percent of Performance?”</span>
+<em>Financial Analysts Journal</em> 56 (1): 26–33. <a href="https://doi.org/10.2469/faj.v56.n1.2327">https://doi.org/10.2469/faj.v56.n1.2327</a>.
+</div>
+<div id="ref-idzorek2007" class="csl-entry" role="listitem">
+Idzorek, Thomas M. 2007. <span>“A Step-by-Step Guide to the
+<span>Black-Litterman</span> Model: Incorporating User-Specified
+Confidence Levels.”</span> In <em>Forecasting Expected Returns in the
+Financial Markets</em>, edited by Stephen Satchell. Academic Press. <a href="https://doi.org/10.1016/B978-075068321-0.50003-0">https://doi.org/10.1016/B978-075068321-0.50003-0</a>.
+</div>
+<div id="ref-ilmanen2011" class="csl-entry" role="listitem">
+Ilmanen, Antti. 2011. <em>Expected Returns: An Investor’s Guide to
+Harvesting Market Rewards</em>. Wiley. <a href="https://doi.org/10.1002/9781118467190">https://doi.org/10.1002/9781118467190</a>.
+</div>
+<div id="ref-jagannathan2003" class="csl-entry" role="listitem">
+Jagannathan, Ravi, and Tongshu Ma. 2003. <span>“Risk Reduction in Large
+Portfolios: Why Imposing the Wrong Constraints Helps.”</span>
+<em>Journal of Finance</em> 58 (4): 1651–83. <a href="https://doi.org/10.1111/1540-6261.00580">https://doi.org/10.1111/1540-6261.00580</a>.
+</div>
+<div id="ref-jagannathan1996" class="csl-entry" role="listitem">
+Jagannathan, Ravi, and Zhenyu Wang. 1996. <span>“The Conditional CAPM
+and the Cross-Section of Expected Returns.”</span> <em>Journal of
+Finance</em> 51 (1): 3–53. <a href="https://doi.org/10.1111/j.1540-6261.1996.tb05201.x">https://doi.org/10.1111/j.1540-6261.1996.tb05201.x</a>.
+</div>
+<div id="ref-james1961" class="csl-entry" role="listitem">
+James, W., and Charles Stein. 1961. <span>“Estimation with Quadratic
+Loss.”</span> <em>Proceedings of the Fourth Berkeley Symposium on
+Mathematical Statistics and Probability</em> 1: 361–79.
+</div>
+<div id="ref-jarque1980" class="csl-entry" role="listitem">
+Jarque, Carlos M., and Anil K. Bera. 1980. <span>“Efficient Tests for
+Normality, Homoscedasticity and Serial Independence of Regression
+Residuals.”</span> <em>Economics Letters</em> 6 (3): 255–59. <a href="https://doi.org/10.1016/0165-1765(80)90024-5">https://doi.org/10.1016/0165-1765(80)90024-5</a>.
+</div>
+<div id="ref-jaynes1957" class="csl-entry" role="listitem">
+Jaynes, Edwin T. 1957. <span>“Information Theory and Statistical
+Mechanics.”</span> <em>Physical Review</em> 106 (4): 620–30. <a href="https://doi.org/10.1103/PhysRev.106.620">https://doi.org/10.1103/PhysRev.106.620</a>.
+</div>
+<div id="ref-jegadeesh1993" class="csl-entry" role="listitem">
+Jegadeesh, Narasimhan, and Sheridan Titman. 1993. <span>“Returns to
+Buying Winners and Selling Losers: Implications for Stock Market
+Efficiency.”</span> <em>Journal of Finance</em> 48 (1): 65–91. <a href="https://doi.org/10.1111/j.1540-6261.1993.tb04702.x">https://doi.org/10.1111/j.1540-6261.1993.tb04702.x</a>.
+</div>
+<div id="ref-jensen1968" class="csl-entry" role="listitem">
+Jensen, Michael C. 1968. <span>“The Performance of Mutual Funds in the
+Period 1945–1964.”</span> <em>Journal of Finance</em> 23 (2): 389–416.
+<a href="https://doi.org/10.1111/j.1540-6261.1968.tb00815.x">https://doi.org/10.1111/j.1540-6261.1968.tb00815.x</a>.
+</div>
+<div id="ref-jobson1980" class="csl-entry" role="listitem">
+Jobson, J. D., and Bob Korkie. 1980. <span>“Estimation for Markowitz
+Efficient Portfolios.”</span> <em>Journal of the American Statistical
+Association</em> 75 (371): 544–54. <a href="https://doi.org/10.1080/01621459.1980.10477507">https://doi.org/10.1080/01621459.1980.10477507</a>.
+</div>
+<div id="ref-jobson1981" class="csl-entry" role="listitem">
+Jobson, J. D., and Bob M. Korkie. 1981. <span>“Performance Hypothesis
+Testing with the Sharpe and Treynor Measures.”</span> <em>Journal of
+Finance</em> 36 (4): 889–908. <a href="https://doi.org/10.1111/j.1540-6261.1981.tb04891.x">https://doi.org/10.1111/j.1540-6261.1981.tb04891.x</a>.
+</div>
+<div id="ref-jondeau2003" class="csl-entry" role="listitem">
+Jondeau, Eric, and Michael Rockinger. 2003. <span>“Conditional
+Volatility, Skewness, and Kurtosis: Existence, Persistence, and
+Comovements.”</span> <em>Journal of Economic Dynamics and Control</em>
+27 (10): 1699–737. <a href="https://doi.org/10.1016/S0165-1889(02)00079-9">https://doi.org/10.1016/S0165-1889(02)00079-9</a>.
+</div>
+<div id="ref-jondeau2006" class="csl-entry" role="listitem">
+Jondeau, Eric, and Michael Rockinger. 2006. <span>“Optimal Portfolio
+Allocation Under Higher Moments.”</span> <em>European Financial
+Management</em> 12 (1): 29–55. <a href="https://doi.org/10.1111/j.1354-7798.2006.00309.x">https://doi.org/10.1111/j.1354-7798.2006.00309.x</a>.
+</div>
+<div id="ref-jorion1985" class="csl-entry" role="listitem">
+Jorion, Philippe. 1985. <span>“International Portfolio Diversification
+with Estimation Risk.”</span> <em>Journal of Business</em> 58 (3):
+259–78. <a href="https://doi.org/10.1086/296296">https://doi.org/10.1086/296296</a>.
+</div>
+<div id="ref-jorion1986" class="csl-entry" role="listitem">
+Jorion, Philippe. 1986. <span>“Bayes-Stein Estimation for Portfolio
+Analysis.”</span> <em>Journal of Financial and Quantitative
+Analysis</em> 21 (3): 279–92. <a href="https://doi.org/10.2307/2331042">https://doi.org/10.2307/2331042</a>.
+</div>
+<div id="ref-jorion2003" class="csl-entry" role="listitem">
+Jorion, Philippe. 2003. <span>“Portfolio Optimization with
+Tracking-Error Constraints.”</span> <em>Financial Analysts Journal</em>
+59 (5): 70–82. <a href="https://doi.org/10.2469/faj.v59.n5.2565">https://doi.org/10.2469/faj.v59.n5.2565</a>.
+</div>
+<div id="ref-jorion2007" class="csl-entry" role="listitem">
+Jorion, Philippe. 2007. <em>Value at Risk: The New Benchmark for
+Managing Financial Risk</em>. 3rd ed. McGraw-Hill.
+</div>
+<div id="ref-kan2007" class="csl-entry" role="listitem">
+Kan, Raymond, and Guofu Zhou. 2007. <span>“Optimal Portfolio Choice with
+Parameter Uncertainty.”</span> <em>Journal of Financial and Quantitative
+Analysis</em> 42 (3): 621–56. <a href="https://doi.org/10.1017/S0022109000004129">https://doi.org/10.1017/S0022109000004129</a>.
+</div>
+<div id="ref-kandel1996" class="csl-entry" role="listitem">
+Kandel, Shmuel, and Robert F. Stambaugh. 1996. <span>“On the
+Predictability of Stock Returns: An Asset-Allocation
+Perspective.”</span> <em>Journal of Finance</em> 51 (2): 385–424. <a href="https://doi.org/10.1111/j.1540-6261.1996.tb02689.x">https://doi.org/10.1111/j.1540-6261.1996.tb02689.x</a>.
+</div>
+<div id="ref-karnosky1994" class="csl-entry" role="listitem">
+Karnosky, Denis S., and Brian D. Singer. 1994. <em>Global Asset
+Management and Performance Attribution</em>. Research Foundation of the
+Institute of Chartered Financial Analysts.
+</div>
+<div id="ref-kennedy1995" class="csl-entry" role="listitem">
+Kennedy, James, and Russell Eberhart. 1995. <span>“Particle Swarm
+Optimization.”</span> <em>Proceedings of ICNN’95 – International
+Conference on Neural Networks</em> 4: 1942–48. <a href="https://doi.org/10.1109/ICNN.1995.488968">https://doi.org/10.1109/ICNN.1995.488968</a>.
+</div>
+<div id="ref-kim1994" class="csl-entry" role="listitem">
+Kim, Chang-Jin. 1994. <span>“Dynamic Linear Models with
+<span>M</span>arkov-Switching.”</span> <em>Journal of Econometrics</em>
+60 (1–2): 1–22. <a href="https://doi.org/10.1016/0304-4076(94)90036-1">https://doi.org/10.1016/0304-4076(94)90036-1</a>.
+</div>
+<div id="ref-kirby2012" class="csl-entry" role="listitem">
+Kirby, Chris, and Barbara Ostdiek. 2012. <span>“It’s All in the Timing:
+Simple Active Portfolio Strategies That Outperform Na<span>ï</span>ve
+Diversification.”</span> <em>Journal of Financial and Quantitative
+Analysis</em> 47 (2): 437–67. <a href="https://doi.org/10.1017/S0022109012000117">https://doi.org/10.1017/S0022109012000117</a>.
+</div>
+<div id="ref-kirkpatrick1983" class="csl-entry" role="listitem">
+Kirkpatrick, Scott, C. Daniel Gelatt, and Mario P. Vecchi. 1983.
+<span>“Optimization by Simulated Annealing.”</span> <em>Science</em> 220
+(4598): 671–80. <a href="https://doi.org/10.1126/science.220.4598.671">https://doi.org/10.1126/science.220.4598.671</a>.
+</div>
+<div id="ref-klein1976" class="csl-entry" role="listitem">
+Klein, Roger W., and Vijay S. Bawa. 1976. <span>“The Effect of
+Estimation Risk on Optimal Portfolio Choice.”</span> <em>Journal of
+Financial Economics</em> 3 (3): 215–31. <a href="https://doi.org/10.1016/0304-405X(76)90004-0">https://doi.org/10.1016/0304-405X(76)90004-0</a>.
+</div>
+<div id="ref-klibanoff2005" class="csl-entry" role="listitem">
+Klibanoff, Peter, Massimo Marinacci, and Sujoy Mukerji. 2005. <span>“A
+Smooth Model of Decision Making Under Ambiguity.”</span>
+<em>Econometrica</em> 73 (6): 1849–92. <a href="https://doi.org/10.1111/j.1468-0262.2005.00640.x">https://doi.org/10.1111/j.1468-0262.2005.00640.x</a>.
+</div>
+<div id="ref-knight1921" class="csl-entry" role="listitem">
+Knight, Frank H. 1921. <em>Risk, Uncertainty and Profit</em>. Houghton
+Mifflin.
+</div>
+<div id="ref-koijen2018" class="csl-entry" role="listitem">
+Koijen, Ralph S. J., Tobias J. Moskowitz, Lasse Heje Pedersen, and Evert
+B. Vrugt. 2018. <span>“Carry.”</span> <em>Journal of Financial
+Economics</em> 127 (2): 197–225. <a href="https://doi.org/10.1016/j.jfineco.2017.11.002">https://doi.org/10.1016/j.jfineco.2017.11.002</a>.
+</div>
+<div id="ref-kolm2017" class="csl-entry" role="listitem">
+Kolm, Petter N., and Gordon Ritter. 2017. <span>“On the
+<span>Bayesian</span> Interpretation of
+<span>Black-Litterman</span>.”</span> <em>European Journal of
+Operational Research</em> 258 (2): 564–72. <a href="https://doi.org/10.1016/j.ejor.2016.10.027">https://doi.org/10.1016/j.ejor.2016.10.027</a>.
+</div>
+<div id="ref-kolm2014" class="csl-entry" role="listitem">
+Kolm, Petter N., Reha Tütüncü, and Frank J. Fabozzi. 2014. <span>“60
+Years of Portfolio Optimization: Practical Challenges and Current
+Trends.”</span> <em>European Journal of Operational Research</em> 234
+(2): 356–71. <a href="https://doi.org/10.1016/j.ejor.2013.10.060">https://doi.org/10.1016/j.ejor.2013.10.060</a>.
+</div>
+<div id="ref-kraus1976" class="csl-entry" role="listitem">
+Kraus, Alan, and Robert H. Litzenberger. 1976. <span>“Skewness
+Preference and the Valuation of Risk Assets.”</span> <em>Journal of
+Finance</em> 31 (4): 1085–100. <a href="https://doi.org/10.1111/j.1540-6261.1976.tb01961.x">https://doi.org/10.1111/j.1540-6261.1976.tb01961.x</a>.
+</div>
+<div id="ref-kritzman2010" class="csl-entry" role="listitem">
+Kritzman, Mark, and Yuanzhen Li. 2010. <span>“Skulls, Financial
+Turbulence, and Risk Management.”</span> <em>Financial Analysts
+Journal</em> 66 (5): 30–41. <a href="https://doi.org/10.2469/faj.v66.n5.3">https://doi.org/10.2469/faj.v66.n5.3</a>.
+</div>
+<div id="ref-kritzman2012" class="csl-entry" role="listitem">
+Kritzman, Mark, Sébastien Page, and David Turkington. 2012.
+<span>“Regime Shifts: Implications for Dynamic Strategies.”</span>
+<em>Financial Analysts Journal</em> 68 (3): 22–39. <a href="https://doi.org/10.2469/faj.v68.n3.3">https://doi.org/10.2469/faj.v68.n3.3</a>.
+</div>
+<div id="ref-krokhmal2007" class="csl-entry" role="listitem">
+Krokhmal, Pavlo A. 2007. <span>“Higher Moment Coherent Risk
+Measures.”</span> <em>Quantitative Finance</em> 7 (4): 373–87. <a href="https://doi.org/10.1080/14697680701458307">https://doi.org/10.1080/14697680701458307</a>.
+</div>
+<div id="ref-kuhn1951" class="csl-entry" role="listitem">
+Kuhn, Harold W., and Albert W. Tucker. 1951. <span>“Nonlinear
+Programming.”</span> In <em>Proceedings of the Second Berkeley Symposium
+on Mathematical Statistics and Probability</em>, edited by Jerzy Neyman.
+University of California Press.
+</div>
+<div id="ref-kullback1951" class="csl-entry" role="listitem">
+Kullback, Solomon, and Richard A. Leibler. 1951. <span>“On Information
+and Sufficiency.”</span> <em>Annals of Mathematical Statistics</em> 22
+(1): 79–86. <a href="https://doi.org/10.1214/aoms/1177729694">https://doi.org/10.1214/aoms/1177729694</a>.
+</div>
+<div id="ref-kuensch1989" class="csl-entry" role="listitem">
+Künsch, Hans R. 1989. <span>“The Jackknife and the Bootstrap for General
+Stationary Observations.”</span> <em>Annals of Statistics</em> 17 (3):
+1217–41. <a href="https://doi.org/10.1214/aos/1176347265">https://doi.org/10.1214/aos/1176347265</a>.
+</div>
+<div id="ref-kupiec1998" class="csl-entry" role="listitem">
+Kupiec, Paul H. 1998. <span>“Stress Testing in a Value at Risk
+Framework.”</span> <em>Journal of Derivatives</em> 6 (1): 7–24. <a href="https://doi.org/10.3905/jod.1998.408008">https://doi.org/10.3905/jod.1998.408008</a>.
+</div>
+<div id="ref-kyle1985" class="csl-entry" role="listitem">
+Kyle, Albert S. 1985. <span>“Continuous Auctions and Insider
+Trading.”</span> <em>Econometrica</em> 53 (6): 1315–35. <a href="https://doi.org/10.2307/1913210">https://doi.org/10.2307/1913210</a>.
+</div>
+<div id="ref-laloux1999" class="csl-entry" role="listitem">
+Laloux, Laurent, Pierre Cizeau, Jean-Philippe Bouchaud, and Marc
+Potters. 1999. <span>“Noise Dressing of Financial Correlation
+Matrices.”</span> <em>Physical Review Letters</em> 83 (7): 1467–70. <a href="https://doi.org/10.1103/PhysRevLett.83.1467">https://doi.org/10.1103/PhysRevLett.83.1467</a>.
+</div>
+<div id="ref-ledoit2003" class="csl-entry" role="listitem">
+Ledoit, Olivier, and Michael Wolf. 2003. <span>“Improved Estimation of
+the Covariance Matrix of Stock Returns with an Application to Portfolio
+Selection.”</span> <em>Journal of Empirical Finance</em> 10 (5): 603–21.
+<a href="https://doi.org/10.1016/S0927-5398(03)00007-0">https://doi.org/10.1016/S0927-5398(03)00007-0</a>.
+</div>
+<div id="ref-ledoit2004" class="csl-entry" role="listitem">
+Ledoit, Olivier, and Michael Wolf. 2004. <span>“A Well-Conditioned
+Estimator for Large-Dimensional Covariance Matrices.”</span> <em>Journal
+of Multivariate Analysis</em> 88 (2): 365–411.
+</div>
+<div id="ref-ledoit2008" class="csl-entry" role="listitem">
+Ledoit, Olivier, and Michael Wolf. 2008. <span>“Robust Performance
+Hypothesis Testing with the Sharpe Ratio.”</span> <em>Journal of
+Empirical Finance</em> 15 (5): 850–59. <a href="https://doi.org/10.1016/j.jempfin.2008.03.002">https://doi.org/10.1016/j.jempfin.2008.03.002</a>.
+</div>
+<div id="ref-ledoit2017" class="csl-entry" role="listitem">
+Ledoit, Olivier, and Michael Wolf. 2017. <span>“Nonlinear Shrinkage of
+the Covariance Matrix for Portfolio Selection: Markowitz Meets
+Goldilocks.”</span> <em>Review of Financial Studies</em> 30 (12):
+4349–88. <a href="https://doi.org/10.1093/rfs/hhx052">https://doi.org/10.1093/rfs/hhx052</a>.
+</div>
+<div id="ref-levy1979" class="csl-entry" role="listitem">
+Levy, Haim, and Harry M. Markowitz. 1979. <span>“Approximating Expected
+Utility by a Function of Mean and Variance.”</span> <em>American
+Economic Review</em> 69 (3): 308–17. <a href="https://www.jstor.org/stable/1807366">https://www.jstor.org/stable/1807366</a>.
+</div>
+<div id="ref-lintner1965" class="csl-entry" role="listitem">
+Lintner, John. 1965. <span>“The Valuation of Risk Assets and the
+Selection of Risky Investments in Stock Portfolios and Capital
+Budgets.”</span> <em>Review of Economics and Statistics</em> 47 (1):
+13–37. <a href="https://doi.org/10.2307/1924119">https://doi.org/10.2307/1924119</a>.
+</div>
+<div id="ref-litterman1991" class="csl-entry" role="listitem">
+Litterman, Robert B., and José Scheinkman. 1991. <span>“Common Factors
+Affecting Bond Returns.”</span> <em>Journal of Fixed Income</em> 1 (1):
+54–61. <a href="https://doi.org/10.3905/jfi.1991.692347">https://doi.org/10.3905/jfi.1991.692347</a>.
+</div>
+<div id="ref-lo2002" class="csl-entry" role="listitem">
+Lo, Andrew W. 2002. <span>“The Statistics of Sharpe Ratios.”</span>
+<em>Financial Analysts Journal</em> 58 (4): 36–52. <a href="https://doi.org/10.2469/faj.v58.n4.2453">https://doi.org/10.2469/faj.v58.n4.2453</a>.
+</div>
+<div id="ref-lo2004" class="csl-entry" role="listitem">
+Lo, Andrew W. 2004. <span>“The Adaptive Markets Hypothesis.”</span>
+<em>Journal of Portfolio Management</em> 30 (5): 15–29. <a href="https://doi.org/10.3905/jpm.2004.442611">https://doi.org/10.3905/jpm.2004.442611</a>.
+</div>
+<div id="ref-longin2001" class="csl-entry" role="listitem">
+Longin, François, and Bruno Solnik. 2001. <span>“Extreme Correlation of
+International Equity Markets.”</span> <em>Journal of Finance</em> 56
+(2): 649–76. <a href="https://doi.org/10.1111/0022-1082.00340">https://doi.org/10.1111/0022-1082.00340</a>.
+</div>
+<div id="ref-lopezdeprado2016" class="csl-entry" role="listitem">
+López de Prado, Marcos. 2016. <span>“Building Diversified Portfolios
+That Outperform Out of Sample.”</span> <em>Journal of Portfolio
+Management</em> 42 (4): 59–69. <a href="https://doi.org/10.3905/jpm.2016.42.4.059">https://doi.org/10.3905/jpm.2016.42.4.059</a>.
+</div>
+<div id="ref-lopezdeprado2018" class="csl-entry" role="listitem">
+López de Prado, Marcos. 2018. <em>Advances in Financial Machine
+Learning</em>. John Wiley &amp; Sons.
+</div>
+<div id="ref-macaulay1938" class="csl-entry" role="listitem">
+Macaulay, Frederick R. 1938. <em>Some Theoretical Problems Suggested by
+the Movements of Interest Rates, Bond Yields and Stock Prices in the
+United States Since 1856</em>. National Bureau of Economic Research.
+</div>
+<div id="ref-mackinlay2000" class="csl-entry" role="listitem">
+MacKinlay, A. Craig, and Ľuboš Pástor. 2000. <span>“Asset Pricing
+Models: Implications for Expected Returns and Portfolio
+Selection.”</span> <em>Review of Financial Studies</em> 13 (4): 883–916.
+<a href="https://doi.org/10.1093/rfs/13.4.883">https://doi.org/10.1093/rfs/13.4.883</a>.
+</div>
+<div id="ref-maenhout2004" class="csl-entry" role="listitem">
+Maenhout, Pascal J. 2004. <span>“Robust Portfolio Rules and Asset
+Pricing.”</span> <em>Review of Financial Studies</em> 17 (4): 951–83. <a href="https://doi.org/10.1093/rfs/hhh003">https://doi.org/10.1093/rfs/hhh003</a>.
+</div>
+<div id="ref-maillard2010" class="csl-entry" role="listitem">
+Maillard, Sébastien, Thierry Roncalli, and Jérôme Teïletche. 2010.
+<span>“The Properties of Equally Weighted Risk Contribution
+Portfolios.”</span> <em>Journal of Portfolio Management</em> 36 (4):
+60–70. <a href="https://doi.org/10.3905/jpm.2010.36.4.060">https://doi.org/10.3905/jpm.2010.36.4.060</a>.
+</div>
+<div id="ref-mandelbrot1963" class="csl-entry" role="listitem">
+Mandelbrot, Benoit. 1963. <span>“The Variation of Certain Speculative
+Prices.”</span> <em>Journal of Business</em> 36 (4): 394–419. <a href="https://doi.org/10.1086/294632">https://doi.org/10.1086/294632</a>.
+</div>
+<div id="ref-mantegna1999" class="csl-entry" role="listitem">
+Mantegna, Rosario N. 1999. <span>“Hierarchical Structure in Financial
+Markets.”</span> <em>European Physical Journal B</em> 11 (1): 193–97. <a href="https://doi.org/10.1007/s100510050929">https://doi.org/10.1007/s100510050929</a>.
+</div>
+<div id="ref-marchenko1967" class="csl-entry" role="listitem">
+Marčenko, Vladimir A., and Leonid A. Pastur. 1967. <span>“Distribution
+of Eigenvalues for Some Sets of Random Matrices.”</span> <em>Mathematics
+of the USSR-Sbornik</em> 1 (4): 457–83. <a href="https://doi.org/10.1070/SM1967v001n04ABEH001994">https://doi.org/10.1070/SM1967v001n04ABEH001994</a>.
+</div>
+<div id="ref-markowitz1952" class="csl-entry" role="listitem">
+Markowitz, Harry. 1952. <span>“Portfolio Selection.”</span> <em>Journal
+of Finance</em> 7 (1): 77–91. <a href="https://doi.org/10.1111/j.1540-6261.1952.tb01525.x">https://doi.org/10.1111/j.1540-6261.1952.tb01525.x</a>.
+</div>
+<div id="ref-markowitz1956" class="csl-entry" role="listitem">
+Markowitz, Harry. 1956. <span>“The Optimization of a Quadratic Function
+Subject to Linear Constraints.”</span> <em>Naval Research Logistics
+Quarterly</em> 3 (1–2): 111–33. <a href="https://doi.org/10.1002/nav.3800030110">https://doi.org/10.1002/nav.3800030110</a>.
+</div>
+<div id="ref-markowitz1959" class="csl-entry" role="listitem">
+Markowitz, Harry. 1959. <em>Portfolio Selection: Efficient
+Diversification of Investments</em>. John Wiley &amp; Sons.
+</div>
+<div id="ref-markowitz2014" class="csl-entry" role="listitem">
+Markowitz, Harry. 2014. <span>“Mean-Variance Approximations to Expected
+Utility.”</span> <em>European Journal of Operational Research</em> 234
+(2): 346–55. <a href="https://doi.org/10.1016/j.ejor.2012.08.023">https://doi.org/10.1016/j.ejor.2012.08.023</a>.
+</div>
+<div id="ref-martellini2010" class="csl-entry" role="listitem">
+Martellini, Lionel, and Volker Ziemann. 2010. <span>“Improved Estimates
+of Higher-Order Comoments and Implications for Portfolio
+Selection.”</span> <em>Review of Financial Studies</em> 23 (4):
+1467–502. <a href="https://doi.org/10.1093/rfs/hhp099">https://doi.org/10.1093/rfs/hhp099</a>.
+</div>
+<div id="ref-mclean2016" class="csl-entry" role="listitem">
+McLean, R. David, and Jeffrey Pontiff. 2016. <span>“Does Academic
+Research Destroy Stock Return Predictability?”</span> <em>Journal of
+Finance</em> 71 (1): 5–32. <a href="https://doi.org/10.1111/jofi.12365">https://doi.org/10.1111/jofi.12365</a>.
+</div>
+<div id="ref-mcneil2015" class="csl-entry" role="listitem">
+McNeil, Alexander J., Rüdiger Frey, and Paul Embrechts. 2015.
+<em>Quantitative Risk Management: Concepts, Techniques and Tools</em>.
+Revised. Princeton University Press.
+</div>
+<div id="ref-memmel2003" class="csl-entry" role="listitem">
+Memmel, Christoph. 2003. <span>“Performance Hypothesis Testing with the
+Sharpe Ratio.”</span> <em>Finance Letters</em> 1 (1): 21–23.
+</div>
+<div id="ref-merton1969" class="csl-entry" role="listitem">
+Merton, Robert C. 1969. <span>“Lifetime Portfolio Selection Under
+Uncertainty: The Continuous-Time Case.”</span> <em>Review of Economics
+and Statistics</em> 51 (3): 247–57. <a href="https://doi.org/10.2307/1926560">https://doi.org/10.2307/1926560</a>.
+</div>
+<div id="ref-merton1972" class="csl-entry" role="listitem">
+Merton, Robert C. 1972. <span>“An Analytic Derivation of the Efficient
+Portfolio Frontier.”</span> <em>Journal of Financial and Quantitative
+Analysis</em> 7 (4): 1851–72. <a href="https://doi.org/10.2307/2329621">https://doi.org/10.2307/2329621</a>.
+</div>
+<div id="ref-merton1974" class="csl-entry" role="listitem">
+Merton, Robert C. 1974. <span>“On the Pricing of Corporate Debt: The
+Risk Structure of Interest Rates.”</span> <em>Journal of Finance</em> 29
+(2): 449–70. <a href="https://doi.org/10.1111/j.1540-6261.1974.tb03058.x">https://doi.org/10.1111/j.1540-6261.1974.tb03058.x</a>.
+</div>
+<div id="ref-merton1980" class="csl-entry" role="listitem">
+Merton, Robert C. 1980. <span>“On Estimating the Expected Return on the
+Market: An Exploratory Investigation.”</span> <em>Journal of Financial
+Economics</em> 8 (4): 323–61. <a href="https://doi.org/10.1016/0304-405X(80)90007-0">https://doi.org/10.1016/0304-405X(80)90007-0</a>.
+</div>
+<div id="ref-meucci2006" class="csl-entry" role="listitem">
+Meucci, Attilio. 2006. <span>“Beyond <span>Black-Litterman</span>: Views
+on Non-Normal Markets.”</span> <em>Risk</em> 19 (2): 96–102. <a href="https://doi.org/10.2139/ssrn.848407">https://doi.org/10.2139/ssrn.848407</a>.
+</div>
+<div id="ref-meucci2008" class="csl-entry" role="listitem">
+Meucci, Attilio. 2008. <span>“Fully Flexible Views: Theory and
+Practice.”</span> <em>Risk</em> 21 (10): 97–102. <a href="https://ssrn.com/abstract=1213325">https://ssrn.com/abstract=1213325</a>.
+</div>
+<div id="ref-meucci2009" class="csl-entry" role="listitem">
+Meucci, Attilio. 2009. <span>“Managing Diversification.”</span>
+<em>Risk</em> 22 (5): 74–79.
+</div>
+<div id="ref-meucci2010" class="csl-entry" role="listitem">
+Meucci, Attilio. 2010. <span>“The <span>Black-Litterman</span> Approach:
+Original Model and Extensions.”</span> In <em>The Encyclopedia of
+Quantitative Finance</em>, edited by Rama Cont. Wiley. <a href="https://doi.org/10.1002/9780470061602.eqf14009">https://doi.org/10.1002/9780470061602.eqf14009</a>.
+</div>
+<div id="ref-michaud1989" class="csl-entry" role="listitem">
+Michaud, Richard O. 1989. <span>“The Markowitz Optimization Enigma: Is
+<span>‘Optimized’</span> Optimal?”</span> <em>Financial Analysts
+Journal</em> 45 (1): 31–42. <a href="https://doi.org/10.2469/faj.v45.n1.31">https://doi.org/10.2469/faj.v45.n1.31</a>.
+</div>
+<div id="ref-michaud2008" class="csl-entry" role="listitem">
+Michaud, Richard O., and Robert O. Michaud. 2008. <em>Efficient Asset
+Management: A Practical Guide to Stock Portfolio Optimization and Asset
+Allocation</em>. 2nd ed. Oxford University Press.
+</div>
+<div id="ref-mitton2007" class="csl-entry" role="listitem">
+Mitton, Todd, and Keith Vorkink. 2007. <span>“Equilibrium
+Underdiversification and the Preference for Skewness.”</span> <em>Review
+of Financial Studies</em> 20 (4): 1255–88. <a href="https://doi.org/10.1093/revfin/hhm011">https://doi.org/10.1093/revfin/hhm011</a>.
+</div>
+<div id="ref-moskowitz2012" class="csl-entry" role="listitem">
+Moskowitz, Tobias J., Yao Hua Ooi, and Lasse Heje Pedersen. 2012.
+<span>“Time Series Momentum.”</span> <em>Journal of Financial
+Economics</em> 104 (2): 228–50. <a href="https://doi.org/10.1016/j.jfineco.2011.11.003">https://doi.org/10.1016/j.jfineco.2011.11.003</a>.
+</div>
+<div id="ref-nelson1987" class="csl-entry" role="listitem">
+Nelson, Charles R., and Andrew F. Siegel. 1987. <span>“Parsimonious
+Modeling of Yield Curves.”</span> <em>Journal of Business</em> 60 (4):
+473–89. <a href="https://doi.org/10.1086/296409">https://doi.org/10.1086/296409</a>.
+</div>
+<div id="ref-vonneumann1944" class="csl-entry" role="listitem">
+Neumann, John von, and Oskar Morgenstern. 1944. <em>Theory of Games and
+Economic Behavior</em>. Princeton University Press.
+</div>
+<div id="ref-newey1987" class="csl-entry" role="listitem">
+Newey, Whitney K., and Kenneth D. West. 1987. <span>“A Simple, Positive
+Semi-Definite, Heteroskedasticity and Autocorrelation Consistent
+Covariance Matrix.”</span> <em>Econometrica</em> 55 (3): 703–8. <a href="https://doi.org/10.2307/1913610">https://doi.org/10.2307/1913610</a>.
+</div>
+<div id="ref-nocedal2006" class="csl-entry" role="listitem">
+Nocedal, Jorge, and Stephen J. Wright. 2006. <em>Numerical
+Optimization</em>. 2nd ed. Springer. <a href="https://doi.org/10.1007/978-0-387-40065-5">https://doi.org/10.1007/978-0-387-40065-5</a>.
+</div>
+<div id="ref-novymarx2016" class="csl-entry" role="listitem">
+Novy-Marx, Robert, and Mihail Velikov. 2016. <span>“A Taxonomy of
+Anomalies and Their Trading Costs.”</span> <em>Review of Financial
+Studies</em> 29 (1): 104–47. <a href="https://doi.org/10.1093/rfs/hhv063">https://doi.org/10.1093/rfs/hhv063</a>.
+</div>
+<div id="ref-nystrup2015" class="csl-entry" role="listitem">
+Nystrup, Peter, Bo William Hansen, Henrik Madsen, and Erik Lindström.
+2015. <span>“Regime-Based Versus Static Asset Allocation: Letting the
+Data Speak.”</span> <em>Journal of Portfolio Management</em> 42 (1):
+103–9. <a href="https://doi.org/10.3905/jpm.2015.42.1.103">https://doi.org/10.3905/jpm.2015.42.1.103</a>.
+</div>
+<div id="ref-pagan2003" class="csl-entry" role="listitem">
+Pagan, Adrian R., and Kirill A. Sossounov. 2003. <span>“A Simple
+Framework for Analysing Bull and Bear Markets.”</span> <em>Journal of
+Applied Econometrics</em> 18 (1): 23–46. <a href="https://doi.org/10.1002/jae.664">https://doi.org/10.1002/jae.664</a>.
+</div>
+<div id="ref-pastor2000" class="csl-entry" role="listitem">
+Pástor, Ľuboš. 2000. <span>“Portfolio Selection and Asset Pricing
+Models.”</span> <em>Journal of Finance</em> 55 (1): 179–223. <a href="https://doi.org/10.1111/0022-1082.00204">https://doi.org/10.1111/0022-1082.00204</a>.
+</div>
+<div id="ref-pastor2021" class="csl-entry" role="listitem">
+Pástor, Ľuboš, Robert F. Stambaugh, and Lucian A. Taylor. 2021.
+<span>“Sustainable Investing in Equilibrium.”</span> <em>Journal of
+Financial Economics</em> 142 (2): 550–71. <a href="https://doi.org/10.1016/j.jfineco.2020.12.011">https://doi.org/10.1016/j.jfineco.2020.12.011</a>.
+</div>
+<div id="ref-pastor2022" class="csl-entry" role="listitem">
+Pástor, Ľuboš, Robert F. Stambaugh, and Lucian A. Taylor. 2022.
+<span>“Dissecting Green Returns.”</span> <em>Journal of Financial
+Economics</em> 146 (2): 403–24.
+</div>
+<div id="ref-patton2004" class="csl-entry" role="listitem">
+Patton, Andrew J. 2004. <span>“On the Out-of-Sample Importance of
+Skewness and Asymmetric Dependence for Asset Allocation.”</span>
+<em>Journal of Financial Econometrics</em> 2 (1): 130–68. <a href="https://doi.org/10.1093/jjfinec/nbh006">https://doi.org/10.1093/jjfinec/nbh006</a>.
+</div>
+<div id="ref-pedersen2021" class="csl-entry" role="listitem">
+Pedersen, Lasse Heje, Shaun Fitzgibbons, and Lukasz Pomorski. 2021.
+<span>“Responsible Investing: <span>The</span>
+<span>ESG</span>-Efficient Frontier.”</span> <em>Journal of Financial
+Economics</em> 142 (2): 572–97. <a href="https://doi.org/10.1016/j.jfineco.2020.11.001">https://doi.org/10.1016/j.jfineco.2020.11.001</a>.
+</div>
+<div id="ref-perold1984" class="csl-entry" role="listitem">
+Perold, André F. 1984. <span>“Large-Scale Portfolio
+Optimization.”</span> <em>Management Science</em> 30 (10): 1143–60. <a href="https://doi.org/10.1287/mnsc.30.10.1143">https://doi.org/10.1287/mnsc.30.10.1143</a>.
+</div>
+<div id="ref-peroldshortfall1988" class="csl-entry" role="listitem">
+Perold, André F. 1988. <span>“The Implementation Shortfall: Paper Versus
+Reality.”</span> <em>Journal of Portfolio Management</em> 14 (3): 4–9.
+<a href="https://doi.org/10.3905/jpm.1988.409150">https://doi.org/10.3905/jpm.1988.409150</a>.
+</div>
+<div id="ref-perold1988" class="csl-entry" role="listitem">
+Perold, André F., and Evan C. Schulman. 1988. <span>“The Free Lunch in
+Currency Hedging: Implications for Investment Policy and Performance
+Standards.”</span> <em>Financial Analysts Journal</em> 44 (3): 45–50. <a href="https://doi.org/10.2469/faj.v44.n3.45">https://doi.org/10.2469/faj.v44.n3.45</a>.
+</div>
+<div id="ref-pesaran1995" class="csl-entry" role="listitem">
+Pesaran, M. Hashem, and Allan Timmermann. 1995. <span>“Predictability of
+Stock Returns: Robustness and Economic Significance.”</span> <em>Journal
+of Finance</em> 50 (4): 1201–28. <a href="https://doi.org/10.1111/j.1540-6261.1995.tb04055.x">https://doi.org/10.1111/j.1540-6261.1995.tb04055.x</a>.
+</div>
+<div id="ref-peterson2026a" class="csl-entry" role="listitem">
+Peterson, Brian G., and Peter Carl. 2026a. <em>PerformanceAnalytics:
+Econometric Tools for Performance and Risk Analysis</em>. <a href="https://CRAN.R-project.org/package=PerformanceAnalytics">https://CRAN.R-project.org/package=PerformanceAnalytics</a>.
+</div>
+<div id="ref-peterson2026" class="csl-entry" role="listitem">
+Peterson, Brian G., and Peter Carl. 2026b.
+<em><span>PortfolioAnalytics</span>: Portfolio Analysis, Including
+Numerical Methods for Optimization of Portfolios</em>. <a href="https://CRAN.R-project.org/package=PortfolioAnalytics">https://CRAN.R-project.org/package=PortfolioAnalytics</a>.
+</div>
+<div id="ref-plyakha2021" class="csl-entry" role="listitem">
+Plyakha, Yuliya, Raman Uppal, and Grigory Vilkov. 2021. <span>“Equal or
+Value Weighting? Implications for Asset-Pricing Tests.”</span> In
+<em>Financial Risk Management and Modeling</em>. Risk, Systems and
+Decisions. Springer. <a href="https://doi.org/10.1007/978-3-030-66691-0_9">https://doi.org/10.1007/978-3-030-66691-0_9</a>.
+</div>
+<div id="ref-politis1994" class="csl-entry" role="listitem">
+Politis, Dimitris N., and Joseph P. Romano. 1994. <span>“The Stationary
+Bootstrap.”</span> <em>Journal of the American Statistical
+Association</em> 89 (428): 1303–13. <a href="https://doi.org/10.1080/01621459.1994.10476870">https://doi.org/10.1080/01621459.1994.10476870</a>.
+</div>
+<div id="ref-pratt1964" class="csl-entry" role="listitem">
+Pratt, John W. 1964. <span>“Risk Aversion in the Small and in the
+Large.”</span> <em>Econometrica</em> 32 (1–2): 122–36. <a href="https://doi.org/10.2307/1913738">https://doi.org/10.2307/1913738</a>.
+</div>
+<div id="ref-qian2006" class="csl-entry" role="listitem">
+Qian, Edward. 2006. <span>“On the Financial Interpretation of Risk
+Contribution: Risk Budgets Do Add Up.”</span> <em>Journal of Investment
+Management</em> 4 (4): 41–51.
+</div>
+<div id="ref-raffinot2018" class="csl-entry" role="listitem">
+Raffinot, Thomas. 2018. <span>“Hierarchical Clustering-Based Asset
+Allocation.”</span> <em>Journal of Portfolio Management</em> 44 (2):
+89–99. <a href="https://doi.org/10.3905/jpm.2018.44.2.089">https://doi.org/10.3905/jpm.2018.44.2.089</a>.
+</div>
+<div id="ref-rapach2010" class="csl-entry" role="listitem">
+Rapach, David E., Jack K. Strauss, and Guofu Zhou. 2010.
+<span>“Out-of-Sample Equity Premium Prediction: Combination Forecasts
+and Links to the Real Economy.”</span> <em>Review of Financial
+Studies</em> 23 (2): 821–62. <a href="https://doi.org/10.1093/rfs/hhp063">https://doi.org/10.1093/rfs/hhp063</a>.
+</div>
+<div id="ref-rebonato2010" class="csl-entry" role="listitem">
+Rebonato, Riccardo. 2010. <em>Coherent Stress Testing: A Bayesian
+Approach to the Analysis of Financial Stress</em>. Wiley.
+</div>
+<div id="ref-robertson2005" class="csl-entry" role="listitem">
+Robertson, John C., Ellis W. Tallman, and Charles H. Whiteman. 2005.
+<span>“Forecasting Using Relative Entropy.”</span> <em>Journal of Money,
+Credit and Banking</em> 37 (3): 383–401. <a href="https://doi.org/10.1353/mcb.2005.0034">https://doi.org/10.1353/mcb.2005.0034</a>.
+</div>
+<div id="ref-rockafellar2000" class="csl-entry" role="listitem">
+Rockafellar, R. Tyrrell, and Stanislav Uryasev. 2000.
+<span>“Optimization of Conditional Value-at-Risk.”</span> <em>Journal of
+Risk</em> 2 (3): 21–41. <a href="https://doi.org/10.21314/JOR.2000.038">https://doi.org/10.21314/JOR.2000.038</a>.
+</div>
+<div id="ref-rockafellar2002" class="csl-entry" role="listitem">
+Rockafellar, R. Tyrrell, and Stanislav Uryasev. 2002. <span>“Conditional
+Value-at-Risk for General Loss Distributions.”</span> <em>Journal of
+Banking &amp; Finance</em> 26 (7): 1443–71. <a href="https://doi.org/10.1016/S0378-4266(02)00271-6">https://doi.org/10.1016/S0378-4266(02)00271-6</a>.
+</div>
+<div id="ref-roll1977" class="csl-entry" role="listitem">
+Roll, Richard. 1977. <span>“A Critique of the Asset Pricing Theory’s
+Tests Part i: On Past and Potential Testability of the Theory.”</span>
+<em>Journal of Financial Economics</em> 4 (2): 129–76. <a href="https://doi.org/10.1016/0304-405X(77)90009-5">https://doi.org/10.1016/0304-405X(77)90009-5</a>.
+</div>
+<div id="ref-roll1992" class="csl-entry" role="listitem">
+Roll, Richard. 1992. <span>“A Mean/Variance Analysis of Tracking
+Error.”</span> <em>Journal of Portfolio Management</em> 18 (4): 13–22.
+<a href="https://doi.org/10.3905/jpm.1992.701922">https://doi.org/10.3905/jpm.1992.701922</a>.
+</div>
+<div id="ref-roncalli2013" class="csl-entry" role="listitem">
+Roncalli, Thierry. 2013. <em>Introduction to Risk Parity and
+Budgeting</em>. Chapman; Hall/CRC.
+</div>
+<div id="ref-rousseeuw1984" class="csl-entry" role="listitem">
+Rousseeuw, Peter J. 1984. <span>“Least Median of Squares
+Regression.”</span> <em>Journal of the American Statistical
+Association</em> 79 (388): 871–80. <a href="https://doi.org/10.1080/01621459.1984.10477105">https://doi.org/10.1080/01621459.1984.10477105</a>.
+</div>
+<div id="ref-rousseeuw1999" class="csl-entry" role="listitem">
+Rousseeuw, Peter J., and Katrien Van Driessen. 1999. <span>“A Fast
+Algorithm for the Minimum Covariance Determinant Estimator.”</span>
+<em>Technometrics</em> 41 (3): 212–23. <a href="https://doi.org/10.1080/00401706.1999.10485670">https://doi.org/10.1080/00401706.1999.10485670</a>.
+</div>
+<div id="ref-roy1952" class="csl-entry" role="listitem">
+Roy, A. D. 1952. <span>“Safety First and the Holding of Assets.”</span>
+<em>Econometrica</em> 20 (3): 431–49. <a href="https://doi.org/10.2307/1907413">https://doi.org/10.2307/1907413</a>.
+</div>
+<div id="ref-ryan2026" class="csl-entry" role="listitem">
+Ryan, Jeffrey A., and Joshua M. Ulrich. 2026. <em>Xts: eXtensible Time
+Series</em>. <a href="https://CRAN.R-project.org/package=xts">https://CRAN.R-project.org/package=xts</a>.
+</div>
+<div id="ref-ryden1998" class="csl-entry" role="listitem">
+Rydén, Tobias, Timo Teräsvirta, and Stefan Åsbrink. 1998.
+<span>“Stylized Facts of Daily Return Series and the Hidden
+<span>M</span>arkov Model.”</span> <em>Journal of Applied
+Econometrics</em> 13 (3): 217–44. <a href="https://doi.org/10.1002/(SICI)1099-1255(199805/06)13:3<217::AID-JAE476>3.0.CO;2-V">https://doi.org/10.1002/(SICI)1099-1255(199805/06)13:3&lt;217::AID-JAE476&gt;3.0.CO;2-V</a>.
+</div>
+<div id="ref-salcher2026less" class="csl-entry" role="listitem">
+Salcher, Lukas, Sebastian Stöckl, and Michael Hanke. 2026a. <em>Less Is
+More: Forecast Granularity, Estimation Error, and Portfolio Choice</em>.
+Working Paper No. 7547959. SSRN. <a href="https://papers.ssrn.com/abstract=7547959">https://papers.ssrn.com/abstract=7547959</a>.
+</div>
+<div id="ref-salcher2026" class="csl-entry" role="listitem">
+Salcher, Lukas, Sebastian Stöckl, and Michael Hanke. 2026b. <span>“Lost
+in Translation? Risk-Adjusting <span>RMSE</span> for Economic Forecast
+Performance.”</span> <em>Journal of Forecasting</em> 45 (5): 2587–605.
+<a href="https://doi.org/10.1002/for.70134">https://doi.org/10.1002/for.70134</a>.
+</div>
+<div id="ref-samuelson1969" class="csl-entry" role="listitem">
+Samuelson, Paul A. 1969. <span>“Lifetime Portfolio Selection by Dynamic
+Stochastic Programming.”</span> <em>Review of Economics and
+Statistics</em> 51 (3): 239–46. <a href="https://doi.org/10.2307/1926559">https://doi.org/10.2307/1926559</a>.
+</div>
+<div id="ref-samuelson1970" class="csl-entry" role="listitem">
+Samuelson, Paul A. 1970. <span>“The Fundamental Approximation Theorem of
+Portfolio Analysis in Terms of Means, Variances and Higher
+Moments.”</span> <em>Review of Economic Studies</em> 37 (4): 537–42. <a href="https://doi.org/10.2307/2296483">https://doi.org/10.2307/2296483</a>.
+</div>
+<div id="ref-satchell2000" class="csl-entry" role="listitem">
+Satchell, Stephen, and Alan Scowcroft. 2000. <span>“A Demystification of
+the <span>Black-Litterman</span> Model: Managing Quantitative and
+Traditional Portfolio Construction.”</span> <em>Journal of Asset
+Management</em> 1 (2): 138–50. <a href="https://doi.org/10.1057/palgrave.jam.2240011">https://doi.org/10.1057/palgrave.jam.2240011</a>.
+</div>
+<div id="ref-schafer2005" class="csl-entry" role="listitem">
+Schäfer, Juliane, and Korbinian Strimmer. 2005. <span>“A Shrinkage
+Approach to Large-Scale Covariance Matrix Estimation and Implications
+for Functional Genomics.”</span> <em>Statistical Applications in
+Genetics and Molecular Biology</em> 4 (1). <a href="https://doi.org/10.2202/1544-6115.1175">https://doi.org/10.2202/1544-6115.1175</a>.
+</div>
+<div id="ref-scherer2002" class="csl-entry" role="listitem">
+Scherer, Bernd. 2002. <span>“Portfolio Resampling: Review and
+Critique.”</span> <em>Financial Analysts Journal</em> 58 (6): 98–109. <a href="https://doi.org/10.2469/faj.v58.n6.2489">https://doi.org/10.2469/faj.v58.n6.2489</a>.
+</div>
+<div id="ref-scheuch2023" class="csl-entry" role="listitem">
+Scheuch, Christoph, Stefan Voigt, and Patrick Weiss. 2023. <em>Tidy
+Finance with r</em>. Chapman &amp; Hall/CRC the r Series. Chapman;
+Hall/CRC. <a href="https://www.tidy-finance.org/">https://www.tidy-finance.org/</a>.
+</div>
+<div id="ref-scott1980" class="csl-entry" role="listitem">
+Scott, Robert C., and Philip A. Horvath. 1980. <span>“On the Direction
+of Preference for Moments of Higher Order Than the Variance.”</span>
+<em>Journal of Finance</em> 35 (4): 915–19. <a href="https://doi.org/10.1111/j.1540-6261.1980.tb03509.x">https://doi.org/10.1111/j.1540-6261.1980.tb03509.x</a>.
+</div>
+<div id="ref-serafeim2022" class="csl-entry" role="listitem">
+Serafeim, George, and Aaron Yoon. 2022. <span>“Which Corporate
+<span>ESG</span> News Does the Market React To?”</span> <em>Financial
+Analysts Journal</em> 78 (1): 59–78. <a href="https://doi.org/10.1080/0015198X.2021.1973879">https://doi.org/10.1080/0015198X.2021.1973879</a>.
+</div>
+<div id="ref-sharpe1964" class="csl-entry" role="listitem">
+Sharpe, William F. 1964. <span>“Capital Asset Prices: A Theory of Market
+Equilibrium Under Conditions of Risk.”</span> <em>Journal of
+Finance</em> 19 (3): 425–42. <a href="https://doi.org/10.1111/j.1540-6261.1964.tb02865.x">https://doi.org/10.1111/j.1540-6261.1964.tb02865.x</a>.
+</div>
+<div id="ref-sharpe1966" class="csl-entry" role="listitem">
+Sharpe, William F. 1966. <span>“Mutual Fund Performance.”</span>
+<em>Journal of Business</em> 39 (1): 119–38.
+</div>
+<div id="ref-sharpe1974" class="csl-entry" role="listitem">
+Sharpe, William F. 1974. <span>“Imputing Expected Security Returns from
+Portfolio Composition.”</span> <em>Journal of Financial and Quantitative
+Analysis</em> 9 (3): 463–72. <a href="https://doi.org/10.2307/2329873">https://doi.org/10.2307/2329873</a>.
+</div>
+<div id="ref-sharpe1981" class="csl-entry" role="listitem">
+Sharpe, William F. 1981. <span>“Decentralized Investment
+Management.”</span> <em>Journal of Finance</em> 36 (2): 217–34. <a href="https://doi.org/10.1111/j.1540-6261.1981.tb00436.x">https://doi.org/10.1111/j.1540-6261.1981.tb00436.x</a>.
+</div>
+<div id="ref-sharpe1987" class="csl-entry" role="listitem">
+Sharpe, William F. 1987. <span>“Integrated Asset Allocation.”</span>
+<em>Financial Analysts Journal</em> 43 (5): 25–32. <a href="https://doi.org/10.2469/faj.v43.n5.25">https://doi.org/10.2469/faj.v43.n5.25</a>.
+</div>
+<div id="ref-sharpe1991" class="csl-entry" role="listitem">
+Sharpe, William F. 1991. <span>“The Arithmetic of Active
+Management.”</span> <em>Financial Analysts Journal</em> 47 (1): 7–9. <a href="https://doi.org/10.2469/faj.v47.n1.7">https://doi.org/10.2469/faj.v47.n1.7</a>.
+</div>
+<div id="ref-sharpe1992" class="csl-entry" role="listitem">
+Sharpe, William F. 1992. <span>“Asset Allocation: Management Style and
+Performance Measurement.”</span> <em>Journal of Portfolio
+Management</em> 18 (2): 7–19. <a href="https://doi.org/10.3905/jpm.1992.409394">https://doi.org/10.3905/jpm.1992.409394</a>.
+</div>
+<div id="ref-sharpe1994" class="csl-entry" role="listitem">
+Sharpe, William F. 1994. <span>“The Sharpe Ratio.”</span> <em>Journal of
+Portfolio Management</em> 21 (1): 49–58. <a href="https://doi.org/10.3905/jpm.1994.409501">https://doi.org/10.3905/jpm.1994.409501</a>.
+</div>
+<div id="ref-sortino1991" class="csl-entry" role="listitem">
+Sortino, Frank A., and Robert van der Meer. 1991. <span>“Downside
+Risk.”</span> <em>Journal of Portfolio Management</em> 17 (4): 27–31. <a href="https://doi.org/10.3905/jpm.1991.409343">https://doi.org/10.3905/jpm.1991.409343</a>.
+</div>
+<div id="ref-spinu2013" class="csl-entry" role="listitem">
+Spinu, Florin. 2013. <span>“An Algorithm for Computing Risk Parity
+Weights.”</span> <em>SSRN Electronic Journal</em>, ahead of print. <a href="https://doi.org/10.2139/ssrn.2297383">https://doi.org/10.2139/ssrn.2297383</a>.
+</div>
+<div id="ref-stambaugh1999" class="csl-entry" role="listitem">
+Stambaugh, Robert F. 1999. <span>“Predictive Regressions.”</span>
+<em>Journal of Financial Economics</em> 54 (3): 375–421. <a href="https://doi.org/10.1016/S0304-405X(99)00041-0">https://doi.org/10.1016/S0304-405X(99)00041-0</a>.
+</div>
+<div id="ref-stein1956" class="csl-entry" role="listitem">
+Stein, Charles. 1956. <span>“Inadmissibility of the Usual Estimator for
+the Mean of a Multivariate Normal Distribution.”</span> <em>Proceedings
+of the Third Berkeley Symposium on Mathematical Statistics and
+Probability</em> 1: 197–206.
+</div>
+<div id="ref-stein1981" class="csl-entry" role="listitem">
+Stein, Charles M. 1981. <span>“Estimation of the Mean of a Multivariate
+Normal Distribution.”</span> <em>The Annals of Statistics</em> 9 (6):
+1135–51. <a href="https://doi.org/10.1214/aos/1176345632">https://doi.org/10.1214/aos/1176345632</a>.
+</div>
+<div id="ref-stellato2020" class="csl-entry" role="listitem">
+Stellato, Bartolomeo, Goran Banjac, Paul Goulart, Alberto Bemporad, and
+Stephen Boyd. 2020. <span>“OSQP: An Operator Splitting Solver for
+Quadratic Programs.”</span> <em>Mathematical Programming
+Computation</em> 12 (4): 637–72. <a href="https://doi.org/10.1007/s12532-020-00179-2">https://doi.org/10.1007/s12532-020-00179-2</a>.
+</div>
+<div id="ref-stoeckl-uncertaintymeasures" class="csl-entry" role="listitem">
+Stöckl, Sebastian. 2020. <em>Uncertaintymeasures: Functions to Create
+Uncertainty Measures Using Turbulence</em>. <a href="https://github.com/sstoeckl/uncertaintymeasures">https://github.com/sstoeckl/uncertaintymeasures</a>.
+</div>
+<div id="ref-stoeckl2022pu" class="csl-entry" role="listitem">
+Stöckl, Sebastian. 2022a. <em>Parameter Uncertainty, Financial
+Turbulence and Aggregate Stock Returns</em>. Working Paper No. 2988568.
+SSRN. <a href="https://papers.ssrn.com/abstract=2988568">https://papers.ssrn.com/abstract=2988568</a>.
+</div>
+<div id="ref-stoeckl2022turbulence" class="csl-entry" role="listitem">
+Stöckl, Sebastian. 2022b. <em>Turbulence in the Cross-Section:
+Predicting Factor Premia</em>. Working Paper No. 3221140. SSRN. <a href="https://papers.ssrn.com/abstract=3221140">https://papers.ssrn.com/abstract=3221140</a>.
+</div>
+<div id="ref-stoeckl2014mahalanobis" class="csl-entry" role="listitem">
+Stöckl, Sebastian, and Michael Hanke. 2014. <span>“Financial
+Applications of the <span>Mahalanobis</span> Distance.”</span>
+<em>Applied Economics and Finance</em> 1 (2): 78–84.
+</div>
+<div id="ref-stoeckl2026means" class="csl-entry" role="listitem">
+Stöckl, Sebastian, and Michael Hanke. 2026. <em>No Country for Old
+Means: Optimal Input Shrinkage for Optimal Portfolios?</em> Working
+Paper No. 7548058. SSRN. <a href="https://papers.ssrn.com/abstract=7548058">https://papers.ssrn.com/abstract=7548058</a>.
+</div>
+<div id="ref-storn1997" class="csl-entry" role="listitem">
+Storn, Rainer, and Kenneth Price. 1997. <span>“Differential Evolution –
+a Simple and Efficient Heuristic for Global Optimization over Continuous
+Spaces.”</span> <em>Journal of Global Optimization</em> 11 (4): 341–59.
+<a href="https://doi.org/10.1023/A:1008202821328">https://doi.org/10.1023/A:1008202821328</a>.
+</div>
+<div id="ref-sullivan1999" class="csl-entry" role="listitem">
+Sullivan, Ryan, Allan Timmermann, and Halbert White. 1999.
+<span>“Data-Snooping, Technical Trading Rule Performance, and the
+Bootstrap.”</span> <em>Journal of Finance</em> 54 (5): 1647–91. <a href="https://doi.org/10.1111/0022-1082.00163">https://doi.org/10.1111/0022-1082.00163</a>.
+</div>
+<div id="ref-theussl2020" class="csl-entry" role="listitem">
+Theußl, Stefan, Florian Schwendinger, and Kurt Hornik. 2020. <span>“ROI:
+An Extensible r Optimization Infrastructure.”</span> <em>Journal of
+Statistical Software</em> 94 (15): 1–64. <a href="https://doi.org/10.18637/jss.v094.i15">https://doi.org/10.18637/jss.v094.i15</a>.
+</div>
+<div id="ref-timmermann2000" class="csl-entry" role="listitem">
+Timmermann, Allan. 2000. <span>“Moments of <span>M</span>arkov Switching
+Models.”</span> <em>Journal of Econometrics</em> 96 (1): 75–111. <a href="https://doi.org/10.1016/S0304-4076(99)00051-2">https://doi.org/10.1016/S0304-4076(99)00051-2</a>.
+</div>
+<div id="ref-tobin1958" class="csl-entry" role="listitem">
+Tobin, James. 1958. <span>“Liquidity Preference as Behavior Towards
+Risk.”</span> <em>Review of Economic Studies</em> 25 (2): 65–86. <a href="https://doi.org/10.2307/2296205">https://doi.org/10.2307/2296205</a>.
+</div>
+<div id="ref-tokat2007" class="csl-entry" role="listitem">
+Tokat, Yesim, and Nelson W. Wicas. 2007. <span>“Portfolio Rebalancing in
+Theory and Practice.”</span> <em>Journal of Investing</em> 16 (2):
+52–59. <a href="https://doi.org/10.3905/joi.2007.686411">https://doi.org/10.3905/joi.2007.686411</a>.
+</div>
+<div id="ref-tola2008" class="csl-entry" role="listitem">
+Tola, Vincenzo, Fabrizio Lillo, Mauro Gallegati, and Rosario N.
+Mantegna. 2008. <span>“Cluster Analysis for Portfolio
+Optimization.”</span> <em>Journal of Economic Dynamics and Control</em>
+32 (1): 235–58. <a href="https://doi.org/10.1016/j.jedc.2007.01.034">https://doi.org/10.1016/j.jedc.2007.01.034</a>.
+</div>
+<div id="ref-treynor1973" class="csl-entry" role="listitem">
+Treynor, Jack L., and Fischer Black. 1973. <span>“How to Use Security
+Analysis to Improve Portfolio Selection.”</span> <em>Journal of
+Business</em> 46 (1): 66–86. <a href="https://doi.org/10.1086/295508">https://doi.org/10.1086/295508</a>.
+</div>
+<div id="ref-tu2010" class="csl-entry" role="listitem">
+Tu, Jun. 2010. <span>“Is Regime Switching in Stock Returns Important in
+Portfolio Decisions?”</span> <em>Management Science</em> 56 (7):
+1198–215. <a href="https://doi.org/10.1287/mnsc.1100.1181">https://doi.org/10.1287/mnsc.1100.1181</a>.
+</div>
+<div id="ref-tu2011" class="csl-entry" role="listitem">
+Tu, Jun, and Guofu Zhou. 2011. <span>“Markowitz Meets
+<span>Talmud</span>: A Combination of Sophisticated and Naive
+Diversification Strategies.”</span> <em>Journal of Financial
+Economics</em> 99 (1): 204–15. <a href="https://doi.org/10.1016/j.jfineco.2010.08.013">https://doi.org/10.1016/j.jfineco.2010.08.013</a>.
+</div>
+<div id="ref-turner1989" class="csl-entry" role="listitem">
+Turner, Christopher M., Richard Startz, and Charles R. Nelson. 1989.
+<span>“A <span>M</span>arkov Model of Heteroskedasticity, Risk, and
+Learning in the Stock Market.”</span> <em>Journal of Financial
+Economics</em> 25 (1): 3–22. <a href="https://doi.org/10.1016/0304-405X(89)90094-9">https://doi.org/10.1016/0304-405X(89)90094-9</a>.
+</div>
+<div id="ref-tutuncu2004" class="csl-entry" role="listitem">
+Tütüncü, Reha H., and M. Koenig. 2004. <span>“Robust Asset
+Allocation.”</span> <em>Annals of Operations Research</em> 132 (1–4):
+157–87. <a href="https://doi.org/10.1023/B:ANOR.0000045281.41041.ed">https://doi.org/10.1023/B:ANOR.0000045281.41041.ed</a>.
+</div>
+<div id="ref-ushey2026" class="csl-entry" role="listitem">
+Ushey, Kevin, and Hadley Wickham. 2026. <em>Renv: Project
+Environments</em>. <a href="https://CRAN.R-project.org/package=renv">https://CRAN.R-project.org/package=renv</a>.
+</div>
+<div id="ref-walters2014" class="csl-entry" role="listitem">
+Walters, Jay. 2014. <em>The <span>Black-Litterman</span> Model in
+Detail</em>. Working Paper No. 1314585. SSRN. <a href="https://doi.org/10.2139/ssrn.1314585">https://doi.org/10.2139/ssrn.1314585</a>.
+</div>
+<div id="ref-welch2008" class="csl-entry" role="listitem">
+Welch, Ivo, and Amit Goyal. 2008. <span>“A Comprehensive Look at the
+Empirical Performance of Equity Premium Prediction.”</span> <em>Review
+of Financial Studies</em> 21 (4): 1455–508. <a href="https://doi.org/10.1093/rfs/hhm014">https://doi.org/10.1093/rfs/hhm014</a>.
+</div>
+<div id="ref-white2000" class="csl-entry" role="listitem">
+White, Halbert. 2000. <span>“A Reality Check for Data Snooping.”</span>
+<em>Econometrica</em> 68 (5): 1097–126. <a href="https://doi.org/10.1111/1468-0262.00152">https://doi.org/10.1111/1468-0262.00152</a>.
+</div>
+<div id="ref-wickham2014" class="csl-entry" role="listitem">
+Wickham, Hadley. 2014. <span>“Tidy Data.”</span> <em>Journal of
+Statistical Software</em> 59 (10): 1–23. <a href="https://doi.org/10.18637/jss.v059.i10">https://doi.org/10.18637/jss.v059.i10</a>.
+</div>
+<div id="ref-wickham2019" class="csl-entry" role="listitem">
+Wickham, Hadley, Mara Averick, Jennifer Bryan, et al. 2019.
+<span>“Welcome to the Tidyverse.”</span> <em>Journal of Open Source
+Software</em> 4 (43): 1686. <a href="https://doi.org/10.21105/joss.01686">https://doi.org/10.21105/joss.01686</a>.
+</div>
+<div id="ref-wickham2023" class="csl-entry" role="listitem">
+Wickham, Hadley, Mine Çetinkaya-Rundel, and Garrett Grolemund. 2023.
+<em>R for Data Science</em>. 2nd ed. O’Reilly Media. <a href="https://r4ds.hadley.nz/">https://r4ds.hadley.nz/</a>.
+</div>
+<div id="ref-xie2015" class="csl-entry" role="listitem">
+Xie, Yihui. 2015. <em>Dynamic Documents with r and Knitr</em>. 2nd ed.
+Chapman; Hall/CRC. <a href="https://yihui.org/knitr/">https://yihui.org/knitr/</a>.
+</div>
+<div id="ref-yamai2005" class="csl-entry" role="listitem">
+Yamai, Yasuhiro, and Toshinao Yoshiba. 2005. <span>“Value-at-Risk Versus
+Expected Shortfall: A Practical Perspective.”</span> <em>Journal of
+Banking &amp; Finance</em> 29 (4): 997–1015. <a href="https://doi.org/10.1016/j.jbankfin.2004.08.010">https://doi.org/10.1016/j.jbankfin.2004.08.010</a>.
+</div>
+<div id="ref-zeileis2005" class="csl-entry" role="listitem">
+Zeileis, Achim, and Gabor Grothendieck. 2005. <span>“Zoo: S3
+Infrastructure for Regular and Irregular Time Series.”</span>
+<em>Journal of Statistical Software</em> 14 (6): 1–27. <a href="https://doi.org/10.18637/jss.v014.i06">https://doi.org/10.18637/jss.v014.i06</a>.
+</div>
+<div id="ref-zerbib2019" class="csl-entry" role="listitem">
+Zerbib, Olivier David. 2019. <span>“The Effect of Pro-Environmental
+Preferences on Bond Prices: <span>Evidence</span> from Green
+Bonds.”</span> <em>Journal of Banking &amp; Finance</em> 98: 39–60. <a href="https://doi.org/10.1016/j.jbankfin.2018.10.012">https://doi.org/10.1016/j.jbankfin.2018.10.012</a>.
+</div>
+<div id="ref-zou2005" class="csl-entry" role="listitem">
+Zou, Hui, and Trevor Hastie. 2005. <span>“Regularization and Variable
+Selection via the Elastic Net.”</span> <em>Journal of the Royal
+Statistical Society: Series B (Statistical Methodology)</em> 67 (2):
+301–20. <a href="https://doi.org/10.1111/j.1467-9868.2005.00503.x">https://doi.org/10.1111/j.1467-9868.2005.00503.x</a>.
+</div>
+</div>
+
+
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+    const viewSource = window.document.getElementById('quarto-view-source') ||
+                       window.document.getElementById('quarto-code-tools-source');
+    if (viewSource) {
+      const sourceUrl = viewSource.getAttribute("data-quarto-source-url");
+      viewSource.addEventListener("click", function(e) {
+        if (sourceUrl) {
+          // rstudio viewer pane
+          if (/\bcapabilities=\b/.test(window.location)) {
+            window.open(sourceUrl);
+          } else {
+            window.location.href = sourceUrl;
+          }
+        } else {
+          const modal = new bootstrap.Modal(document.getElementById('quarto-embedded-source-code-modal'));
+          modal.show();
+        }
+        return false;
+      });
+    }
+    function toggleCodeHandler(show) {
+      return function(e) {
+        const cellDetails = window.document.querySelectorAll(".cell details.code-fold");
+        for (let i=0; i<cellDetails.length; i++) {
+          const details = cellDetails[i];
+          if (show) {
+            details.open = true;
+          } else {
+            details.removeAttribute("open");
+          }
+        }
+        const cellCodeDivs = window.document.querySelectorAll(".cell div.sourceCode.cell-code");
+        const fromCls = show ? "hidden" : "unhidden";
+        const toCls = show ? "unhidden" : "hidden";
+        for (let i=0; i<cellCodeDivs.length; i++) {
+          const codeDiv = cellCodeDivs[i];
+          if (codeDiv.classList.contains(fromCls)) {
+            codeDiv.classList.remove(fromCls);
+            codeDiv.classList.add(toCls);
+          } 
+        }
+        return false;
+      }
+    }
+    const hideAllCode = window.document.getElementById("quarto-hide-all-code");
+    if (hideAllCode) {
+      hideAllCode.addEventListener("click", toggleCodeHandler(false));
+    }
+    const showAllCode = window.document.getElementById("quarto-show-all-code");
+    if (showAllCode) {
+      showAllCode.addEventListener("click", toggleCodeHandler(true));
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/www\.tidy-asset-allocation\.org");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+            // target, if specified
+            link.setAttribute("target", "_blank");
+            if (link.getAttribute("rel") === null) {
+              link.setAttribute("rel", "noopener");
+            }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../chapters/28-robustness.html" class="pagination-link" aria-label="Robustness and Model Uncertainty">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">28</span>&nbsp; <span class="chapter-title">Robustness and Model Uncertainty</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../chapters/90-data-description.html" class="pagination-link" aria-label="Data Description">
+        <span class="nav-page-text"><span class="chapter-number">A</span>&nbsp; <span class="chapter-title">Data Description</span></span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl</p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    <div class="toc-actions"><ul><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/edit/main/chapters/99-references.qmd" class="toc-action"><i class="bi bi-github"></i>Edit this page</a></li><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div>
+    <div class="nav-footer-right">
+      <ul class="footer-items list-unstyled">
+    <li class="nav-item">
+    <a class="nav-link active" href="https://github.com/sstoeckl/tidy-asset-allocation" aria-current="page">
+<p>Source</p>
+</a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="https://github.com/sstoeckl/tidy-asset-allocation/issues/new">
+<p>Report an issue</p>
+</a>
+  </li>  
+</ul>
+    </div>
+  </div>
+</footer>
+
+
+
+
+<script src="../site_libs/quarto-html/zenscroll-min.js"></script>
+</body></html>

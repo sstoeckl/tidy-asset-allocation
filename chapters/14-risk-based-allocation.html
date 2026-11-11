@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<meta name="description" content="Risk contributions, equal risk contribution portfolios and inverse volatility weighting in R, and why the package’s own risk-budget objective cannot solve the problem it scores correctly.">
+<title>Risk-Based Allocation – Tidy Asset Allocation in R</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../chapters/15-hierarchical-allocation.html" rel="next">
+<link href="../chapters/13-solvers.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-0f05cba98e93abd5bfacabf37e46c573.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-36489fe9f95e83378e31b3375ef0b6a4.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-0f05cba98e93abd5bfacabf37e46c573.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-189f37bffb98b27434de1cced1e4d8c0.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light"><script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script><style>html{ scroll-behavior: smooth; }</style>
+<script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script><script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script><script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+</head>
+<body class="nav-sidebar docked quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top"><nav class="quarto-secondary-nav"><div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/09-mean-variance.html">Portfolio Optimization</a></li><li class="breadcrumb-item"><a href="../chapters/14-risk-based-allocation.html"><span class="chapter-number">14</span>&nbsp; <span class="chapter-title">Risk-Based Allocation</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav></header><!-- content --><div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto"><div class="pt-lg-2 mt-2 text-left sidebar-header">
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../">Tidy Asset Allocation in R</a> 
+        <div class="sidebar-tools-main">
+    <a href="https://github.com/sstoeckl/tidy-asset-allocation" title="Source Code" class="quarto-navigation-tool px-1" aria-label="Source Code"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-reader-toggle quarto-navigation-tool px-1" onclick="window.quartoToggleReader(); return false;" title="Toggle reader mode">
+  <div class="quarto-reader-toggle-btn">
+  <i class="bi"></i>
+  </div>
+</a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">Preface</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">Prerequisites</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/01-setting-up.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">1</span>&nbsp; <span class="chapter-title">Setting Up Your Environment</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/02-notation-and-data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">2</span>&nbsp; <span class="chapter-title">Notation and Data</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false">
+ <span class="menu-text">Foundations of Portfolio Choice</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/03-return-risk-and-the-investor.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">3</span>&nbsp; <span class="chapter-title">Return, Risk, and the Investor’s Problem</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/04-descriptive-analysis.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">4</span>&nbsp; <span class="chapter-title">Descriptive Analysis of Asset Returns</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/05-factor-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">5</span>&nbsp; <span class="chapter-title">Factor Models and Beta Estimation</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">Estimating the Inputs</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/06-expected-returns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">Expected Returns</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/07-covariance-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">The Covariance Matrix</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/08-estimation-error.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">8</span>&nbsp; <span class="chapter-title">Estimation Error and Its Cost</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true">
+ <span class="menu-text">Portfolio Optimization</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 show">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/09-mean-variance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">9</span>&nbsp; <span class="chapter-title">Mean-Variance Optimization</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/10-risk-measures.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">10</span>&nbsp; <span class="chapter-title">Risk Measures Beyond Variance</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/11-higher-moments.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">11</span>&nbsp; <span class="chapter-title">Higher Moments</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/12-constraints.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">12</span>&nbsp; <span class="chapter-title">Portfolio Constraints</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/13-solvers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">13</span>&nbsp; <span class="chapter-title">Numerical Optimization and Solvers</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/14-risk-based-allocation.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text"><span class="chapter-number">14</span>&nbsp; <span class="chapter-title">Risk-Based Allocation</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false">
+ <span class="menu-text">Allocation Strategies</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/15-hierarchical-allocation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">15</span>&nbsp; <span class="chapter-title">Hierarchical and Sleeve-Based Allocation</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/16-signals-and-forecasts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">16</span>&nbsp; <span class="chapter-title">Signals and Return Forecasts</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/17-expressing-views.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">17</span>&nbsp; <span class="chapter-title">Expressing Views</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/18-parametric-policies.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">18</span>&nbsp; <span class="chapter-title">Parametric Portfolio Policies</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/19-regimes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">19</span>&nbsp; <span class="chapter-title">Regime-Dependent Allocation</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/20-sustainability.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">20</span>&nbsp; <span class="chapter-title">Sustainable Investing Constraints</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false">
+ <span class="menu-text">Inside the Sleeves</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/21-equity-sleeve.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">21</span>&nbsp; <span class="chapter-title">The Equity Sleeve</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/22-fixed-income-sleeve.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">22</span>&nbsp; <span class="chapter-title">The Fixed Income Sleeve</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false">
+ <span class="menu-text">Implementation and Evaluation</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/23-rebalancing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">23</span>&nbsp; <span class="chapter-title">Rebalancing and Transaction Costs</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/24-benchmarks-and-active-risk.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">24</span>&nbsp; <span class="chapter-title">Benchmarks and Active Risk</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/25-backtesting.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">25</span>&nbsp; <span class="chapter-title">Backtesting and Diagnostics</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false">
+ <span class="menu-text">Advanced Topics</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/26-forecast-error-cost.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">26</span>&nbsp; <span class="chapter-title">The Cost of Forecast Error</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/27-decision-aware-forecasting.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">27</span>&nbsp; <span class="chapter-title">Decision-Aware Forecasting</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/28-robustness.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">28</span>&nbsp; <span class="chapter-title">Robustness and Model Uncertainty</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/99-references.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text">References</span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false">
+ <span class="menu-text">Appendices</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-9" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-9" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/90-data-description.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">A</span>&nbsp; <span class="chapter-title">Data Description</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/91-proofs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">B</span>&nbsp; <span class="chapter-title">Proofs</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/92-solver-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">C</span>&nbsp; <span class="chapter-title">Solver and Constraint Support</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/93-package-notes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">D</span>&nbsp; <span class="chapter-title">Package Notes</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/94-r-primer.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">E</span>&nbsp; <span class="chapter-title">A Short R Refresher</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/95-coverage-ledger.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">F</span>&nbsp; <span class="chapter-title">Coverage Ledger</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/96-solutions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">G</span>&nbsp; <span class="chapter-title">Solutions to Exercises</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/965-scenario-analysis.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">H</span>&nbsp; <span class="chapter-title">Scenario Analysis</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/97-colophon.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/98-acknowledgements.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+    </ul>
+</div>
+</nav><div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active"><h2 id="toc-title">On this page</h2>
+   
+  <ul>
+<li>
+<a href="#sec-14-risk-based-allocation-theory" id="toc-sec-14-risk-based-allocation-theory" class="nav-link active" data-scroll-target="#sec-14-risk-based-allocation-theory"><span class="header-section-number">14.1</span> Allocating Risk Rather Than Capital</a>
+  <ul class="collapse">
+<li><a href="#the-decomposition-that-makes-this-precise" id="toc-the-decomposition-that-makes-this-precise" class="nav-link" data-scroll-target="#the-decomposition-that-makes-this-precise"><span class="header-section-number">14.1.1</span> The decomposition that makes this precise</a></li>
+  <li><a href="#equal-risk-contribution" id="toc-equal-risk-contribution" class="nav-link" data-scroll-target="#equal-risk-contribution"><span class="header-section-number">14.1.2</span> Equal risk contribution</a></li>
+  <li><a href="#the-approximation-that-is-nearly-free" id="toc-the-approximation-that-is-nearly-free" class="nav-link" data-scroll-target="#the-approximation-that-is-nearly-free"><span class="header-section-number">14.1.3</span> The approximation that is nearly free</a></li>
+  </ul>
+</li>
+  <li>
+<a href="#sec-14-risk-based-allocation-implementation" id="toc-sec-14-risk-based-allocation-implementation" class="nav-link" data-scroll-target="#sec-14-risk-based-allocation-implementation"><span class="header-section-number">14.2</span> Implementation</a>
+  <ul class="collapse">
+<li><a href="#the-objective-is-right" id="toc-the-objective-is-right" class="nav-link" data-scroll-target="#the-objective-is-right"><span class="header-section-number">14.2.1</span> The objective is right</a></li>
+  <li><a href="#the-search-does-not-find-it" id="toc-the-search-does-not-find-it" class="nav-link" data-scroll-target="#the-search-does-not-find-it"><span class="header-section-number">14.2.2</span> The search does not find it</a></li>
+  <li><a href="#what-the-machinery-does-do" id="toc-what-the-machinery-does-do" class="nav-link" data-scroll-target="#what-the-machinery-does-do"><span class="header-section-number">14.2.3</span> What the machinery does do</a></li>
+  <li><a href="#auditing-concentration" id="toc-auditing-concentration" class="nav-link" data-scroll-target="#auditing-concentration"><span class="header-section-number">14.2.4</span> Auditing concentration</a></li>
+  </ul>
+</li>
+  <li>
+<a href="#sec-14-risk-based-allocation-application" id="toc-sec-14-risk-based-allocation-application" class="nav-link" data-scroll-target="#sec-14-risk-based-allocation-application"><span class="header-section-number">14.3</span> What Risk Parity Buys and Costs</a>
+  <ul class="collapse">
+<li><a href="#the-trade-in-its-own-units" id="toc-the-trade-in-its-own-units" class="nav-link" data-scroll-target="#the-trade-in-its-own-units"><span class="header-section-number">14.3.1</span> The trade, in its own units</a></li>
+  <li><a href="#the-covariance-is-a-regime-variable" id="toc-the-covariance-is-a-regime-variable" class="nav-link" data-scroll-target="#the-covariance-is-a-regime-variable"><span class="header-section-number">14.3.2</span> The covariance is a regime variable</a></li>
+  <li><a href="#budgets-that-are-not-equal" id="toc-budgets-that-are-not-equal" class="nav-link" data-scroll-target="#budgets-that-are-not-equal"><span class="header-section-number">14.3.3</span> Budgets that are not equal</a></li>
+  <li><a href="#hierarchical-risk-parity" id="toc-hierarchical-risk-parity" class="nav-link" data-scroll-target="#hierarchical-risk-parity"><span class="header-section-number">14.3.4</span> Hierarchical risk parity</a></li>
+  </ul>
+</li>
+  <li><a href="#key-takeaways" id="toc-key-takeaways" class="nav-link" data-scroll-target="#key-takeaways">Key Takeaways</a></li>
+  <li><a href="#exercises" id="toc-exercises" class="nav-link" data-scroll-target="#exercises">Exercises</a></li>
+  </ul><div class="toc-actions"><ul><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/edit/main/chapters/14-risk-based-allocation.qmd" class="toc-action"><i class="bi bi-github"></i>Edit this page</a></li><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/09-mean-variance.html">Portfolio Optimization</a></li><li class="breadcrumb-item"><a href="../chapters/14-risk-based-allocation.html"><span class="chapter-number">14</span>&nbsp; <span class="chapter-title">Risk-Based Allocation</span></a></li></ol></nav><div class="quarto-title">
+<h1 class="title">
+<span class="chapter-number">14</span>&nbsp; <span class="chapter-title">Risk-Based Allocation</span>
+</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header><p>Every portfolio so far has been described by how much money sits in each position. That is not the same as how much risk sits in each position, and on this universe the two are far apart: the minimum-variance portfolio of <a href="09-mean-variance.html#sec-09-mean-variance-theory" class="quarto-xref"><span>Section 9.1</span></a> puts most of its capital in one series and, as this chapter measures, nearly all of its risk there too.</p>
+<p>Allocating risk rather than capital is an old idea with a clean definition <span class="citation" data-cites="qian2006 maillard2010">(<a href="99-references.html#ref-qian2006" role="doc-biblioref">Qian 2006</a>; <a href="99-references.html#ref-maillard2010" role="doc-biblioref">Maillard et al. 2010</a>)</span>, a cheap approximation, and an implementation in <code>PortfolioAnalytics</code> that does not work. We set out the decomposition that makes the idea precise, compute the exact answer two ways, and then measure what the package’s own risk-budget objective does with a problem whose optimum it scores correctly and cannot find.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">R</span>  <span class="op">&lt;-</span> <span class="fu">as_xts_pm</span><span class="op">(</span><span class="va">sim_class_returns_monthly</span>, <span class="va">date</span>, <span class="va">class</span>, <span class="va">return</span><span class="op">)</span></span>
+<span><span class="va">Re</span> <span class="op">&lt;-</span> <span class="va">R</span> <span class="op">-</span> <span class="va">sim_riskfree_monthly</span><span class="op">$</span><span class="va">return</span></span>
+<span><span class="va">S</span>  <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cov</a></span><span class="op">(</span><span class="va">Re</span><span class="op">)</span></span>
+<span><span class="va">N</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">ncol</a></span><span class="op">(</span><span class="va">Re</span><span class="op">)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<section id="sec-14-risk-based-allocation-theory" class="level2" data-number="14.1"><h2 data-number="14.1" class="anchored" data-anchor-id="sec-14-risk-based-allocation-theory">
+<span class="header-section-number">14.1</span> Allocating Risk Rather Than Capital</h2>
+<section id="the-decomposition-that-makes-this-precise" class="level3" data-number="14.1.1"><h3 data-number="14.1.1" class="anchored" data-anchor-id="the-decomposition-that-makes-this-precise">
+<span class="header-section-number">14.1.1</span> The decomposition that makes this precise</h3>
+<p>Portfolio volatility <span class="math inline">\(\sigma(\boldsymbol{w}) = \sqrt{\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}}\)</span> is homogeneous of degree one in the weights, so by Euler’s theorem it decomposes exactly into additive contributions,</p>
+<p><span id="eq-14-euler"><span class="math display">\[
+\sigma(\boldsymbol{w}) = \sum_{i=1}^{N} \mathrm{RC}_i,
+\qquad
+\mathrm{RC}_i = w_i \frac{\partial \sigma}{\partial w_i}
+= \frac{w_i\,(\boldsymbol{\Sigma}\boldsymbol{w})_i}{\sigma(\boldsymbol{w})} .
+\tag{14.1}\]</span></span></p>
+<p>That exactness is what makes risk budgeting possible at all, and it is the point <span class="citation" data-cites="qian2006">Qian (<a href="99-references.html#ref-qian2006" role="doc-biblioref">2006</a>)</span> makes when he says risk budgets do add up: the shares in 1 are not an approximation or an attribution convention, they sum to the total by construction. Dividing through by <span class="math inline">\(\sigma\)</span> gives shares summing to one, which is what the code below computes.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">risk_contribution</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">w</span>, <span class="va">S</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">marginal</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html">as.numeric</a></span><span class="op">(</span><span class="va">S</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html">%*%</a></span> <span class="va">w</span><span class="op">)</span></span>
+<span>  <span class="op">(</span><span class="va">w</span> <span class="op">*</span> <span class="va">marginal</span><span class="op">)</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/t.html">t</a></span><span class="op">(</span><span class="va">w</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html">%*%</a></span> <span class="va">S</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html">%*%</a></span> <span class="va">w</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">w_eq</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/setNames.html">setNames</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/rep.html">rep</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">/</span> <span class="va">N</span>, <span class="va">N</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">Re</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sort.html">sort</a></span><span class="op">(</span><span class="fu">risk_contribution</span><span class="op">(</span><span class="va">w_eq</span>, <span class="va">S</span><span class="op">)</span>, decreasing <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">5</span><span class="op">]</span>, <span class="fl">4</span><span class="op">)</span></span>
+<span><span class="co">#&gt; EU_equity CH_equity UK_equity UK_credit EU_credit </span></span>
+<span><span class="co">#&gt;    0.1170    0.0973    0.0942    0.0811    0.0787</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Sixteen equally weighted series, and the largest contributes 11.7% of the risk against 6.2% of the capital. Equal capital is not equal risk, and the gap is the entire motivation for what follows.</p>
+</section><section id="equal-risk-contribution" class="level3" data-number="14.1.2"><h3 data-number="14.1.2" class="anchored" data-anchor-id="equal-risk-contribution">
+<span class="header-section-number">14.1.2</span> Equal risk contribution</h3>
+<p>The equal risk contribution portfolio sets every term of 1 equal,</p>
+<p><span id="eq-14-erc"><span class="math display">\[
+\mathrm{RC}_i = \frac{\sigma(\boldsymbol{w})}{N}
+\quad \text{for every } i,
+\qquad \text{equivalently} \qquad
+w_i (\boldsymbol{\Sigma}\boldsymbol{w})_i = w_j (\boldsymbol{\Sigma}\boldsymbol{w})_j
+\;\; \forall\, i, j .
+\tag{14.2}\]</span></span></p>
+<p><span class="citation" data-cites="maillard2010">Maillard et al. (<a href="99-references.html#ref-maillard2010" role="doc-biblioref">2010</a>)</span> give its properties: it always exists and is unique for a long-only portfolio, and its volatility sits between the minimum-variance portfolio’s and the equally weighted portfolio’s, in that order. It has no closed form except in special cases, but it is emphatically not a hard problem. <span class="citation" data-cites="spinu2013">Spinu (<a href="99-references.html#ref-spinu2013" role="doc-biblioref">2013</a>)</span> shows that <a href="#eq-14-erc" class="quarto-xref">Equation&nbsp;<span>14.2</span></a> is the first-order condition of the convex program</p>
+<p><span id="eq-14-spinu"><span class="math display">\[
+\min_{\boldsymbol{w} &gt; 0} \;
+  \tfrac{1}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}
+  - \frac{1}{N}\sum_{i=1}^{N}\ln w_i ,
+\tag{14.3}\]</span></span></p>
+<p>whose log barrier keeps every weight strictly positive and which any convex solver handles; <span class="citation" data-cites="bai2016">Bai et al. (<a href="99-references.html#ref-bai2016" role="doc-biblioref">2016</a>)</span> give a least-squares formulation with the same property. Keep <a href="#eq-14-spinu" class="quarto-xref">Equation&nbsp;<span>14.3</span></a> in mind for <a href="#sec-14-risk-based-allocation-application" class="quarto-xref"><span>Section 14.3</span></a>, because the package solves this problem with a metaheuristic, and the problem is convex.</p>
+<p>A simple fixed-point iteration converges in milliseconds.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">erc</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">S</span>, <span class="va">tol</span> <span class="op">=</span> <span class="fl">1e-12</span>, <span class="va">max_iter</span> <span class="op">=</span> <span class="fl">1e5</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">N</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">ncol</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span></span>
+<span>  <span class="va">w</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html">rep</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">/</span> <span class="va">N</span>, <span class="va">N</span><span class="op">)</span></span>
+<span>  <span class="kw">for</span> <span class="op">(</span><span class="va">i</span> <span class="kw">in</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html">seq_len</a></span><span class="op">(</span><span class="va">max_iter</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="va">marginal</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html">as.numeric</a></span><span class="op">(</span><span class="va">S</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html">%*%</a></span> <span class="va">w</span><span class="op">)</span></span>
+<span>    <span class="va">w_new</span> <span class="op">&lt;-</span> <span class="op">(</span><span class="fl">1</span> <span class="op">/</span> <span class="va">marginal</span><span class="op">)</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">/</span> <span class="va">marginal</span><span class="op">)</span>   <span class="co"># down-weight what contributes most</span></span>
+<span>    <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">abs</a></span><span class="op">(</span><span class="va">w_new</span> <span class="op">-</span> <span class="va">w</span><span class="op">)</span><span class="op">)</span> <span class="op">&lt;</span> <span class="va">tol</span><span class="op">)</span> <span class="kw">break</span></span>
+<span>    <span class="va">w</span> <span class="op">&lt;-</span> <span class="va">w_new</span></span>
+<span>  <span class="op">}</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/stats/setNames.html">setNames</a></span><span class="op">(</span><span class="va">w</span>, <span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">w_erc</span> <span class="op">&lt;-</span> <span class="fu">erc</span><span class="op">(</span><span class="va">S</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>max_deviation_from_equal <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">abs</a></span><span class="op">(</span><span class="fu">risk_contribution</span><span class="op">(</span><span class="va">w_erc</span>, <span class="va">S</span><span class="op">)</span> <span class="op">-</span> <span class="fl">1</span> <span class="op">/</span> <span class="va">N</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; max_deviation_from_equal </span></span>
+<span><span class="co">#&gt;       0.0000000000003543</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Six lines, and the risk contributions are equal to machine precision. That number is worth remembering when <a href="#sec-14-risk-based-allocation-application" class="quarto-xref"><span>Section 14.3</span></a> spends twenty thousand function evaluations getting nowhere near it.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Round.html">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sort.html">sort</a></span><span class="op">(</span><span class="va">w_erc</span>, decreasing <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">6</span><span class="op">]</span>, <span class="fl">4</span><span class="op">)</span></span>
+<span><span class="co">#&gt;    US_government        US_credit    JP_government GLOBAL_commodity </span></span>
+<span><span class="co">#&gt;           0.2210           0.0839           0.0757           0.0607 </span></span>
+<span><span class="co">#&gt;    UK_government    EU_government </span></span>
+<span><span class="co">#&gt;           0.0606           0.0550</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>US_government</code> still receives the largest allocation, at 22.1%, because it is the least volatile series and equalizing risk means overweighting low-volatility assets. That is a long way from the 82% that minimum variance gives it.</p>
+</section><section id="the-approximation-that-is-nearly-free" class="level3" data-number="14.1.3"><h3 data-number="14.1.3" class="anchored" data-anchor-id="the-approximation-that-is-nearly-free">
+<span class="header-section-number">14.1.3</span> The approximation that is nearly free</h3>
+<p><span class="citation" data-cites="maillard2010">Maillard et al. (<a href="99-references.html#ref-maillard2010" role="doc-biblioref">2010</a>)</span> note a special case worth exploiting. If every pairwise correlation equals a common <span class="math inline">\(\rho\)</span>, then <a href="#eq-14-erc" class="quarto-xref">Equation&nbsp;<span>14.2</span></a> is solved exactly by</p>
+<p><span id="eq-14-inverse-vol"><span class="math display">\[
+w_i = \frac{\sigma_i^{-1}}{\sum_{j=1}^{N}\sigma_j^{-1}},
+\tag{14.4}\]</span></span></p>
+<p>inverse-volatility weighting, which needs no matrix inverse and no iteration. Correlations here are not equal, but they are not wild either, so <a href="#eq-14-inverse-vol" class="quarto-xref">Equation&nbsp;<span>14.4</span></a> should land close.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">base</span> <span class="op">&lt;-</span> <span class="fu">portfolio.spec</span><span class="op">(</span>assets <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">Re</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">add.constraint</span><span class="op">(</span>type <span class="op">=</span> <span class="st">"full_investment"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">add.constraint</span><span class="op">(</span>type <span class="op">=</span> <span class="st">"long_only"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Exported, and rarely used. Note that it wants the portfolio object as well as</span></span>
+<span><span class="co"># the returns, and returns a full optimize.portfolio object rather than a vector.</span></span>
+<span><span class="va">w_iv</span> <span class="op">&lt;-</span> <span class="fu">inverse.volatility.weight</span><span class="op">(</span><span class="va">Re</span>, <span class="va">base</span><span class="op">)</span><span class="op">$</span><span class="va">weights</span></span>
+<span><span class="va">w_iv</span> <span class="op">&lt;-</span> <span class="va">w_iv</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">Re</span><span class="op">)</span><span class="op">]</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>l1_distance_from_erc <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">abs</a></span><span class="op">(</span><span class="va">w_iv</span> <span class="op">-</span> <span class="va">w_erc</span><span class="op">)</span><span class="op">)</span> <span class="op">/</span> <span class="fl">2</span>,</span>
+<span>  weight_correlation   <span class="op">=</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cor</a></span><span class="op">(</span><span class="va">w_iv</span>, <span class="va">w_erc</span><span class="op">)</span>,</span>
+<span>  max_rc_deviation     <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">abs</a></span><span class="op">(</span><span class="fu">risk_contribution</span><span class="op">(</span><span class="va">w_iv</span>, <span class="va">S</span><span class="op">)</span> <span class="op">-</span> <span class="fl">1</span> <span class="op">/</span> <span class="va">N</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; l1_distance_from_erc   weight_correlation     max_rc_deviation </span></span>
+<span><span class="co">#&gt;              0.11482              0.90957              0.02699</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>inverse.volatility.weight()</code> is exported by <code>PortfolioAnalytics</code> and is rarely used. It lands within 0.11 of the exact answer in <span class="math inline">\(L_1\)</span> terms, with a weight correlation of 0.91, for the cost of one division per asset. The approximation of <a href="#eq-14-inverse-vol" class="quarto-xref">Equation&nbsp;<span>14.4</span></a> is doing almost all the work that <a href="#eq-14-erc" class="quarto-xref">Equation&nbsp;<span>14.2</span></a> does.</p>
+</section></section><section id="sec-14-risk-based-allocation-implementation" class="level2" data-number="14.2"><h2 data-number="14.2" class="anchored" data-anchor-id="sec-14-risk-based-allocation-implementation">
+<span class="header-section-number">14.2</span> Implementation</h2>
+<p>The package has a purpose-built objective for this. It accepts the problem, scores it correctly, and cannot solve it.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">rb_spec</span> <span class="op">&lt;-</span> <span class="va">base</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">add.objective</span><span class="op">(</span>type <span class="op">=</span> <span class="st">"risk_budget"</span>, name <span class="op">=</span> <span class="st">"StdDev"</span>, min_concentration <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<section id="the-objective-is-right" class="level3" data-number="14.2.1"><h3 data-number="14.2.1" class="anchored" data-anchor-id="the-objective-is-right">
+<span class="header-section-number">14.2.1</span> The objective is right</h3>
+<p>Before blaming a solver it is worth checking what it was asked to minimize. <code>PortfolioAnalytics</code> exposes its own objective function, so we can score two portfolios directly.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">score</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">w</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu">constrained_objective</span><span class="op">(</span>w <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html">as.numeric</a></span><span class="op">(</span><span class="va">w</span><span class="op">)</span>, R <span class="op">=</span> <span class="va">Re</span>, portfolio <span class="op">=</span> <span class="va">rb_spec</span>,</span>
+<span>                        trace <span class="op">=</span> <span class="cn">TRUE</span>, normalize <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span><span class="op">$</span><span class="va">out</span></span>
+<span><span class="op">}</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>equal_weight <span class="op">=</span> <span class="fu">score</span><span class="op">(</span><span class="va">w_eq</span><span class="op">)</span>, true_erc <span class="op">=</span> <span class="fu">score</span><span class="op">(</span><span class="va">w_erc</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;         equal_weight             true_erc </span></span>
+<span><span class="co">#&gt; 1.150416619246363847 0.000000000000002168</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>1.150 at equal weights and exactly 0.0 at the solution of <a href="#eq-14-erc" class="quarto-xref">Equation&nbsp;<span>14.2</span></a>. The objective is not misspecified. It knows precisely which portfolio it wants.</p>
+</section><section id="the-search-does-not-find-it" class="level3" data-number="14.2.2"><h3 data-number="14.2.2" class="anchored" data-anchor-id="the-search-does-not-find-it">
+<span class="header-section-number">14.2.2</span> The search does not find it</h3>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html">set.seed</a></span><span class="op">(</span><span class="fl">1602</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">attempt</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">method</span>, <span class="va">...</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">o</span> <span class="op">&lt;-</span> <span class="kw"><a href="https://rdrr.io/r/base/try.html">try</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/warning.html">suppressWarnings</a></span><span class="op">(</span></span>
+<span>    <span class="fu">optimize.portfolio</span><span class="op">(</span><span class="va">Re</span>, <span class="va">rb_spec</span>, optimize_method <span class="op">=</span> <span class="va">method</span>,</span>
+<span>                       trace <span class="op">=</span> <span class="cn">FALSE</span>, <span class="va">...</span><span class="op">)</span><span class="op">)</span>, silent <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span>  <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/class.html">inherits</a></span><span class="op">(</span><span class="va">o</span>, <span class="st">"try-error"</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="kw"><a href="https://rdrr.io/r/base/function.html">return</a></span><span class="op">(</span><span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/tibble.html">tibble</a></span><span class="op">(</span>solver <span class="op">=</span> <span class="va">method</span>, l1_from_erc <span class="op">=</span> <span class="cn">NA_real_</span>,</span>
+<span>                          max_rc_dev <span class="op">=</span> <span class="cn">NA_real_</span>, is_equal_weight <span class="op">=</span> <span class="cn">NA</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="op">}</span></span>
+<span>  <span class="va">w</span> <span class="op">&lt;-</span> <span class="fu">extractWeights</span><span class="op">(</span><span class="va">o</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">Re</span><span class="op">)</span><span class="op">]</span></span>
+<span>  <span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/tibble.html">tibble</a></span><span class="op">(</span>solver <span class="op">=</span> <span class="va">method</span>,</span>
+<span>                 l1_from_erc <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">abs</a></span><span class="op">(</span><span class="va">w</span> <span class="op">-</span> <span class="va">w_erc</span><span class="op">)</span><span class="op">)</span> <span class="op">/</span> <span class="fl">2</span>,</span>
+<span>                 max_rc_dev  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">abs</a></span><span class="op">(</span><span class="fu">risk_contribution</span><span class="op">(</span><span class="va">w</span>, <span class="va">S</span><span class="op">)</span> <span class="op">-</span> <span class="fl">1</span> <span class="op">/</span> <span class="va">N</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>                 is_equal_weight <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Logic.html">isTRUE</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/all.equal.html">all.equal</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/numeric.html">as.numeric</a></span><span class="op">(</span><span class="va">w</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html">rep</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">/</span> <span class="va">N</span>, <span class="va">N</span><span class="op">)</span>,</span>
+<span>                                                    tolerance <span class="op">=</span> <span class="fl">1e-6</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">searches</span> <span class="op">&lt;-</span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/bind_rows.html">bind_rows</a></span><span class="op">(</span></span>
+<span>  <span class="fu">attempt</span><span class="op">(</span><span class="st">"DEoptim"</span>, search_size <span class="op">=</span> <span class="fl">20000</span>,  traceDE <span class="op">=</span> <span class="fl">0</span><span class="op">)</span>,</span>
+<span>  <span class="fu">attempt</span><span class="op">(</span><span class="st">"DEoptim"</span>, search_size <span class="op">=</span> <span class="fl">200000</span>, traceDE <span class="op">=</span> <span class="fl">0</span><span class="op">)</span>,</span>
+<span>  <span class="fu">attempt</span><span class="op">(</span><span class="st">"random"</span>,  search_size <span class="op">=</span> <span class="fl">20000</span><span class="op">)</span>,</span>
+<span>  <span class="fu">attempt</span><span class="op">(</span><span class="st">"pso"</span><span class="op">)</span>,</span>
+<span>  <span class="fu">attempt</span><span class="op">(</span><span class="st">"GenSA"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span><span class="co">#&gt;  [1] 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625</span></span>
+<span><span class="co">#&gt; [11] 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625</span></span>
+<span><span class="co">#&gt;  [1] 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625</span></span>
+<span><span class="co">#&gt; [11] 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell" data-layout-align="center">
+<div id="tbl-14-searches" class="cell quarto-float quarto-figure quarto-figure-center anchored" data-layout-align="center">
+<figure class="quarto-float quarto-float-tbl figure"><figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-14-searches-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;14.1: Five attempts at a problem whose answer scores zero. <code>is_equal_weight</code> asks whether the solver returned the portfolio it started from.
+</figcaption><div aria-describedby="tbl-14-searches-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="cell caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 16%">
+<col style="width: 14%">
+<col style="width: 42%">
+<col style="width: 27%">
+</colgroup>
+<thead><tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: right;">L1 from ERC</th>
+<th style="text-align: right;">max deviation of risk contributions</th>
+<th style="text-align: left;">returned equal weights</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">DEoptim, 20k</td>
+<td style="text-align: right;">0.1931</td>
+<td style="text-align: right;">0.0552</td>
+<td style="text-align: left;">TRUE</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">DEoptim, 200k</td>
+<td style="text-align: right;">0.1931</td>
+<td style="text-align: right;">0.0552</td>
+<td style="text-align: left;">TRUE</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">random, 20k</td>
+<td style="text-align: right;">0.1931</td>
+<td style="text-align: right;">0.0552</td>
+<td style="text-align: left;">TRUE</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">pso</td>
+<td style="text-align: right;">0.2437</td>
+<td style="text-align: right;">0.0992</td>
+<td style="text-align: left;">FALSE</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">GenSA</td>
+<td style="text-align: right;">0.1931</td>
+<td style="text-align: right;">0.0552</td>
+<td style="text-align: left;">TRUE</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+<p>Of the five, 4 return the equal-weighted portfolio exactly, which is the point every one of them starts from. Ten times the evaluation budget changes nothing. <code>pso</code> does move, and moves further from the answer than standing still would have been.</p>
+<p>Set beside the objective values, that is the finding: the search sits at a score of 1.15 for two hundred thousand evaluations while a portfolio scoring 0.0 exists and is reachable by six lines of arithmetic.</p>
+<div class="cell" data-layout-align="center">
+<div id="tbl-14-comparison" class="cell quarto-float quarto-figure quarto-figure-center anchored" data-layout-align="center">
+<figure class="quarto-float quarto-float-tbl figure"><figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-14-comparison-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;14.2: The same objective, three ways of pursuing it.
+</figcaption><div aria-describedby="tbl-14-comparison-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="cell caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 42%">
+<col style="width: 17%">
+<col style="width: 24%">
+<col style="width: 15%">
+</colgroup>
+<thead><tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: right;">L1 from ERC</th>
+<th style="text-align: right;">max RC deviation</th>
+<th style="text-align: right;">volatility</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">fixed point, six lines</td>
+<td style="text-align: right;">0.0000</td>
+<td style="text-align: right;">0.0000</td>
+<td style="text-align: right;">6.43%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">inverse volatility, one line</td>
+<td style="text-align: right;">0.1148</td>
+<td style="text-align: right;">0.0270</td>
+<td style="text-align: right;">6.96%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">DEoptim, 20,000 evaluations</td>
+<td style="text-align: right;">0.1931</td>
+<td style="text-align: right;">0.0552</td>
+<td style="text-align: right;">8.06%</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+<p>The one-line approximation of <a href="#eq-14-inverse-vol" class="quarto-xref">Equation&nbsp;<span>14.4</span></a> is closer to the answer than the twenty-thousand-evaluation search. That is not a statement about risk parity. It is a statement about reaching for a heuristic on a problem that <a href="13-solvers.html#sec-13-solvers-theory" class="quarto-xref"><span>Section 13.1</span></a> would classify as convex, given <a href="#eq-14-spinu" class="quarto-xref">Equation&nbsp;<span>14.3</span></a>, and which a fixed point solves to machine precision.</p>
+</section><section id="what-the-machinery-does-do" class="level3" data-number="14.2.3"><h3 data-number="14.2.3" class="anchored" data-anchor-id="what-the-machinery-does-do">
+<span class="header-section-number">14.2.3</span> What the machinery does do</h3>
+<p>The objective is not useless. Asked for a cap rather than an equalization, it delivers.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html">set.seed</a></span><span class="op">(</span><span class="fl">1602</span><span class="op">)</span></span>
+<span><span class="va">capped</span> <span class="op">&lt;-</span> <span class="fu">optimize.portfolio</span><span class="op">(</span></span>
+<span>  <span class="va">Re</span>, <span class="va">base</span> <span class="op">|&gt;</span> <span class="fu">add.objective</span><span class="op">(</span>type <span class="op">=</span> <span class="st">"risk_budget"</span>, name <span class="op">=</span> <span class="st">"StdDev"</span>, max_prisk <span class="op">=</span> <span class="fl">0.15</span><span class="op">)</span>,</span>
+<span>  optimize_method <span class="op">=</span> <span class="st">"DEoptim"</span>, search_size <span class="op">=</span> <span class="fl">20000</span>, trace <span class="op">=</span> <span class="cn">FALSE</span>, traceDE <span class="op">=</span> <span class="fl">0</span><span class="op">)</span></span>
+<span><span class="co">#&gt;  [1] 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625</span></span>
+<span><span class="co">#&gt; [11] 0.0625 0.0625 0.0625 0.0625 0.0625 0.0625</span></span>
+<span></span>
+<span><span class="va">w_cap</span> <span class="op">&lt;-</span> <span class="fu">extractWeights</span><span class="op">(</span><span class="va">capped</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">Re</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>largest_risk_contribution <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="fu">risk_contribution</span><span class="op">(</span><span class="va">w_cap</span>, <span class="va">S</span><span class="op">)</span><span class="op">)</span>, cap <span class="op">=</span> <span class="fl">0.15</span><span class="op">)</span></span>
+<span><span class="co">#&gt; largest_risk_contribution                       cap </span></span>
+<span><span class="co">#&gt;                     0.117                     0.150</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>A ceiling on any single risk contribution is a constraint a search can satisfy by rejection: it has only to recognize a violation, not to locate an optimum. The practical rule is to use the risk-budget objective for budgets and bounds, and to compute equal risk contribution directly.</p>
+</section><section id="auditing-concentration" class="level3" data-number="14.2.4"><h3 data-number="14.2.4" class="anchored" data-anchor-id="auditing-concentration">
+<span class="header-section-number">14.2.4</span> Auditing concentration</h3>
+<p><code>HHI()</code> and <code>diversification()</code> are exported and take a weight vector, so any portfolio in this book can be audited for concentration in one line, including one returned by a solver that ignored its constraint (<a href="13-solvers.html#sec-13-solvers-implementation" class="quarto-xref"><span>Section 13.2</span></a>).</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">effective_bets</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">w</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">r</span> <span class="op">&lt;-</span> <span class="fu">risk_contribution</span><span class="op">(</span><span class="va">w</span>, <span class="va">S</span><span class="op">)</span>; <span class="va">r</span> <span class="op">&lt;-</span> <span class="va">r</span><span class="op">[</span><span class="va">r</span> <span class="op">&gt;</span> <span class="fl">0</span><span class="op">]</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/Log.html">exp</a></span><span class="op">(</span><span class="op">-</span><span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">r</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html">log</a></span><span class="op">(</span><span class="va">r</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>                      <span class="co"># the entropy of the risk shares</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">w_mv</span> <span class="op">&lt;-</span> <span class="fu">extractWeights</span><span class="op">(</span><span class="fu">optimize.portfolio</span><span class="op">(</span><span class="va">Re</span>,</span>
+<span>  <span class="va">base</span> <span class="op">|&gt;</span> <span class="fu">add.objective</span><span class="op">(</span>type <span class="op">=</span> <span class="st">"risk"</span>, name <span class="op">=</span> <span class="st">"var"</span><span class="op">)</span>, optimize_method <span class="op">=</span> <span class="st">"ROI"</span><span class="op">)</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">Re</span><span class="op">)</span><span class="op">]</span></span>
+<span></span>
+<span><span class="va">conc</span> <span class="op">&lt;-</span> <span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/tibble.html">tibble</a></span><span class="op">(</span></span>
+<span>  portfolio <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">"equal weight"</span>, <span class="st">"inverse volatility"</span>, <span class="st">"equal risk contribution"</span>,</span>
+<span>                <span class="st">"minimum variance"</span><span class="op">)</span>,</span>
+<span>  HHI  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="fu">HHI</span><span class="op">(</span><span class="va">w_eq</span><span class="op">)</span>, <span class="fu">HHI</span><span class="op">(</span><span class="va">w_iv</span><span class="op">)</span>, <span class="fu">HHI</span><span class="op">(</span><span class="va">w_erc</span><span class="op">)</span>, <span class="fu">HHI</span><span class="op">(</span><span class="va">w_mv</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  div  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="fu">diversification</span><span class="op">(</span><span class="va">w_eq</span><span class="op">)</span>, <span class="fu">diversification</span><span class="op">(</span><span class="va">w_iv</span><span class="op">)</span>,</span>
+<span>           <span class="fu">diversification</span><span class="op">(</span><span class="va">w_erc</span><span class="op">)</span>, <span class="fu">diversification</span><span class="op">(</span><span class="va">w_mv</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  bets <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="fu">effective_bets</span><span class="op">(</span><span class="va">w_eq</span><span class="op">)</span>, <span class="fu">effective_bets</span><span class="op">(</span><span class="va">w_iv</span><span class="op">)</span>,</span>
+<span>           <span class="fu">effective_bets</span><span class="op">(</span><span class="va">w_erc</span><span class="op">)</span>, <span class="fu">effective_bets</span><span class="op">(</span><span class="va">w_mv</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  vol  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="fu">p_vol</span><span class="op">(</span><span class="va">w_eq</span><span class="op">)</span>, <span class="fu">p_vol</span><span class="op">(</span><span class="va">w_iv</span><span class="op">)</span>, <span class="fu">p_vol</span><span class="op">(</span><span class="va">w_erc</span><span class="op">)</span>, <span class="fu">p_vol</span><span class="op">(</span><span class="va">w_mv</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell" data-layout-align="center">
+<div id="tbl-14-concentration" class="cell quarto-float quarto-figure quarto-figure-center anchored" data-layout-align="center">
+<figure class="quarto-float quarto-float-tbl figure"><figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-14-concentration-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;14.3: Concentration four ways. <code>bets</code> is the effective number of independent risk sources — the exponential of the entropy of the risk shares — against a maximum of sixteen.
+</figcaption><div aria-describedby="tbl-14-concentration-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="cell caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 32%">
+<col style="width: 9%">
+<col style="width: 21%">
+<col style="width: 20%">
+<col style="width: 15%">
+</colgroup>
+<thead><tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: right;">HHI</th>
+<th style="text-align: right;">diversification</th>
+<th style="text-align: right;">effective bets</th>
+<th style="text-align: right;">volatility</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">equal weight</td>
+<td style="text-align: right;">0.0625</td>
+<td style="text-align: right;">0.9375</td>
+<td style="text-align: right;">14.43</td>
+<td style="text-align: right;">8.06%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">inverse volatility</td>
+<td style="text-align: right;">0.0746</td>
+<td style="text-align: right;">0.9254</td>
+<td style="text-align: right;">15.47</td>
+<td style="text-align: right;">6.96%</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">equal risk contribution</td>
+<td style="text-align: right;">0.0922</td>
+<td style="text-align: right;">0.9078</td>
+<td style="text-align: right;">16.00</td>
+<td style="text-align: right;">6.43%</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">minimum variance</td>
+<td style="text-align: right;">0.6815</td>
+<td style="text-align: right;">0.3185</td>
+<td style="text-align: right;">2.10</td>
+<td style="text-align: right;">4.13%</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+</section></section><section id="sec-14-risk-based-allocation-application" class="level2" data-number="14.3"><h2 data-number="14.3" class="anchored" data-anchor-id="sec-14-risk-based-allocation-application">
+<span class="header-section-number">14.3</span> What Risk Parity Buys and Costs</h2>
+<section id="the-trade-in-its-own-units" class="level3" data-number="14.3.1"><h3 data-number="14.3.1" class="anchored" data-anchor-id="the-trade-in-its-own-units">
+<span class="header-section-number">14.3.1</span> The trade, in its own units</h3>
+<p>Read the last two rows of <a href="#tbl-14-concentration" class="quarto-xref">Table&nbsp;<span>14.3</span></a> together. Minimum variance achieves 4.13% volatility with 2.1 effective bets out of sixteen. Equal risk contribution achieves 6.43% with exactly 16.</p>
+<p>That is the trade in its own units: about 55 percent more volatility for 8 times the number of independent bets. Whether it is worth taking depends on how far the covariance matrix behind the minimum-variance answer can be trusted, and <a href="09-mean-variance.html#sec-09-mean-variance-application" class="quarto-xref"><span>Section 9.3</span></a> measured that. Resampling the same history moves the minimum-variance portfolio by about five percent of itself, so its concentration is at least stable.</p>
+<p><span class="citation" data-cites="asness2012">Asness et al. (<a href="99-references.html#ref-asness2012" role="doc-biblioref">2012</a>)</span> give the economic argument for taking the trade anyway: if investors are averse to leverage rather than merely to risk, they overpay for high-beta assets, and a portfolio that equalizes risk contributions and then levers up harvests the difference. <span class="citation" data-cites="clarke2013">Clarke et al. (<a href="99-references.html#ref-clarke2013" role="doc-biblioref">2013</a>)</span> derive the analytic relationships between risk parity, maximum diversification and minimum variance, and show that the three coincide only under conditions this market does not satisfy.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">sweep</span> <span class="op">&lt;-</span> <span class="fu">utils</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/utils/read.table.html">read.csv</a></span><span class="op">(</span><span class="st">"output/tables/oos-sweep.csv"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html">filter</a></span><span class="op">(</span><span class="va">universe</span> <span class="op">==</span> <span class="st">"classes"</span>, <span class="va">window</span> <span class="op">==</span> <span class="fl">60</span>,</span>
+<span>                <span class="va">frequency</span> <span class="op">==</span> <span class="st">"months"</span>, <span class="va">basis</span> <span class="op">==</span> <span class="st">"gross"</span><span class="op">)</span></span>
+<span><span class="va">sr_oos</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">s</span><span class="op">)</span> <span class="va">sweep</span><span class="op">$</span><span class="va">sharpe</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/match.html">match</a></span><span class="op">(</span><span class="va">s</span>, <span class="va">sweep</span><span class="op">$</span><span class="va">strategy</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="va">to_oos</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">s</span><span class="op">)</span> <span class="va">sweep</span><span class="op">$</span><span class="va">ann_turnover</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/match.html">match</a></span><span class="op">(</span><span class="va">s</span>, <span class="va">sweep</span><span class="op">$</span><span class="va">strategy</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html">stopifnot</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/all.html">all</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">"inverse_vol"</span>, <span class="st">"min_variance"</span>, <span class="st">"equal_weight"</span>, <span class="st">"max_sharpe"</span><span class="op">)</span></span>
+<span>              <span class="op"><a href="https://rdrr.io/r/base/match.html">%in%</a></span> <span class="va">sweep</span><span class="op">$</span><span class="va">strategy</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co"># The order the text states, read from the register rather than typed.</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html">stopifnot</a></span><span class="op">(</span><span class="fu">sr_oos</span><span class="op">(</span><span class="st">"min_variance"</span><span class="op">)</span> <span class="op">&gt;</span> <span class="fu">sr_oos</span><span class="op">(</span><span class="st">"equal_weight"</span><span class="op">)</span>,</span>
+<span>          <span class="fu">sr_oos</span><span class="op">(</span><span class="st">"equal_weight"</span><span class="op">)</span> <span class="op">&gt;</span> <span class="fu">sr_oos</span><span class="op">(</span><span class="st">"inverse_vol"</span><span class="op">)</span>,</span>
+<span>          <span class="fu">sr_oos</span><span class="op">(</span><span class="st">"inverse_vol"</span><span class="op">)</span>  <span class="op">&gt;</span> <span class="fu">sr_oos</span><span class="op">(</span><span class="st">"max_sharpe"</span><span class="op">)</span>,</span>
+<span>          <span class="fu">to_oos</span><span class="op">(</span><span class="st">"inverse_vol"</span><span class="op">)</span>  <span class="op">&lt;</span> <span class="fu">to_oos</span><span class="op">(</span><span class="st">"max_sharpe"</span><span class="op">)</span> <span class="op">/</span> <span class="fl">4</span><span class="op">)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Out of sample, inverse volatility earns a Sharpe ratio of 0.573 against minimum variance’s 0.829, equal weighting’s 0.626 and the tangency portfolio’s 0.546 (<a href="25-backtesting.html#sec-25-backtesting-application" class="quarto-xref"><span>Section 25.3</span></a>), at 20% of the turnover of the mean-variance optimizer, which <a href="23-rebalancing.html#sec-23-rebalancing-application" class="quarto-xref"><span>Section 23.3</span></a> converts into the Sharpe ratio each strategy surrenders to its own trading. The risk-based portfolios are not uniformly better: minimum variance leads all four, and inverse volatility sits between equal weighting and the tangency portfolio before costs. They are competitive, cheaper, and easier to explain to whoever has to sign for them.</p>
+</section><section id="the-covariance-is-a-regime-variable" class="level3" data-number="14.3.2"><h3 data-number="14.3.2" class="anchored" data-anchor-id="the-covariance-is-a-regime-variable">
+<span class="header-section-number">14.3.2</span> The covariance is a regime variable</h3>
+<p>One thing risk parity cannot escape, and it is the same thing that undermines everything else in this book. The number of effective bets is not a property of the portfolio. It is a property of <span class="math inline">\(\boldsymbol{\Sigma}\)</span>, and <span class="math inline">\(\boldsymbol{\Sigma}\)</span> moves.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">d</span>      <span class="op">&lt;-</span> <span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/index.html">index</a></span><span class="op">(</span><span class="va">Re</span><span class="op">)</span></span>
+<span><span class="va">in_ep</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html">vapply</a></span><span class="op">(</span><span class="va">sim_episodes</span><span class="op">$</span><span class="va">episode</span>, <span class="kw">function</span><span class="op">(</span><span class="va">e</span><span class="op">)</span> <span class="fu">in_episode</span><span class="op">(</span><span class="va">d</span>, <span class="va">e</span><span class="op">)</span>,</span>
+<span>                 <span class="fu"><a href="https://rdrr.io/r/base/logical.html">logical</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html">length</a></span><span class="op">(</span><span class="va">d</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">calm</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html">rowSums</a></span><span class="op">(</span><span class="va">in_ep</span><span class="op">)</span> <span class="op">==</span> <span class="fl">0</span>               <span class="co"># outside all four episodes</span></span>
+<span><span class="va">crisis</span> <span class="op">&lt;-</span> <span class="va">in_ep</span><span class="op">[</span>, <span class="st">"credit_crisis"</span><span class="op">]</span></span>
+<span></span>
+<span><span class="va">spectrum</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">keep</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">e</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">pmax</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/eigen.html">eigen</a></span><span class="op">(</span><span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cov</a></span><span class="op">(</span><span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/coredata.html">coredata</a></span><span class="op">(</span><span class="va">Re</span><span class="op">[</span><span class="va">keep</span>, <span class="op">]</span><span class="op">)</span><span class="op">)</span>, symmetric <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>                  only.values <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">$</span><span class="va">values</span>, <span class="fl">0</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>months <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">keep</span><span class="op">)</span>, pc1_share <span class="op">=</span> <span class="va">e</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">e</span><span class="op">)</span>, directions <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">e</span><span class="op">)</span><span class="op">^</span><span class="fl">2</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">e</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span><span class="va">regime</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html">rbind</a></span><span class="op">(</span>calm <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/spectrum.html">spectrum</a></span><span class="op">(</span><span class="va">calm</span><span class="op">)</span>, crisis <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/spectrum.html">spectrum</a></span><span class="op">(</span><span class="va">crisis</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/stopifnot.html">stopifnot</a></span><span class="op">(</span><span class="va">regime</span><span class="op">[</span><span class="st">"crisis"</span>, <span class="st">"pc1_share"</span><span class="op">]</span> <span class="op">&gt;</span> <span class="va">regime</span><span class="op">[</span><span class="st">"calm"</span>, <span class="st">"pc1_share"</span><span class="op">]</span>,</span>
+<span>          <span class="va">regime</span><span class="op">[</span><span class="st">"crisis"</span>, <span class="st">"directions"</span><span class="op">]</span> <span class="op">&lt;</span> <span class="va">regime</span><span class="op">[</span><span class="st">"calm"</span>, <span class="st">"directions"</span><span class="op">]</span> <span class="op">/</span> <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html">round</a></span><span class="op">(</span><span class="va">regime</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt;        months pc1_share directions</span></span>
+<span><span class="co">#&gt; calm      320     0.369      4.800</span></span>
+<span><span class="co">#&gt; crisis      7     0.760      1.664</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><a href="07-covariance-matrix.html#sec-07-covariance-matrix-application" class="quarto-xref"><span>Section 7.3</span></a> measured it on these sixteen series, and the measurement repeats here: outside the four episodes of <code>sim_episodes</code> the first principal component carries 37% of the variance and the matrix behaves like 4.8 independent directions; through the credit crisis it carries 76% and the count falls to 1.7, a figure that the short window exaggerates and that calm windows of the same length still do not reach. A portfolio constructed to hold sixteen equal risk contributions in calm months holds about 2 independent bets when it matters.</p>
+<p>Risk parity does not solve that. It measures risk more honestly than capital weighting does, and then allocates against an estimate that halves precisely when the allocation is tested. <span class="citation" data-cites="roncalli2013">Roncalli (<a href="99-references.html#ref-roncalli2013" role="doc-biblioref">2013</a>)</span> treats the estimation problem at length, and <a href="19-regimes.html#sec-19-regimes-theory" class="quarto-xref"><span>Section 19.1</span></a> is where this book confronts it rather than noting it.</p>
+</section><section id="budgets-that-are-not-equal" class="level3" data-number="14.3.3"><h3 data-number="14.3.3" class="anchored" data-anchor-id="budgets-that-are-not-equal">
+<span class="header-section-number">14.3.3</span> Budgets that are not equal</h3>
+<p>Equal risk contribution is the special case of a more general idea. A risk budget assigns each asset a share <span class="math inline">\(b_i\)</span> with <span class="math inline">\(\sum_i b_i = 1\)</span> and asks for weights satisfying</p>
+<p><span id="eq-14-budget"><span class="math display">\[
+\mathrm{RC}_i = b_i \,\sigma(\boldsymbol{w})
+\quad \text{for every } i ,
+\tag{14.5}\]</span></span></p>
+<p>which reduces to <a href="#eq-14-erc" class="quarto-xref">Equation&nbsp;<span>14.2</span></a> when <span class="math inline">\(b_i = 1/N\)</span>. <span class="citation" data-cites="roncalli2013">Roncalli (<a href="99-references.html#ref-roncalli2013" role="doc-biblioref">2013</a>)</span> develops the general case, and the convex program of <a href="#eq-14-spinu" class="quarto-xref">Equation&nbsp;<span>14.3</span></a> generalizes directly by replacing the uniform coefficient on the log barrier with <span class="math inline">\(b_i\)</span>. The fixed point in this chapter generalizes just as easily, dividing the marginal contributions by the budget before renormalizing.</p>
+<p>The interest of <a href="#eq-14-budget" class="quarto-xref">Equation&nbsp;<span>14.5</span></a> is that it is the natural language of a mandate. A policy statement rarely says hold twenty percent in credit; it says credit may consume no more than a quarter of the risk. Those are different instructions and only the second survives a change in volatility. This is also the form in which the package’s own objective is usable, as the <code>max_prisk</code> result above showed: bounds on <a href="#eq-14-budget" class="quarto-xref">Equation&nbsp;<span>14.5</span></a> are checkable by rejection, and a search can satisfy them.</p>
+</section><section id="hierarchical-risk-parity" class="level3" data-number="14.3.4"><h3 data-number="14.3.4" class="anchored" data-anchor-id="hierarchical-risk-parity">
+<span class="header-section-number">14.3.4</span> Hierarchical risk parity</h3>
+<p>The methods in this chapter all require <span class="math inline">\(\boldsymbol{\Sigma}\)</span> and most require its inverse, which <a href="07-covariance-matrix.html#sec-07-covariance-matrix-theory" class="quarto-xref"><span>Section 7.1</span></a> showed is where the estimate is weakest. <span class="citation" data-cites="lopezdeprado2016">López de Prado (<a href="99-references.html#ref-lopezdeprado2016" role="doc-biblioref">2016</a>)</span> proposes an alternative that avoids inversion entirely. Hierarchical risk parity clusters the assets on a distance derived from their correlations, orders them so that similar assets are adjacent, and then allocates by recursive bisection: split the ordered set in two, allocate between the halves in inverse proportion to their variances, and recurse.</p>
+<p>Nothing in that procedure inverts a matrix, so it is defined even when <span class="math inline">\(\boldsymbol{\Sigma}\)</span> is singular, which by <a href="07-covariance-matrix.html#eq-07-rank" class="quarto-xref">Equation&nbsp;<span>7.2</span></a> is the normal case at instrument level. The claim is that the resulting portfolios are more stable out of sample than either minimum variance or equal risk contribution, because the quantity being estimated, a clustering, is far coarser than a full inverse.</p>
+<p>The method belongs with the sleeve structure of <a href="15-hierarchical-allocation.html#sec-15-hierarchical-allocation-theory" class="quarto-xref"><span>Section 15.1</span></a> rather than here, because what it is really doing is imposing a hierarchy on the universe and allocating down it. It is mentioned here because it is the obvious next question once risk contributions are on the table, and because it is the one widely used technique in this area that <code>PortfolioAnalytics</code> does not implement at all.</p>
+</section></section><section id="key-takeaways" class="level2 unnumbered"><h2 class="unnumbered anchored" data-anchor-id="key-takeaways">Key Takeaways</h2>
+<ul>
+<li>Portfolio volatility decomposes exactly into additive risk contributions by
+<ol class="example" type="1">
+<li>The shares are not an attribution convention; they sum to the total by construction <span class="citation" data-cites="qian2006">(<a href="99-references.html#ref-qian2006" role="doc-biblioref">Qian 2006</a>)</span>.</li>
+</ol>
+</li>
+<li>Equal capital is not equal risk. Sixteen equally weighted series here put 12% of the risk in one of them, against 6.2% of the capital.</li>
+<li>The equal risk contribution portfolio of <a href="#eq-14-erc" class="quarto-xref">Equation&nbsp;<span>14.2</span></a> always exists, is unique long-only, and sits between minimum variance and equal weighting in volatility <span class="citation" data-cites="maillard2010">(<a href="99-references.html#ref-maillard2010" role="doc-biblioref">Maillard et al. 2010</a>)</span>.</li>
+<li>It is not a hard problem. <a href="#eq-14-spinu" class="quarto-xref">Equation&nbsp;<span>14.3</span></a> is a convex program with a log barrier, and a six-line fixed point reaches machine precision. The package nonetheless routes it to a metaheuristic.</li>
+<li>Of five solvers, 4 hand back the equally weighted portfolio they started from, and a tenfold budget changes nothing. The one-line inverse-volatility approximation of <a href="#eq-14-inverse-vol" class="quarto-xref">Equation&nbsp;<span>14.4</span></a> is closer to the answer than a twenty-thousand-evaluation search.</li>
+<li>Use the risk-budget objective for caps and budgets, which a search can satisfy by rejection, and compute equal risk contribution directly.</li>
+<li>Risk parity buys about 8 times the effective bets for about 55 percent more volatility, and out of sample inverse volatility lands between equal weighting and the tangency portfolio at a fraction of the latter’s turnover.</li>
+<li>The effective number of bets is a property of the covariance matrix, not of the portfolio, and it falls by more than half going into the credit crisis.</li>
+</ul></section><section id="exercises" class="level2 unnumbered"><h2 class="unnumbered anchored" data-anchor-id="exercises">Exercises</h2>
+<ol type="1">
+<li>Run the fixed-point <code>erc()</code> on a covariance matrix estimated from the months outside the four episodes of <code>sim_episodes</code> only, then apply the resulting weights to the months of the credit crisis. How equal are the realized risk contributions?</li>
+<li>
+<code>inverse.volatility.weight()</code> ignores correlations entirely. Construct a universe where that is catastrophic — two nearly identical series and one independent one — and report the risk contributions it produces.</li>
+<li>Repeat <a href="#tbl-14-searches" class="quarto-xref">Table&nbsp;<span>14.1</span></a> with a <code>max_prisk</code> objective instead of <code>min_concentration</code>. Do the solvers agree with each other? Does the budget bind?</li>
+<li>The effective-bets measure uses entropy. Replace it with <code>1 / sum(rc^2)</code>, the inverse Herfindahl of the risk shares, and recompute <a href="#tbl-14-concentration" class="quarto-xref">Table&nbsp;<span>14.3</span></a>. Which portfolios change rank, and which measure would you defend to a client?</li>
+</ol>
+
+
+<div id="refs" class="references csl-bib-body hanging-indent" role="list" style="display: none">
+<div id="ref-asness2012" class="csl-entry" role="listitem">
+Asness, Clifford S., Andrea Frazzini, and Lasse H. Pedersen. 2012. <span>“Leverage Aversion and Risk Parity.”</span> <em>Financial Analysts Journal</em> 68 (1): 47–59. <a href="https://doi.org/10.2469/faj.v68.n1.1">https://doi.org/10.2469/faj.v68.n1.1</a>.
+</div>
+<div id="ref-bai2016" class="csl-entry" role="listitem">
+Bai, Xi, Katya Scheinberg, and Reha Tutuncu. 2016. <span>“Least-Squares Approach to Risk Parity in Portfolio Selection.”</span> <em>Quantitative Finance</em> 16 (3): 357–76. <a href="https://doi.org/10.1080/14697688.2015.1031815">https://doi.org/10.1080/14697688.2015.1031815</a>.
+</div>
+<div id="ref-clarke2013" class="csl-entry" role="listitem">
+Clarke, Roger, Harindra de Silva, and Steven Thorley. 2013. <span>“Risk Parity, Maximum Diversification, and Minimum Variance: An Analytic Perspective.”</span> <em>Journal of Portfolio Management</em> 39 (3): 39–53. <a href="https://doi.org/10.3905/jpm.2013.39.3.039">https://doi.org/10.3905/jpm.2013.39.3.039</a>.
+</div>
+<div id="ref-lopezdeprado2016" class="csl-entry" role="listitem">
+López de Prado, Marcos. 2016. <span>“Building Diversified Portfolios That Outperform Out of Sample.”</span> <em>Journal of Portfolio Management</em> 42 (4): 59–69. <a href="https://doi.org/10.3905/jpm.2016.42.4.059">https://doi.org/10.3905/jpm.2016.42.4.059</a>.
+</div>
+<div id="ref-maillard2010" class="csl-entry" role="listitem">
+Maillard, Sébastien, Thierry Roncalli, and Jérôme Teïletche. 2010. <span>“The Properties of Equally Weighted Risk Contribution Portfolios.”</span> <em>Journal of Portfolio Management</em> 36 (4): 60–70. <a href="https://doi.org/10.3905/jpm.2010.36.4.060">https://doi.org/10.3905/jpm.2010.36.4.060</a>.
+</div>
+<div id="ref-qian2006" class="csl-entry" role="listitem">
+Qian, Edward. 2006. <span>“On the Financial Interpretation of Risk Contribution: Risk Budgets Do Add Up.”</span> <em>Journal of Investment Management</em> 4 (4): 41–51.
+</div>
+<div id="ref-roncalli2013" class="csl-entry" role="listitem">
+Roncalli, Thierry. 2013. <em>Introduction to Risk Parity and Budgeting</em>. Chapman; Hall/CRC.
+</div>
+<div id="ref-spinu2013" class="csl-entry" role="listitem">
+Spinu, Florin. 2013. <span>“An Algorithm for Computing Risk Parity Weights.”</span> <em>SSRN Electronic Journal</em>, ahead of print. <a href="https://doi.org/10.2139/ssrn.2297383">https://doi.org/10.2139/ssrn.2297383</a>.
+</div>
+</div>
+</section></main><!-- /main --><script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+    const viewSource = window.document.getElementById('quarto-view-source') ||
+                       window.document.getElementById('quarto-code-tools-source');
+    if (viewSource) {
+      const sourceUrl = viewSource.getAttribute("data-quarto-source-url");
+      viewSource.addEventListener("click", function(e) {
+        if (sourceUrl) {
+          // rstudio viewer pane
+          if (/\bcapabilities=\b/.test(window.location)) {
+            window.open(sourceUrl);
+          } else {
+            window.location.href = sourceUrl;
+          }
+        } else {
+          const modal = new bootstrap.Modal(document.getElementById('quarto-embedded-source-code-modal'));
+          modal.show();
+        }
+        return false;
+      });
+    }
+    function toggleCodeHandler(show) {
+      return function(e) {
+        const cellDetails = window.document.querySelectorAll(".cell details.code-fold");
+        for (let i=0; i<cellDetails.length; i++) {
+          const details = cellDetails[i];
+          if (show) {
+            details.open = true;
+          } else {
+            details.removeAttribute("open");
+          }
+        }
+        const cellCodeDivs = window.document.querySelectorAll(".cell div.sourceCode.cell-code");
+        const fromCls = show ? "hidden" : "unhidden";
+        const toCls = show ? "unhidden" : "hidden";
+        for (let i=0; i<cellCodeDivs.length; i++) {
+          const codeDiv = cellCodeDivs[i];
+          if (codeDiv.classList.contains(fromCls)) {
+            codeDiv.classList.remove(fromCls);
+            codeDiv.classList.add(toCls);
+          } 
+        }
+        return false;
+      }
+    }
+    const hideAllCode = window.document.getElementById("quarto-hide-all-code");
+    if (hideAllCode) {
+      hideAllCode.addEventListener("click", toggleCodeHandler(false));
+    }
+    const showAllCode = window.document.getElementById("quarto-show-all-code");
+    if (showAllCode) {
+      showAllCode.addEventListener("click", toggleCodeHandler(true));
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/www\.tidy-asset-allocation\.org");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+            // target, if specified
+            link.setAttribute("target", "_blank");
+            if (link.getAttribute("rel") === null) {
+              link.setAttribute("rel", "noopener");
+            }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script><nav class="page-navigation"><div class="nav-page nav-page-previous">
+      <a href="../chapters/13-solvers.html" class="pagination-link" aria-label="Numerical Optimization and Solvers">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">13</span>&nbsp; <span class="chapter-title">Numerical Optimization and Solvers</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../chapters/15-hierarchical-allocation.html" class="pagination-link" aria-label="Hierarchical and Sleeve-Based Allocation">
+        <span class="nav-page-text"><span class="chapter-number">15</span>&nbsp; <span class="chapter-title">Hierarchical and Sleeve-Based Allocation</span></span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer"><div class="nav-footer">
+    <div class="nav-footer-left">
+<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl</p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    <div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/edit/main/chapters/14-risk-based-allocation.qmd" class="toc-action"><i class="bi bi-github"></i>Edit this page</a></li><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div>
+    <div class="nav-footer-right">
+      <ul class="footer-items list-unstyled">
+<li class="nav-item">
+    <a class="nav-link active" href="https://github.com/sstoeckl/tidy-asset-allocation" aria-current="page">
+<p>Source</p>
+</a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="https://github.com/sstoeckl/tidy-asset-allocation/issues/new">
+<p>Report an issue</p>
+</a>
+  </li>  
+</ul>
+</div>
+  </div>
+</footer>
+
+
+<script src="../site_libs/quarto-html/zenscroll-min.js"></script>
+</body></html>

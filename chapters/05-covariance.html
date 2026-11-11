@@ -1,0 +1,1785 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.9.38">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<title>7&nbsp; Covariance – Tidy Asset Allocation in R</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../chapters/06-why-estimates-matter.html" rel="next">
+<link href="../chapters/04-expected-returns.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-34d578f5c66cc91f3a0d6b67e9812be3.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-dark-a3703a0dc74fdf50fbc673dfac110324.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-34d578f5c66cc91f3a0d6b67e9812be3.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-3965a0ab26ce129e3f9a655e13bd8325.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-72566e40ffc2ab835d1d9f1421ed13fa.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<link href="../site_libs/bootstrap/bootstrap-3965a0ab26ce129e3f9a655e13bd8325.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<script src="../site_libs/quarto-contrib/glightbox/glightbox.min.js"></script>
+<link href="../site_libs/quarto-contrib/glightbox/glightbox.min.css" rel="stylesheet">
+<link href="../site_libs/quarto-contrib/glightbox/lightbox.css" rel="stylesheet"><script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script><style>html{ scroll-behavior: smooth; }</style>
+<script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script><script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script><script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+</head>
+<body class="nav-sidebar docked quarto-light"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = false;
+    const darkModeDefault = authorPrefersDark;
+      document.querySelector('link#quarto-text-highlighting-styles.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+      document.querySelector('link#quarto-bootstrap.quarto-color-scheme-extra').rel = 'disabled-stylesheet';
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top"><nav class="quarto-secondary-nav"><div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/04-expected-returns.html">Inputs</a></li><li class="breadcrumb-item"><a href="../chapters/05-covariance.html"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">Covariance</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav></header><!-- content --><div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation docked overflow-auto"><div class="pt-lg-2 mt-2 text-left sidebar-header">
+    <div class="sidebar-title mb-0 py-0">
+      <a href="../">Tidy Asset Allocation in R</a> 
+        <div class="sidebar-tools-main tools-wide">
+    <a href="https://github.com/sstoeckl/tidy-asset-allocation" title="Source Code" class="quarto-navigation-tool px-1" aria-label="Source Code"><i class="bi bi-github"></i></a>
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="Toggle dark mode"><i class="bi"></i></a>
+  <a href="" class="quarto-reader-toggle quarto-navigation-tool px-1" onclick="window.quartoToggleReader(); return false;" title="Toggle reader mode">
+  <div class="quarto-reader-toggle-btn">
+  <i class="bi"></i>
+  </div>
+</a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">1</span>&nbsp; <span class="chapter-title">Preface</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false">
+ <span class="menu-text">Foundations</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/01-tools.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">2</span>&nbsp; <span class="chapter-title">Tools of the Trade</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/02-data.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">3</span>&nbsp; <span class="chapter-title">The Market</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/02b-models.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">4</span>&nbsp; <span class="chapter-title">Models for This Market</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/03-returns-and-the-investor.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">5</span>&nbsp; <span class="chapter-title">Returns, Risk and the Investor</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">Inputs</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/04-expected-returns.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">Expected Returns</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/05-covariance.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">Covariance</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/06-why-estimates-matter.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">8</span>&nbsp; <span class="chapter-title">Why Your Estimates Matter</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false">
+ <span class="menu-text">Building Portfolios</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/07-mean-variance.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">9</span>&nbsp; <span class="chapter-title">The Mean-Variance Baseline</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/08-risk-measures.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">10</span>&nbsp; <span class="chapter-title">Choosing a Risk Measure</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/09-constraints.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">11</span>&nbsp; <span class="chapter-title">Constraints as Investment Policy</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/10-sustainability.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">12</span>&nbsp; <span class="chapter-title">Sustainability Constraints</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/11-solvers.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">13</span>&nbsp; <span class="chapter-title">Solvers</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/12-risk-based-allocation.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">14</span>&nbsp; <span class="chapter-title">Risk-Based Allocation</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false">
+ <span class="menu-text">Allocating</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-4" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-4" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/13-sleeves.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">15</span>&nbsp; <span class="chapter-title">Sleeves and Nested Allocation</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/14-signals-and-forecasts.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">16</span>&nbsp; <span class="chapter-title">Signals and Forecasts</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/15-expressing-views.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">17</span>&nbsp; <span class="chapter-title">Expressing Views</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/16-parametric-policies.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">18</span>&nbsp; <span class="chapter-title">Parametric Portfolio Policies</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/17-regimes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">19</span>&nbsp; <span class="chapter-title">Regimes</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false">
+ <span class="menu-text">Inside the Sleeves</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-5" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-5" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/18-equity-sleeve.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">20</span>&nbsp; <span class="chapter-title">The Equity Sleeve</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/19-fixed-income-sleeve.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">21</span>&nbsp; <span class="chapter-title">The Fixed-Income Sleeve</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false">
+ <span class="menu-text">Implementation and Evaluation</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-6" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-6" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/20-rebalancing.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">22</span>&nbsp; <span class="chapter-title">Rebalancing and What It Costs</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/21-benchmarks-and-active-risk.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">23</span>&nbsp; <span class="chapter-title">Benchmarks, Active Risk and the Information Ratio</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/22-backtesting.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">24</span>&nbsp; <span class="chapter-title">Backtesting, Attribution and Failure</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false">
+ <span class="menu-text">Extensions</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-7" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-7" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/23-sharpe-gap.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">25</span>&nbsp; <span class="chapter-title">The Sharpe Gap</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/24-decision-aware-forecasting.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">26</span>&nbsp; <span class="chapter-title">Decision-Aware Forecasting</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/25-uncertainty-and-robustness.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">27</span>&nbsp; <span class="chapter-title">Estimation Uncertainty, Ambiguity and Robustness</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/26-higher-moments.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">28</span>&nbsp; <span class="chapter-title">Higher Moments, Copulas and Tail Dependence</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/99-references.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">29</span>&nbsp; <span class="chapter-title">References</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false">
+ <span class="menu-text">Appendices</span></a>
+          <a class="sidebar-item-toggle text-start collapsed" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-8" role="navigation" aria-expanded="false" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-8" class="collapse list-unstyled sidebar-section depth1 ">
+<li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/90-solver-matrix.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">A</span>&nbsp; <span class="chapter-title">Solver and Constraint Support</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/91-package-notes.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">B</span>&nbsp; <span class="chapter-title">Package Notes</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/92-r-primer.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">C</span>&nbsp; <span class="chapter-title">A Short R Refresher</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/93-coverage-ledger.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">D</span>&nbsp; <span class="chapter-title">Coverage Ledger</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/94-solutions.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">E</span>&nbsp; <span class="chapter-title">Solutions to Exercises</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../chapters/95-acknowledgements.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">F</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
+  </div>
+</li>
+      </ul>
+</li>
+    </ul>
+</div>
+</nav><div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active"><h2 id="toc-title">On this page</h2>
+   
+  <ul>
+<li>
+<a href="#sec-05-covariance-standard" id="toc-sec-05-covariance-standard" class="nav-link active" data-scroll-target="#sec-05-covariance-standard"><span class="header-section-number">7.1</span> What you need</a>
+  <ul class="collapse">
+<li><a href="#what-the-optimiser-is-asking-you-for" id="toc-what-the-optimiser-is-asking-you-for" class="nav-link" data-scroll-target="#what-the-optimiser-is-asking-you-for"><span class="header-section-number">7.1.1</span> What the optimiser is asking you for</a></li>
+  <li><a href="#the-investors-version-of-the-failure" id="toc-the-investors-version-of-the-failure" class="nav-link" data-scroll-target="#the-investors-version-of-the-failure"><span class="header-section-number">7.1.2</span> The investor’s version of the failure</a></li>
+  <li><a href="#telling-before-the-solver-tells-you" id="toc-telling-before-the-solver-tells-you" class="nav-link" data-scroll-target="#telling-before-the-solver-tells-you"><span class="header-section-number">7.1.3</span> Telling before the solver tells you</a></li>
+  <li><a href="#why-this-book-has-not-needed-the-chapter-until-now" id="toc-why-this-book-has-not-needed-the-chapter-until-now" class="nav-link" data-scroll-target="#why-this-book-has-not-needed-the-chapter-until-now"><span class="header-section-number">7.1.4</span> Why this book has not needed the chapter until now</a></li>
+  </ul>
+</li>
+  <li>
+<a href="#sec-05-covariance-hands-on" id="toc-sec-05-covariance-hands-on" class="nav-link" data-scroll-target="#sec-05-covariance-hands-on"><span class="header-section-number">7.2</span> How to actually do it</a>
+  <ul class="collapse">
+<li><a href="#route-one-hold-fewer-things" id="toc-route-one-hold-fewer-things" class="nav-link" data-scroll-target="#route-one-hold-fewer-things"><span class="header-section-number">7.2.1</span> Route one: hold fewer things</a></li>
+  <li><a href="#route-two-impose-a-structure" id="toc-route-two-impose-a-structure" class="nav-link" data-scroll-target="#route-two-impose-a-structure"><span class="header-section-number">7.2.2</span> Route two: impose a structure</a></li>
+  <li><a href="#route-three-shrink-the-matrix" id="toc-route-three-shrink-the-matrix" class="nav-link" data-scroll-target="#route-three-shrink-the-matrix"><span class="header-section-number">7.2.3</span> Route three: shrink the matrix</a></li>
+  <li><a href="#route-four-estimate-robustly" id="toc-route-four-estimate-robustly" class="nav-link" data-scroll-target="#route-four-estimate-robustly"><span class="header-section-number">7.2.4</span> Route four: estimate robustly</a></li>
+  <li><a href="#getting-any-of-this-into-the-optimiser" id="toc-getting-any-of-this-into-the-optimiser" class="nav-link" data-scroll-target="#getting-any-of-this-into-the-optimiser"><span class="header-section-number">7.2.5</span> Getting any of this into the optimiser</a></li>
+  <li><a href="#when-the-package-function-is-the-thing-in-the-way" id="toc-when-the-package-function-is-the-thing-in-the-way" class="nav-link" data-scroll-target="#when-the-package-function-is-the-thing-in-the-way"><span class="header-section-number">7.2.6</span> When the package function is the thing in the way</a></li>
+  <li><a href="#does-any-of-it-pay" id="toc-does-any-of-it-pay" class="nav-link" data-scroll-target="#does-any-of-it-pay"><span class="header-section-number">7.2.7</span> Does any of it pay?</a></li>
+  <li><a href="#the-column-that-should-make-you-uncomfortable" id="toc-the-column-that-should-make-you-uncomfortable" class="nav-link" data-scroll-target="#the-column-that-should-make-you-uncomfortable"><span class="header-section-number">7.2.8</span> The column that should make you uncomfortable</a></li>
+  </ul>
+</li>
+  <li><a href="#sec-05-covariance-hidden" id="toc-sec-05-covariance-hidden" class="nav-link" data-scroll-target="#sec-05-covariance-hidden"><span class="header-section-number">7.3</span> What else is in there</a></li>
+  <li>
+<a href="#sec-05-covariance-why" id="toc-sec-05-covariance-why" class="nav-link" data-scroll-target="#sec-05-covariance-why"><span class="header-section-number">7.4</span> Why it works</a>
+  <ul class="collapse">
+<li><a href="#shrink-towards-what-when-the-target-moves" id="toc-shrink-towards-what-when-the-target-moves" class="nav-link" data-scroll-target="#shrink-towards-what-when-the-target-moves"><span class="header-section-number">7.4.1</span> Shrink towards what, when the target moves?</a></li>
+  <li><a href="#the-shrinkage-you-have-been-using-all-along" id="toc-the-shrinkage-you-have-been-using-all-along" class="nav-link" data-scroll-target="#the-shrinkage-you-have-been-using-all-along"><span class="header-section-number">7.4.2</span> The shrinkage you have been using all along</a></li>
+  </ul>
+</li>
+  <li><a href="#exercises" id="toc-exercises" class="nav-link" data-scroll-target="#exercises">Exercises</a></li>
+  </ul><div class="toc-actions"><ul><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/edit/main/chapters/05-covariance.qmd" class="toc-action"><i class="bi bi-github"></i>Edit this page</a></li><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/04-expected-returns.html">Inputs</a></li><li class="breadcrumb-item"><a href="../chapters/05-covariance.html"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">Covariance</span></a></li></ol></nav><div class="quarto-title">
+<h1 class="title">
+<span class="chapter-number">7</span>&nbsp; <span class="chapter-title">Covariance</span>
+</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header><div class="callout callout-style-simple callout-note">
+<div class="callout-body d-flex">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-body-container">
+<p><strong>The question.</strong> Sigma has far too many free parameters. What do you do about it?</p>
+</div>
+</div>
+</div>
+<p>You have an equity sleeve to fill. There are a hundred and twenty-three names in the eligible universe, you have thirty-one years of monthly returns, and you would like the combination of them with the lowest risk. That is the most modest request anyone ever makes of a portfolio optimiser: no view, no forecast, no tilt, just the quiet corner of the frontier.</p>
+<p>You will not get it. Not because the data is poor and not because the optimiser is badly written, but because the object it needs in order to answer cannot be estimated from the data you have. This chapter is about recognising that situation, understanding what it costs you as an investor rather than as a statistician, and choosing between the four things you can do instead.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">cls</span> <span class="op">&lt;-</span> <span class="fu">as_xts_pm</span><span class="op">(</span><span class="va">sim_class_returns_monthly</span>, <span class="va">date</span>, <span class="va">class</span>, <span class="va">return</span><span class="op">)</span></span>
+<span><span class="va">cls</span> <span class="op">&lt;-</span> <span class="va">cls</span><span class="op">[</span>, <span class="op">!</span><span class="fu"><a href="https://rdrr.io/r/base/grep.html">grepl</a></span><span class="op">(</span><span class="st">"money_market"</span>, <span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">cls</span><span class="op">)</span><span class="op">)</span><span class="op">]</span></span>
+<span></span>
+<span><span class="va">ins</span> <span class="op">&lt;-</span> <span class="fu">as_xts_pm</span><span class="op">(</span><span class="va">sim_asset_returns_monthly</span>, <span class="va">date</span>, <span class="va">asset</span>, <span class="va">return</span><span class="op">)</span></span>
+<span><span class="va">eq</span>  <span class="op">&lt;-</span> <span class="va">ins</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">ins</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/r/base/match.html">%in%</a></span> <span class="va">sim_assets</span><span class="op">$</span><span class="va">asset_id</span><span class="op">[</span><span class="va">sim_assets</span><span class="op">$</span><span class="va">asset_class</span> <span class="op">==</span> <span class="st">"equity"</span><span class="op">]</span><span class="op">]</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>classes <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">ncol</a></span><span class="op">(</span><span class="va">cls</span><span class="op">)</span>, equities <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">ncol</a></span><span class="op">(</span><span class="va">eq</span><span class="op">)</span>, months <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">nrow</a></span><span class="op">(</span><span class="va">cls</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;  classes equities   months </span></span>
+<span><span class="co">#&gt;       16      123      372</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<section id="sec-05-covariance-standard" class="level2" data-number="7.1"><h2 data-number="7.1" class="anchored" data-anchor-id="sec-05-covariance-standard">
+<span class="header-section-number">7.1</span> What you need</h2>
+<section id="what-the-optimiser-is-asking-you-for" class="level3" data-number="7.1.1"><h3 data-number="7.1.1" class="anchored" data-anchor-id="what-the-optimiser-is-asking-you-for">
+<span class="header-section-number">7.1.1</span> What the optimiser is asking you for</h3>
+<p>A minimum-variance portfolio is the weight vector that makes portfolio variance as small as your constraints allow, and the covariance matrix is the entire input. Nothing else about the assets enters: not their names, not their sectors, not their expected returns. Whatever the matrix says about risk <em>is</em> risk as far as the optimiser is concerned.</p>
+<p>It holds <span class="math inline">\(N(N+1)/2\)</span> distinct numbers. The sixteen asset classes of <a href="02-data.html#sec-02-data-standard" class="quarto-xref"><span>Section 3.1</span></a> need 136. The 123 equities need 7,626, from 372 months of history. You are asking the data to pin down more parameters than it has observations, and at some point the answer stops being an estimate.</p>
+</section><section id="the-investors-version-of-the-failure" class="level3" data-number="7.1.2"><h3 data-number="7.1.2" class="anchored" data-anchor-id="the-investors-version-of-the-failure">
+<span class="header-section-number">7.1.2</span> The investor’s version of the failure</h3>
+<p>The statistical statement is that the sample covariance matrix has rank at most the number of observations, so with fewer months than assets it is singular. True, and not the part that should worry you.</p>
+<p>The part that should worry you is what a singular matrix claims about portfolios. If the matrix is singular then some combination of your assets has an estimated variance of exactly zero: a portfolio the matrix says cannot lose money. There are as many independent such portfolios as the matrix is short of full rank. An optimiser told to minimise variance will find them, because that is precisely its job, and it will put everything there.</p>
+<p>They are not real. They are long-short cancellations that happened to net out over the particular months you estimated on, and they will not net out again. This is the mechanism behind the familiar complaint that mean-variance optimisation produces absurd weights. <span class="citation" data-cites="michaud1989">Michaud (<a href="99-references.html#ref-michaud1989" role="doc-biblioref">1989</a>)</span> called the optimiser an error maximiser for this reason, and the label is exact rather than rhetorical: among all the portfolios consistent with your constraints, the procedure is designed to select the one the estimate is most optimistic about, which is the one the estimate is most wrong about.</p>
+<p><span class="citation" data-cites="chopra1993">Chopra and Ziemba (<a href="99-references.html#ref-chopra1993" role="doc-biblioref">1993</a>)</span> measured how the cost divides. Errors in expected returns hurt an order of magnitude more than errors in variances, which in turn hurt more than errors in covariances — which is why <a href="04-expected-returns.html#sec-04-expected-returns-standard" class="quarto-xref"><span>Section 6.1</span></a> is the harder chapter and why this one is nonetheless unavoidable: a singular matrix is not an error of degree.</p>
+</section><section id="telling-before-the-solver-tells-you" class="level3" data-number="7.1.3"><h3 data-number="7.1.3" class="anchored" data-anchor-id="telling-before-the-solver-tells-you">
+<span class="header-section-number">7.1.3</span> Telling before the solver tells you</h3>
+<p>Two numbers, neither of which requires inverting anything.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">covariance_health</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">X</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">S</span>  <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cov</a></span><span class="op">(</span><span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/coredata.html">coredata</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">ev</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eigen.html">eigen</a></span><span class="op">(</span><span class="va">S</span>, symmetric <span class="op">=</span> <span class="cn">TRUE</span>, only.values <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">$</span><span class="va">values</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>assets <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">ncol</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span>, observations <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">nrow</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span>, rank <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/qr.html">qr</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span><span class="op">$</span><span class="va">rank</span>,</span>
+<span>    riskless_directions <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">ev</span> <span class="op">&lt;</span> <span class="fl">1e-12</span><span class="op">)</span>,</span>
+<span>    condition <span class="op">=</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">ev</span><span class="op">)</span> <span class="op">&lt;=</span> <span class="fl">0</span><span class="op">)</span> <span class="cn">Inf</span> <span class="kw">else</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="va">ev</span><span class="op">)</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">ev</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html">rbind</a></span><span class="op">(</span>classes  <span class="op">=</span> <span class="fu">covariance_health</span><span class="op">(</span><span class="va">cls</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">60</span>, <span class="op">]</span><span class="op">)</span>,</span>
+<span>      equities <span class="op">=</span> <span class="fu">covariance_health</span><span class="op">(</span><span class="va">eq</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">60</span>, <span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;          assets observations rank riskless_directions condition</span></span>
+<span><span class="co">#&gt; classes      16           60   16                   0     16995</span></span>
+<span><span class="co">#&gt; equities    123           60   59                  64       Inf</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>rank</code> below <code>assets</code> means the matrix is singular, and <code>riskless_directions</code> counts the portfolios it believes are free. Five years of data on 123 equities produces 64 of them.</p>
+<p><code>condition</code> is the subtler warning. It is the ratio of the largest eigenvalue to the smallest, and it bounds how much the inverse magnifies an error in the input. A finite but very large value is more dangerous than an infinite one, because everything still runs: the matrix inverts, weights come back, and they are a magnified copy of the sampling noise. Past roughly <span class="math inline">\(10^{8}\)</span> you are reading noise with double precision arithmetic.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">rank_report</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">X</span>, <span class="va">label</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/lapply.html">vapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="fl">60L</span>, <span class="fl">120L</span>, <span class="fl">180L</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">W</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="va">S</span>  <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cov</a></span><span class="op">(</span><span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/coredata.html">coredata</a></span><span class="op">(</span><span class="va">X</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html">seq_len</a></span><span class="op">(</span><span class="va">W</span><span class="op">)</span>, <span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span>    <span class="va">ev</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eigen.html">eigen</a></span><span class="op">(</span><span class="va">S</span>, symmetric <span class="op">=</span> <span class="cn">TRUE</span>, only.values <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">$</span><span class="va">values</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>T <span class="op">=</span> <span class="va">W</span>, N <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">ncol</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span>, rank <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/qr.html">qr</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span><span class="op">$</span><span class="va">rank</span>, min_eigen <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">ev</span><span class="op">)</span>,</span>
+<span>      condition <span class="op">=</span> <span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">ev</span><span class="op">)</span> <span class="op">&lt;=</span> <span class="fl">0</span><span class="op">)</span> <span class="cn">Inf</span> <span class="kw">else</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="va">ev</span><span class="op">)</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">ev</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="op">}</span>, <span class="fu"><a href="https://rdrr.io/r/base/numeric.html">numeric</a></span><span class="op">(</span><span class="fl">5</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span> <span class="fu"><a href="https://rdrr.io/r/base/t.html">t</a></span><span class="op">(</span><span class="op">)</span> <span class="op">|&gt;</span> <span class="fu"><a href="https://rdrr.io/r/base/as.data.frame.html">as.data.frame</a></span><span class="op">(</span><span class="op">)</span> <span class="op">|&gt;</span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html">mutate</a></span><span class="op">(</span>universe <span class="op">=</span> <span class="va">label</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/bind_rows.html">bind_rows</a></span><span class="op">(</span><span class="fu">rank_report</span><span class="op">(</span><span class="va">cls</span>, <span class="st">"16 classes"</span><span class="op">)</span>,</span>
+<span>                 <span class="fu">rank_report</span><span class="op">(</span><span class="va">eq</span>,  <span class="st">"123 equities"</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/select.html">select</a></span><span class="op">(</span><span class="va">universe</span>, <span class="cn">T</span>, <span class="va">N</span>, <span class="va">rank</span>, <span class="va">min_eigen</span>, <span class="va">condition</span><span class="op">)</span></span>
+<span><span class="co">#&gt; # A tibble: 6 × 6</span></span>
+<span><span class="co">#&gt;   universe         T     N  rank min_eigen condition</span></span>
+<span><span class="co">#&gt;   &lt;chr&gt;        &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;     &lt;dbl&gt;     &lt;dbl&gt;</span></span>
+<span><span class="co">#&gt; 1 16 classes      60    16    16  5.63e- 7    16995.</span></span>
+<span><span class="co">#&gt; 2 16 classes     120    16    16  9.41e- 7    11153.</span></span>
+<span><span class="co">#&gt; 3 16 classes     180    16    16  8.78e- 7    10929.</span></span>
+<span><span class="co">#&gt; 4 123 equities    60   123    59 -3.81e-17      Inf </span></span>
+<span><span class="co">#&gt; 5 123 equities   120   123   119 -1.21e-18      Inf </span></span>
+<span><span class="co">#&gt; 6 123 equities   180   123   123  1.50e- 4     1510.</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Look at <code>min_eigen</code> on the two singular rows. It is <strong>negative</strong>. A covariance matrix cannot have a negative eigenvalue; that is floating-point noise around an eigenvalue which is exactly zero. The matrix is not imprecise. It describes a world in which some portfolio has negative variance.</p>
+</section><section id="why-this-book-has-not-needed-the-chapter-until-now" class="level3" data-number="7.1.4"><h3 data-number="7.1.4" class="anchored" data-anchor-id="why-this-book-has-not-needed-the-chapter-until-now">
+<span class="header-section-number">7.1.4</span> Why this book has not needed the chapter until now</h3>
+<p>Every allocation up to here happened across asset classes, and at that level the problem does not arise.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">bad</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html">vapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html">seq.int</a></span><span class="op">(</span><span class="fl">61L</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">nrow</a></span><span class="op">(</span><span class="va">cls</span><span class="op">)</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">i</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/qr.html">qr</a></span><span class="op">(</span><span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cov</a></span><span class="op">(</span><span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/coredata.html">coredata</a></span><span class="op">(</span><span class="va">cls</span><span class="op">[</span><span class="op">(</span><span class="va">i</span> <span class="op">-</span> <span class="fl">60L</span><span class="op">)</span><span class="op">:</span><span class="op">(</span><span class="va">i</span> <span class="op">-</span> <span class="fl">1L</span><span class="op">)</span>, <span class="op">]</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">$</span><span class="va">rank</span> <span class="op">&lt;</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">ncol</a></span><span class="op">(</span><span class="va">cls</span><span class="op">)</span></span>
+<span><span class="op">}</span>, <span class="fu"><a href="https://rdrr.io/r/base/logical.html">logical</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>rolling_windows <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">nrow</a></span><span class="op">(</span><span class="va">cls</span><span class="op">)</span> <span class="op">-</span> <span class="fl">60L</span>, rank_deficient <span class="op">=</span> <span class="va">bad</span><span class="op">)</span></span>
+<span><span class="co">#&gt; rolling_windows  rank_deficient </span></span>
+<span><span class="co">#&gt;             312               0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Not one sixty-month window in thirty-one years is rank deficient at class level. The moment <a href="18-equity-sleeve.html#sec-18-equity-sleeve-standard" class="quarto-xref"><span>Section 20.1</span></a> descends into individual securities it becomes the only question that matters, and nothing about the data changed. What changed is how many things you asked to hold.</p>
+</section></section><section id="sec-05-covariance-hands-on" class="level2" data-number="7.2"><h2 data-number="7.2" class="anchored" data-anchor-id="sec-05-covariance-hands-on">
+<span class="header-section-number">7.2</span> How to actually do it</h2>
+<p>There are four routes. Two change what you are allowed to own, two change how you estimate. Take them in the order of what they cost you.</p>
+<section id="route-one-hold-fewer-things" class="level3" data-number="7.2.1"><h3 data-number="7.2.1" class="anchored" data-anchor-id="route-one-hold-fewer-things">
+<span class="header-section-number">7.2.1</span> Route one: hold fewer things</h3>
+<p>The cheapest fix is not to have the problem. Allocate across sixteen classes rather than 123 securities, or across sector sleeves rather than names, and the matrix is comfortably estimable on five years.</p>
+<p>This is not a dodge. Most institutional mandates are set at exactly this level for exactly this reason, and <a href="13-sleeves.html#sec-13-sleeves-standard" class="quarto-xref"><span>Section 15.1</span></a> treats the sleeve structure as a decision rather than a convenience. It does not help when the mandate is “these 123 names”, which is what a stock selection process hands you.</p>
+</section><section id="route-two-impose-a-structure" class="level3" data-number="7.2.2"><h3 data-number="7.2.2" class="anchored" data-anchor-id="route-two-impose-a-structure">
+<span class="header-section-number">7.2.2</span> Route two: impose a structure</h3>
+<p>If you cannot estimate 7,626 free parameters, stop trying to. Assert that returns are driven by a few common factors plus asset-specific noise. The covariance then follows from the factor loadings and the residual variances, which for three factors on 123 assets is 492 numbers rather than several thousand. <span class="citation" data-cites="fan2008">Fan et al. (<a href="99-references.html#ref-fan2008" role="doc-biblioref">2008</a>)</span> give the conditions under which the factor estimate converges where the sample estimate does not.</p>
+<p>The factors can be economic, as in <a href="02b-models.html#sec-02b-models-standard" class="quarto-xref"><span>Section 4.1</span></a>, or purely statistical — the principal components of the returns themselves. The second is six lines.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb5"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">factor_covariance</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">X</span>, <span class="va">k</span> <span class="op">=</span> <span class="fl">3L</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">x</span>  <span class="op">&lt;-</span> <span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/coredata.html">coredata</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span></span>
+<span>  <span class="va">pc</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/prcomp.html">prcomp</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span></span>
+<span>  <span class="va">B</span>  <span class="op">&lt;-</span> <span class="va">pc</span><span class="op">$</span><span class="va">rotation</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/seq.html">seq_len</a></span><span class="op">(</span><span class="va">k</span><span class="op">)</span>, drop <span class="op">=</span> <span class="cn">FALSE</span><span class="op">]</span>      <span class="co"># loadings, N x k</span></span>
+<span>  <span class="va">f</span>  <span class="op">&lt;-</span> <span class="va">x</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html">%*%</a></span> <span class="va">B</span>                                      <span class="co"># factor realisations</span></span>
+<span>  <span class="va">e</span>  <span class="op">&lt;-</span> <span class="va">x</span> <span class="op">-</span> <span class="va">f</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/t.html">t</a></span><span class="op">(</span><span class="va">B</span><span class="op">)</span>                               <span class="co"># residuals</span></span>
+<span>  <span class="va">e</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/sweep.html">sweep</a></span><span class="op">(</span><span class="va">e</span>, <span class="fl">2</span>, <span class="fu"><a href="https://rdrr.io/r/base/colSums.html">colMeans</a></span><span class="op">(</span><span class="va">e</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">B</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html">%*%</a></span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cov</a></span><span class="op">(</span><span class="va">f</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/t.html">t</a></span><span class="op">(</span><span class="va">B</span><span class="op">)</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/diag.html">diag</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/colSums.html">colSums</a></span><span class="op">(</span><span class="va">e</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span> <span class="op">/</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html">nrow</a></span><span class="op">(</span><span class="va">x</span><span class="op">)</span> <span class="op">-</span> <span class="va">k</span> <span class="op">-</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">S_fac</span> <span class="op">&lt;-</span> <span class="fu">factor_covariance</span><span class="op">(</span><span class="va">eq</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">120</span>, <span class="op">]</span>, k <span class="op">=</span> <span class="fl">3L</span><span class="op">)</span></span>
+<span><span class="va">e_fac</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/eigen.html">eigen</a></span><span class="op">(</span><span class="va">S_fac</span>, symmetric <span class="op">=</span> <span class="cn">TRUE</span>, only.values <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">$</span><span class="va">values</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>rank <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/qr.html">qr</a></span><span class="op">(</span><span class="va">S_fac</span><span class="op">)</span><span class="op">$</span><span class="va">rank</span>, min_eigen <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">e_fac</span><span class="op">)</span>,</span>
+<span>  condition <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="va">e_fac</span><span class="op">)</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">e_fac</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;       rank  min_eigen  condition </span></span>
+<span><span class="co">#&gt; 123.000000   0.001779 138.255107</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Full rank on a window where the sample matrix has 4 riskless directions, and a condition number four orders of magnitude smaller. The structure does the work: because every asset’s risk runs through three shared factors, no combination can cancel to zero unless the residuals do, and those are positive by construction.</p>
+<p><code>PortfolioAnalytics</code> ships this as <code>statistical.factor.model()</code>, with one constraint worth knowing about in the released version.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html">sapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="fl">60L</span>, <span class="fl">120L</span>, <span class="fl">180L</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">W</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="kw"><a href="https://rdrr.io/r/base/conditions.html">tryCatch</a></span><span class="op">(</span><span class="op">{</span> <span class="fu">statistical.factor.model</span><span class="op">(</span><span class="va">eq</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html">seq_len</a></span><span class="op">(</span><span class="va">W</span><span class="op">)</span>, <span class="op">]</span>, k <span class="op">=</span> <span class="fl">3L</span><span class="op">)</span>; <span class="st">"accepted"</span> <span class="op">}</span>,</span>
+<span>           error <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">e</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/conditions.html">conditionMessage</a></span><span class="op">(</span><span class="va">e</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "fewer observations than assets" "fewer observations than assets"</span></span>
+<span><span class="co">#&gt; [3] "accepted"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>It requires at least as many observations as assets, which is the condition under which you did not need it. The body does not: principal components need enough <em>components</em>, not enough columns, which is why the six lines above run on the same window. <a href="91-package-notes.html" class="quarto-xref"><span>Appendix B</span></a> records the patch that relaxes the check and where it stands.</p>
+</section><section id="route-three-shrink-the-matrix" class="level3" data-number="7.2.3"><h3 data-number="7.2.3" class="anchored" data-anchor-id="route-three-shrink-the-matrix">
+<span class="header-section-number">7.2.3</span> Route three: shrink the matrix</h3>
+<p>Keep every asset and keep the sample estimate, but pull it part of the way towards a target that is well conditioned by construction — commonly a scaled identity, sometimes a constant-correlation or factor matrix. <span class="citation" data-cites="ledoit2003">Ledoit and Wolf (<a href="99-references.html#ref-ledoit2003" role="doc-biblioref">2003</a>)</span> and <span class="citation" data-cites="ledoit2004">Ledoit and Wolf (<a href="99-references.html#ref-ledoit2004" role="doc-biblioref">2004</a>)</span> show that the intensity of the pull can be estimated from the data itself, so it is not a tuning parameter you have to guess. <span class="citation" data-cites="schafer2005">Schäfer and Strimmer (<a href="99-references.html#ref-schafer2005" role="doc-biblioref">2005</a>)</span> give the analytic form that <code>corpcor</code> implements.</p>
+<p>This is the workhorse. It needs no assumption about what drives returns, it cannot fail, and the result is invertible whenever the target is and the intensity is above zero.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb7"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">S_shr</span> <span class="op">&lt;-</span> <span class="fu">corpcor</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/corpcor/man/cov.shrink.html">cov.shrink</a></span><span class="op">(</span><span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/coredata.html">coredata</a></span><span class="op">(</span><span class="va">eq</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">120</span>, <span class="op">]</span><span class="op">)</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>lambda <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/attr.html">attr</a></span><span class="op">(</span><span class="va">S_shr</span>, <span class="st">"lambda"</span><span class="op">)</span>,</span>
+<span>  rank <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/qr.html">qr</a></span><span class="op">(</span><span class="va">S_shr</span><span class="op">)</span><span class="op">$</span><span class="va">rank</span>,</span>
+<span>  min_eigen <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/eigen.html">eigen</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/matrix.html">as.matrix</a></span><span class="op">(</span><span class="va">S_shr</span><span class="op">)</span>, symmetric <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>                        only.values <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">$</span><span class="va">values</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      lambda        rank   min_eigen </span></span>
+<span><span class="co">#&gt;   0.1618718 123.0000000   0.0008539</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>lambda</code> is the weight on the target rather than on the data, about a sixth of the way towards independence here.</p>
+</section><section id="route-four-estimate-robustly" class="level3" data-number="7.2.4"><h3 data-number="7.2.4" class="anchored" data-anchor-id="route-four-estimate-robustly">
+<span class="header-section-number">7.2.4</span> Route four: estimate robustly</h3>
+<p>The three routes above address a matrix that is badly <em>conditioned</em> because the sample is short. A robust estimator addresses one that is badly <em>centred</em> because a few observations dominate it. Different problem, and <a href="#sec-05-covariance-hidden" class="quarto-xref"><span>Section 7.3</span></a> takes it.</p>
+</section><section id="getting-any-of-this-into-the-optimiser" class="level3" data-number="7.2.5"><h3 data-number="7.2.5" class="anchored" data-anchor-id="getting-any-of-this-into-the-optimiser">
+<span class="header-section-number">7.2.5</span> Getting any of this into the optimiser</h3>
+<p><code>PortfolioAnalytics</code> routes every moment estimate through one function, and the released version of that function does not offer shrinkage.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/eval.html">eval</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/formals.html">formals</a></span><span class="op">(</span><span class="va">set.portfolio.moments</span><span class="op">)</span><span class="op">$</span><span class="va">method</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "sample"          "boudt"           "black_litterman" "meucci"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p><code>sample</code> is the sample matrix, <code>boudt</code> a factor-based cleaning of the higher moments, <code>black_litterman</code> and <code>meucci</code> view-blending machinery belonging in <a href="15-expressing-views.html#sec-15-expressing-views-standard" class="quarto-xref"><span>Section 17.1</span></a>. None of them is route three.</p>
+<p>This is the point at which people give up and compute weights outside the package, which throws away every constraint and diagnostic it provides. It is unnecessary. <code>optimize.portfolio()</code> takes a <code>momentFUN</code> argument and accepts a function object, not merely the name of one.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb9"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">shrinkage_moments</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">R</span>, <span class="va">portfolio</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">X</span> <span class="op">&lt;-</span> <span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/coredata.html">coredata</a></span><span class="op">(</span><span class="va">R</span><span class="op">)</span></span>
+<span>  <span class="va">S</span> <span class="op">&lt;-</span> <span class="fu">corpcor</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/corpcor/man/cov.shrink.html">cov.shrink</a></span><span class="op">(</span><span class="va">X</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span>  <span class="va">S</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html">matrix</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/numeric.html">as.numeric</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">ncol</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">ncol</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span>,</span>
+<span>              dimnames <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span>mu <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html">colMeans</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span>, sigma <span class="op">=</span> <span class="va">S</span>, m3 <span class="op">=</span> <span class="cn">NULL</span>, m4 <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>       mean <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html">colMeans</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span>, var <span class="op">=</span> <span class="va">S</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">spec</span> <span class="op">&lt;-</span> <span class="fu">portfolio.spec</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html">colnames</a></span><span class="op">(</span><span class="va">eq</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">add.constraint</span><span class="op">(</span><span class="st">"full_investment"</span><span class="op">)</span> <span class="op">|&gt;</span> <span class="fu">add.constraint</span><span class="op">(</span><span class="st">"long_only"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu">add.objective</span><span class="op">(</span>type <span class="op">=</span> <span class="st">"risk"</span>, name <span class="op">=</span> <span class="st">"var"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">opt</span> <span class="op">&lt;-</span> <span class="fu">optimize.portfolio</span><span class="op">(</span><span class="va">eq</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">120</span>, <span class="op">]</span>, <span class="va">spec</span>, optimize_method <span class="op">=</span> <span class="st">"ROI"</span>,</span>
+<span>                          momentFUN <span class="op">=</span> <span class="va">shrinkage_moments</span><span class="op">)</span></span>
+<span><span class="va">w</span> <span class="op">&lt;-</span> <span class="fu">extractWeights</span><span class="op">(</span><span class="va">opt</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>holdings <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">w</span> <span class="op">&gt;</span> <span class="fl">1e-6</span><span class="op">)</span>, sum <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">w</span><span class="op">)</span>, max_weight <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="va">w</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   holdings        sum max_weight </span></span>
+<span><span class="co">#&gt;    39.0000     1.0000     0.1173</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>Because it is a function rather than a name it can be built on the fly with its settings baked in — one per shrinkage intensity you want to compare, or one that closes over a factor model fitted elsewhere. Nothing has to live in the global environment.</p>
+<p>Two details save an afternoon. The list carries both <code>mu</code>/<code>sigma</code> and <code>mean</code>/<code>var</code>: different code paths inside the package read different names, and a moment function setting only one pair works until the day you change objective. And the matrix must be a plain <code>matrix</code> with dimnames, because <code>cov.shrink()</code> returns extra attributes that some downstream code does not expect.</p>
+</section><section id="when-the-package-function-is-the-thing-in-the-way" class="level3" data-number="7.2.6"><h3 data-number="7.2.6" class="anchored" data-anchor-id="when-the-package-function-is-the-thing-in-the-way">
+<span class="header-section-number">7.2.6</span> When the package function is the thing in the way</h3>
+<p>There is a third option beyond using it and working around it, and on an open source package it is usually the right one: fix it and send the fix back. The constraint in <code>statistical.factor.model()</code> is one line, the reason it is wrong is demonstrable in a paragraph, and a patch with a test is smaller work than the workaround it replaces. <a href="91-package-notes.html" class="quarto-xref"><span>Appendix B</span></a> lists the patches this book contributed and their state, which is also the honest way to tell a reader which behaviour they will see.</p>
+</section><section id="does-any-of-it-pay" class="level3" data-number="7.2.7"><h3 data-number="7.2.7" class="anchored" data-anchor-id="does-any-of-it-pay">
+<span class="header-section-number">7.2.7</span> Does any of it pay?</h3>
+<p>Not a question the matrix can answer. Every estimator reports a flattering number about itself in sample. The only honest test is to estimate on one window, hold the portfolio for a month, and score what happened.</p>
+<p><code>R/ch05-estimator-race.R</code> does that for four estimators and three window lengths, long only and fully invested, rebalanced monthly. All three windows are scored on the same months, so a longer window earns no credit for starting later.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">FIRST_OOS</span> <span class="op">&lt;-</span> <span class="fl">181L</span></span>
+<span><span class="va">oos</span>    <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html">seq.int</a></span><span class="op">(</span><span class="va">FIRST_OOS</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html">nrow</a></span><span class="op">(</span><span class="va">eq</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">ew_ret</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/colSums.html">rowMeans</a></span><span class="op">(</span><span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/coredata.html">coredata</a></span><span class="op">(</span><span class="va">eq</span><span class="op">[</span><span class="va">oos</span>, <span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">ew_ex</span>  <span class="op">&lt;-</span> <span class="va">ew_ret</span> <span class="op">-</span> <span class="va">sim_riskfree_monthly</span><span class="op">$</span><span class="va">return</span><span class="op">[</span><span class="va">oos</span><span class="op">]</span></span>
+<span></span>
+<span><span class="va">ew</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>ann_vol <span class="op">=</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/sd.html">sd</a></span><span class="op">(</span><span class="va">ew_ret</span><span class="op">)</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">sqrt</a></span><span class="op">(</span><span class="fl">12</span><span class="op">)</span>,</span>
+<span>        sharpe  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html">mean</a></span><span class="op">(</span><span class="va">ew_ex</span><span class="op">)</span> <span class="op">/</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/sd.html">sd</a></span><span class="op">(</span><span class="va">ew_ex</span><span class="op">)</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">sqrt</a></span><span class="op">(</span><span class="fl">12</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html">round</a></span><span class="op">(</span><span class="va">ew</span>, <span class="fl">4</span><span class="op">)</span></span>
+<span><span class="co">#&gt; ann_vol  sharpe </span></span>
+<span><span class="co">#&gt;  0.2024  0.2258</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<div class="cell" data-layout-align="center">
+<div id="tbl-05-race" class="cell quarto-float quarto-figure quarto-figure-center anchored" data-layout-align="center">
+<figure class="quarto-float quarto-float-tbl figure"><figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-05-race-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;7.1: Minimum variance on 123 equities, scored out of sample on identical months. <code>failed</code> counts the rebalancing dates that produced no portfolio at all.
+</figcaption><div aria-describedby="tbl-05-race-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="cell caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 14%">
+<col style="width: 10%">
+<col style="width: 14%">
+<col style="width: 15%">
+<col style="width: 11%">
+<col style="width: 10%">
+<col style="width: 13%">
+<col style="width: 10%">
+</colgroup>
+<thead><tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: right;">window</th>
+<th style="text-align: left;">estimator</th>
+<th style="text-align: left;">failed</th>
+<th style="text-align: right;">ann_vol</th>
+<th style="text-align: right;">sharpe</th>
+<th style="text-align: right;">eff_bets</th>
+<th style="text-align: right;">lambda</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">sample</td>
+<td style="text-align: right;">60</td>
+<td style="text-align: left;">sample</td>
+<td style="text-align: left;">192 of 192</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">shrunk</td>
+<td style="text-align: right;">60</td>
+<td style="text-align: left;">shrunk</td>
+<td style="text-align: left;">0 of 192</td>
+<td style="text-align: right;">0.1432</td>
+<td style="text-align: right;">0.188</td>
+<td style="text-align: right;">18.0</td>
+<td style="text-align: right;">0.241</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">diagonal</td>
+<td style="text-align: right;">60</td>
+<td style="text-align: left;">diagonal</td>
+<td style="text-align: left;">0 of 192</td>
+<td style="text-align: right;">0.1832</td>
+<td style="text-align: right;">0.213</td>
+<td style="text-align: right;">98.5</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">factor3</td>
+<td style="text-align: right;">60</td>
+<td style="text-align: left;">factor3</td>
+<td style="text-align: left;">192 of 192</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">sample1</td>
+<td style="text-align: right;">120</td>
+<td style="text-align: left;">sample</td>
+<td style="text-align: left;">192 of 192</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">shrunk1</td>
+<td style="text-align: right;">120</td>
+<td style="text-align: left;">shrunk</td>
+<td style="text-align: left;">0 of 192</td>
+<td style="text-align: right;">0.1353</td>
+<td style="text-align: right;">0.163</td>
+<td style="text-align: right;">16.1</td>
+<td style="text-align: right;">0.130</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">diagonal1</td>
+<td style="text-align: right;">120</td>
+<td style="text-align: left;">diagonal</td>
+<td style="text-align: left;">0 of 192</td>
+<td style="text-align: right;">0.1839</td>
+<td style="text-align: right;">0.228</td>
+<td style="text-align: right;">100.6</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">factor31</td>
+<td style="text-align: right;">120</td>
+<td style="text-align: left;">factor3</td>
+<td style="text-align: left;">192 of 192</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">sample2</td>
+<td style="text-align: right;">180</td>
+<td style="text-align: left;">sample</td>
+<td style="text-align: left;">0 of 192</td>
+<td style="text-align: right;">0.1327</td>
+<td style="text-align: right;">0.082</td>
+<td style="text-align: right;">14.0</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">shrunk2</td>
+<td style="text-align: right;">180</td>
+<td style="text-align: left;">shrunk</td>
+<td style="text-align: left;">0 of 192</td>
+<td style="text-align: right;">0.1328</td>
+<td style="text-align: right;">0.112</td>
+<td style="text-align: right;">16.7</td>
+<td style="text-align: right;">0.096</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">diagonal2</td>
+<td style="text-align: right;">180</td>
+<td style="text-align: left;">diagonal</td>
+<td style="text-align: left;">0 of 192</td>
+<td style="text-align: right;">0.1852</td>
+<td style="text-align: right;">0.231</td>
+<td style="text-align: right;">101.9</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">factor32</td>
+<td style="text-align: right;">180</td>
+<td style="text-align: left;">factor3</td>
+<td style="text-align: left;">0 of 192</td>
+<td style="text-align: right;">0.1310</td>
+<td style="text-align: right;">0.089</td>
+<td style="text-align: right;">15.3</td>
+<td style="text-align: right;">NA</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+<p>Read <code>failed</code> first. At sixty and a hundred and twenty months two of the four estimators produce nothing — not a poor portfolio, nothing, on every one of the 192 rebalancing dates. Route three and the diagonal target get as far as a weight vector; the sample matrix and the released factor model do not.</p>
+<p>Where they run, shrinkage gives the lowest volatility at every window: 13.5% at a hundred and twenty months against 18.4% for the diagonal and 20.2% for holding everything equally.</p>
+<p>Then the row that keeps this from being an advertisement.</p>
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<thead><tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: left;">estimator</th>
+<th style="text-align: right;">ann_vol</th>
+<th style="text-align: right;">sharpe</th>
+<th style="text-align: right;">lambda</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">sample2</td>
+<td style="text-align: left;">sample</td>
+<td style="text-align: right;">0.1327</td>
+<td style="text-align: right;">0.082</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">shrunk2</td>
+<td style="text-align: left;">shrunk</td>
+<td style="text-align: right;">0.1328</td>
+<td style="text-align: right;">0.112</td>
+<td style="text-align: right;">0.096</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">diagonal2</td>
+<td style="text-align: left;">diagonal</td>
+<td style="text-align: right;">0.1852</td>
+<td style="text-align: right;">0.231</td>
+<td style="text-align: right;">NA</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">factor32</td>
+<td style="text-align: left;">factor3</td>
+<td style="text-align: right;">0.1310</td>
+<td style="text-align: right;">0.089</td>
+<td style="text-align: right;">NA</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>At a hundred and eighty months the sample matrix is finally estimable and shrinkage stops buying anything: 0.1328 against 0.1327 is a dead heat, and the factor model is marginally ahead of both. Shrinkage is not a better estimator in general. It is the estimator that exists when the others do not, which is a different and more useful property.</p>
+<p>The <code>lambda</code> column says so from the inside: it falls from 0.241 to 0.096 as the window lengthens. The procedure asks for less help as it needs less, which is the practical content of the Ledoit-Wolf result.</p>
+</section><section id="the-column-that-should-make-you-uncomfortable" class="level3" data-number="7.2.8"><h3 data-number="7.2.8" class="anchored" data-anchor-id="the-column-that-should-make-you-uncomfortable">
+<span class="header-section-number">7.2.8</span> The column that should make you uncomfortable</h3>
+<p><code>sharpe</code> is not <code>ann_vol</code>, and the ordering is not the same.</p>
+<p>Minimum variance did what it was asked. It cut annualised volatility from 20.2% to 13.5%, about a third. It also finished behind equal weighting on Sharpe ratio, 0.163 against 0.226. The risk came out; so did the return. <span class="citation" data-cites="demiguel2009">DeMiguel et al. (<a href="99-references.html#ref-demiguel2009" role="doc-biblioref">2009</a>)</span> found the same ordering across a range of universes and estimators, which is the subject of <a href="06-why-estimates-matter.html#sec-06-why-estimates-matter-standard" class="quarto-xref"><span>Section 8.1</span></a>.</p>
+</section></section><section id="sec-05-covariance-hidden" class="level2" data-number="7.3"><h2 data-number="7.3" class="anchored" data-anchor-id="sec-05-covariance-hidden">
+<span class="header-section-number">7.3</span> What else is in there</h2>
+<p><code>PortfolioAnalytics</code> ships a family of robust covariance estimators that almost nobody uses and that no textbook of this generation covers.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb11"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/grep.html">grep</a></span><span class="op">(</span><span class="st">"covRob"</span>, <span class="fu"><a href="https://rdrr.io/r/base/ls.html">ls</a></span><span class="op">(</span><span class="st">"package:PortfolioAnalytics"</span><span class="op">)</span>, value <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "custom.covRob.Mcd"   "custom.covRob.MM"    "custom.covRob.Rocke"</span></span>
+<span><span class="co">#&gt; [4] "custom.covRob.TSGS"  "MycovRobMcd"         "MycovRobTSGS"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>They answer route four. Shrinkage repairs a matrix badly conditioned because the sample is short. A robust estimator repairs one badly centred because a few months dominate it: a flash crash, a redenomination, a bad print in a vendor file. The minimum covariance determinant estimator behind <code>custom.covRob.Mcd()</code> searches for the subset of observations with the smallest generalised variance and estimates from that, discarding the rest.</p>
+<p>They plug in exactly where route three did.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">robust_moments</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">R</span>, <span class="va">portfolio</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">m</span> <span class="op">&lt;-</span> <span class="fu">custom.covRob.Mcd</span><span class="op">(</span><span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/coredata.html">coredata</a></span><span class="op">(</span><span class="va">R</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span>mu <span class="op">=</span> <span class="va">m</span><span class="op">$</span><span class="va">mu</span>, sigma <span class="op">=</span> <span class="va">m</span><span class="op">$</span><span class="va">sigma</span>, m3 <span class="op">=</span> <span class="cn">NULL</span>, m4 <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>       mean <span class="op">=</span> <span class="va">m</span><span class="op">$</span><span class="va">mu</span>, var <span class="op">=</span> <span class="va">m</span><span class="op">$</span><span class="va">sigma</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">rb</span> <span class="op">&lt;-</span> <span class="fu">robust_moments</span><span class="op">(</span><span class="va">cls</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">120</span>, <span class="op">]</span><span class="op">)</span></span>
+<span><span class="va">sb</span> <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cov</a></span><span class="op">(</span><span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/coredata.html">coredata</a></span><span class="op">(</span><span class="va">cls</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">120</span>, <span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span>robust_mean_vol <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html">mean</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">sqrt</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/diag.html">diag</a></span><span class="op">(</span><span class="va">rb</span><span class="op">$</span><span class="va">sigma</span><span class="op">)</span><span class="op">)</span><span class="op">)</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">sqrt</a></span><span class="op">(</span><span class="fl">12</span><span class="op">)</span>,</span>
+<span>  sample_mean_vol <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html">mean</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">sqrt</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/diag.html">diag</a></span><span class="op">(</span><span class="va">sb</span><span class="op">)</span><span class="op">)</span><span class="op">)</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html">sqrt</a></span><span class="op">(</span><span class="fl">12</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; robust_mean_vol sample_mean_vol </span></span>
+<span><span class="co">#&gt;          0.1165          0.1329</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>The robust estimate of volatility is lower, because it has decided that part of what the sample matrix calls risk is a few unusual months rather than the process. Whether that is an improvement is a judgement about the world, not about the estimator: right if those months were contamination, wrong if they were the tail you are paid to bear. <a href="25-uncertainty-and-robustness.html#sec-25-uncertainty-and-robustness-standard" class="quarto-xref"><span>Section 27.1</span></a> makes the case properly, and <a href="08-risk-measures.html#sec-08-risk-measures-standard" class="quarto-xref"><span>Section 10.1</span></a> is where discarding the tail stops being defensible.</p>
+</section><section id="sec-05-covariance-why" class="level2" data-number="7.4"><h2 data-number="7.4" class="anchored" data-anchor-id="sec-05-covariance-why">
+<span class="header-section-number">7.4</span> Why it works</h2>
+<p>Every route is one operation on the eigenvalues, and it is easier to see than to derive.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb13"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">X</span>   <span class="op">&lt;-</span> <span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/coredata.html">coredata</a></span><span class="op">(</span><span class="va">eq</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">120</span>, <span class="op">]</span><span class="op">)</span></span>
+<span><span class="va">ev</span>  <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">S</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">pmax</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/eigen.html">eigen</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/matrix.html">as.matrix</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span>, symmetric <span class="op">=</span> <span class="cn">TRUE</span>, only.values <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">$</span><span class="va">values</span>, <span class="fl">0</span><span class="op">)</span></span>
+<span><span class="va">e_s</span> <span class="op">&lt;-</span> <span class="fu">ev</span><span class="op">(</span><span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cov</a></span><span class="op">(</span><span class="va">X</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">e_h</span> <span class="op">&lt;-</span> <span class="fu">ev</span><span class="op">(</span><span class="fu">corpcor</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/corpcor/man/cov.shrink.html">cov.shrink</a></span><span class="op">(</span><span class="va">X</span>, verbose <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/tibble.html">tibble</a></span><span class="op">(</span></span>
+<span>  matrix      <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">"sample"</span>, <span class="st">"shrunk"</span><span class="op">)</span>,</span>
+<span>  largest     <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="va">e_s</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, <span class="va">e_h</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span><span class="op">)</span>,</span>
+<span>  smallest    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">e_s</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">e_h</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  zero_eigens <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">e_s</span> <span class="op">&lt;</span> <span class="fl">1e-12</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">e_h</span> <span class="op">&lt;</span> <span class="fl">1e-12</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  condition   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="va">e_s</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">e_s</span><span class="op">)</span>, <span class="va">.Machine</span><span class="op">$</span><span class="va">double.eps</span><span class="op">)</span>, <span class="va">e_h</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html">min</a></span><span class="op">(</span><span class="va">e_h</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; # A tibble: 2 × 5</span></span>
+<span><span class="co">#&gt;   matrix largest smallest zero_eigens condition</span></span>
+<span><span class="co">#&gt;   &lt;chr&gt;    &lt;dbl&gt;    &lt;dbl&gt;       &lt;int&gt;     &lt;dbl&gt;</span></span>
+<span><span class="co">#&gt; 1 sample   0.240 0                  4   1.08e15</span></span>
+<span><span class="co">#&gt; 2 shrunk   0.200 0.000854           0   2.34e 2</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>4 eigenvalues of the sample matrix are zero. Those are the riskless portfolios of the first section seen from the other side, and they are not a property of these particular equities: they would be there if the returns were coin flips, because 120 observations cannot pin down 123 directions.</p>
+<div class="cell" data-layout-align="center">
+<div class="cell-output-display">
+<div id="fig-05-spectrum" class="quarto-float quarto-figure quarto-figure-center anchored" data-fig-align="center">
+<figure class="quarto-float quarto-float-fig figure"><div aria-describedby="fig-05-spectrum-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<a href="05-covariance_files/figure-html/fig-05-spectrum-1.png" class="lightbox" data-gallery="quarto-lightbox-gallery-1" title="Figure&nbsp;7.1: The eigenvalue spectrum before and after shrinkage, on a log scale. The sample matrix runs off the bottom of the plot: several of its eigenvalues are exactly zero. Shrinkage compresses the range from fifteen orders of magnitude to two."><img src="05-covariance_files/figure-html/fig-05-spectrum-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" style="width:90.0%"></a>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-05-spectrum-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;7.1: The eigenvalue spectrum before and after shrinkage, on a log scale. The sample matrix runs off the bottom of the plot: several of its eigenvalues are exactly zero. Shrinkage compresses the range from fifteen orders of magnitude to two.
+</figcaption></figure>
+</div>
+</div>
+</div>
+<p>The largest falls by 16.5% and the smallest non-zero one rises by a factor of 509. That is what a shrinkage target <em>is</em>: not a better guess at any individual covariance, but a statement that the extremes of a sample spectrum are mostly sampling error and belong nearer the middle. A factor model reaches the same place by another road, building the matrix from a few directions plus a positive residual for every asset, so small eigenvalues cannot be zero to begin with.</p>
+<section id="shrink-towards-what-when-the-target-moves" class="level3" data-number="7.4.1"><h3 data-number="7.4.1" class="anchored" data-anchor-id="shrink-towards-what-when-the-target-moves">
+<span class="header-section-number">7.4.1</span> Shrink towards what, when the target moves?</h3>
+<p>The usual target is a scaled identity: equal variances, no correlations. It is chosen for being maximally unlike the noisy thing it corrects, not for being true. How untrue it is depends on when you ask.</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">d</span> <span class="op">&lt;-</span> <span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/index.html">index</a></span><span class="op">(</span><span class="va">cls</span><span class="op">)</span></span>
+<span><span class="va">periods</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span>calm   <span class="op">=</span> <span class="va">d</span> <span class="op">&gt;=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html">as.Date</a></span><span class="op">(</span><span class="st">"1993-01-01"</span><span class="op">)</span> <span class="op">&amp;</span> <span class="va">d</span> <span class="op">&lt;=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html">as.Date</a></span><span class="op">(</span><span class="st">"1997-12-31"</span><span class="op">)</span>,</span>
+<span>                crisis <span class="op">=</span> <span class="va">d</span> <span class="op">&gt;=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html">as.Date</a></span><span class="op">(</span><span class="st">"2007-07-01"</span><span class="op">)</span> <span class="op">&amp;</span> <span class="va">d</span> <span class="op">&lt;=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html">as.Date</a></span><span class="op">(</span><span class="st">"2009-06-30"</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">regime_shape</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">keep</span><span class="op">)</span> <span class="op">{</span></span>
+<span>  <span class="va">e</span> <span class="op">&lt;-</span> <span class="fu">ev</span><span class="op">(</span><span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cov</a></span><span class="op">(</span><span class="fu">zoo</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/zoo/man/coredata.html">coredata</a></span><span class="op">(</span><span class="va">cls</span><span class="op">[</span><span class="va">keep</span>, <span class="op">]</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="va">C</span> <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html">cor</a></span><span class="op">(</span><span class="va">cls</span><span class="op">[</span><span class="va">keep</span>, <span class="op">]</span><span class="op">)</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html">data.frame</a></span><span class="op">(</span>months <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">keep</span><span class="op">)</span>, pc1_share <span class="op">=</span> <span class="va">e</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">e</span><span class="op">)</span>,</span>
+<span>             directions <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">e</span><span class="op">)</span><span class="op">^</span><span class="fl">2</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html">sum</a></span><span class="op">(</span><span class="va">e</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span>,</span>
+<span>             mean_correlation <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html">mean</a></span><span class="op">(</span><span class="va">C</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/lower.tri.html">upper.tri</a></span><span class="op">(</span><span class="va">C</span><span class="op">)</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="op">}</span></span>
+<span></span>
+<span><span class="va">shape</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/do.call.html">do.call</a></span><span class="op">(</span><span class="va">rbind</span>, <span class="fu"><a href="https://rdrr.io/r/base/lapply.html">lapply</a></span><span class="op">(</span><span class="va">periods</span>, <span class="va">regime_shape</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">shape</span><span class="op">$</span><span class="va">regime</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/colnames.html">rownames</a></span><span class="op">(</span><span class="va">shape</span><span class="op">)</span></span>
+<span><span class="va">shape</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">"regime"</span>, <span class="st">"months"</span>, <span class="st">"pc1_share"</span>, <span class="st">"directions"</span>, <span class="st">"mean_correlation"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt; # A tibble: 2 × 5</span></span>
+<span><span class="co">#&gt;   regime months pc1_share directions mean_correlation</span></span>
+<span><span class="co">#&gt;   &lt;chr&gt;   &lt;int&gt;     &lt;dbl&gt;      &lt;dbl&gt;            &lt;dbl&gt;</span></span>
+<span><span class="co">#&gt; 1 calm       60     0.428       4.12            0.280</span></span>
+<span><span class="co">#&gt; 2 crisis     24     0.691       2.00            0.439</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+<p>In the calm stretch the first principal component carries 43% of the variance and the matrix behaves like roughly 4.1 independent directions. Through the crisis the same sixteen series carry 69% in the first component and collapse to 2.0. Average pairwise correlation goes from 0.28 to 0.44.</p>
+<p>A diagonal target asserts the assets are unrelated. In calm markets that is wrong by a little; in a crisis it is wrong by a lot, and precisely when the portfolio depends on it. Shrinking towards independence is least defensible exactly when it does the most work — the honest reason to prefer a factor target where you can have one, and <a href="17-regimes.html#sec-17-regimes-standard" class="quarto-xref"><span>Section 19.1</span></a> is where the choice stops being a footnote.</p>
+</section><section id="the-shrinkage-you-have-been-using-all-along" class="level3" data-number="7.4.2"><h3 data-number="7.4.2" class="anchored" data-anchor-id="the-shrinkage-you-have-been-using-all-along">
+<span class="header-section-number">7.4.2</span> The shrinkage you have been using all along</h3>
+<p>One last connection, because it reframes most of this book. Every optimisation in chapters 7 to 12 was long only. <span class="citation" data-cites="jagannathan2003">Jagannathan and Ma (<a href="99-references.html#ref-jagannathan2003" role="doc-biblioref">2003</a>)</span> showed that a non-negativity constraint is not merely a restriction: it acts on the solution the way shrinkage acts on the matrix, because it forbids exactly the large offsetting long-short positions that a noisy <span class="math inline">\(\Sigma\)</span> invites. Their empirical finding is that imposing the constraint improves out-of-sample risk even when it is known to be wrong, which is why a constrained optimisation on a sample matrix is far better behaved than the unconstrained arithmetic suggests.</p>
+<p>That is worth holding next to <a href="#tbl-05-race" class="quarto-xref">Table&nbsp;<span>7.1</span></a>. Route three bought a third off the volatility of an equal-weighted sleeve. The long-only constraint, which you imposed for reasons of mandate rather than of statistics, had already done a comparable amount of work for free.</p>
+</section></section><section id="exercises" class="level2 unnumbered"><h2 class="unnumbered anchored" data-anchor-id="exercises">Exercises</h2>
+<ol type="1">
+<li>Rerun <a href="#tbl-05-race" class="quarto-xref">Table&nbsp;<span>7.1</span></a> with the money-market series added to the equity universe. The covariance is now singular for a second, unrelated reason. Identify it from the eigenvectors rather than from the asset names.</li>
+<li>
+<code><a href="https://rdrr.io/pkg/corpcor/man/cov.shrink.html">corpcor::cov.shrink()</a></code> chooses <code>lambda</code> analytically. Fix it instead at 0, 0.1, 0.25, 0.5 and 1 and plot realised out-of-sample volatility against it. Where is the minimum, and is the analytic choice near it?</li>
+<li>Replace <code>shrinkage_moments()</code> with one built on <code>factor_covariance()</code> and compare them on the same rolling windows. At which window length does the factor structure stop helping, and does that coincide with the point where the sample matrix becomes estimable?</li>
+<li>Repeat the unconstrained minimum-variance optimisation of <a href="07-mean-variance.html#sec-07-mean-variance-standard" class="quarto-xref"><span>Section 9.1</span></a> on the 123 equities with the shrunk matrix, once long only and once with weights free to go negative. Quantify the <span class="citation" data-cites="jagannathan2003">Jagannathan and Ma (<a href="99-references.html#ref-jagannathan2003" role="doc-biblioref">2003</a>)</span> effect on this data.</li>
+</ol>
+
+
+<div id="refs" class="references csl-bib-body hanging-indent" role="list" style="display: none">
+<div id="ref-chopra1993" class="csl-entry" role="listitem">
+Chopra, Vijay K., and William T. Ziemba. 1993. <span>“The Effect of Errors in Means, Variances, and Covariances on Optimal Portfolio Choice.”</span> <em>Journal of Portfolio Management</em> 19 (2): 6–11. <a href="https://doi.org/10.3905/jpm.1993.409440">https://doi.org/10.3905/jpm.1993.409440</a>.
+</div>
+<div id="ref-demiguel2009" class="csl-entry" role="listitem">
+DeMiguel, Victor, Lorenzo Garlappi, and Raman Uppal. 2009. <span>“Optimal Versus Naive Diversification: How Inefficient Is the 1/n Portfolio Strategy?”</span> <em>Review of Financial Studies</em> 22 (5): 1915–53.
+</div>
+<div id="ref-fan2008" class="csl-entry" role="listitem">
+Fan, Jianqing, Yingying Fan, and Jinchi Lv. 2008. <span>“High Dimensional Covariance Matrix Estimation Using a Factor Model.”</span> <em>Journal of Econometrics</em> 147 (1): 186–97. <a href="https://doi.org/10.1016/j.jeconom.2008.09.017">https://doi.org/10.1016/j.jeconom.2008.09.017</a>.
+</div>
+<div id="ref-jagannathan2003" class="csl-entry" role="listitem">
+Jagannathan, Ravi, and Tongshu Ma. 2003. <span>“Risk Reduction in Large Portfolios: Why Imposing the Wrong Constraints Helps.”</span> <em>Journal of Finance</em> 58 (4): 1651–83. <a href="https://doi.org/10.1111/1540-6261.00580">https://doi.org/10.1111/1540-6261.00580</a>.
+</div>
+<div id="ref-ledoit2003" class="csl-entry" role="listitem">
+Ledoit, Olivier, and Michael Wolf. 2003. <span>“Improved Estimation of the Covariance Matrix of Stock Returns with an Application to Portfolio Selection.”</span> <em>Journal of Empirical Finance</em> 10 (5): 603–21. <a href="https://doi.org/10.1016/S0927-5398(03)00007-0">https://doi.org/10.1016/S0927-5398(03)00007-0</a>.
+</div>
+<div id="ref-ledoit2004" class="csl-entry" role="listitem">
+Ledoit, Olivier, and Michael Wolf. 2004. <span>“A Well-Conditioned Estimator for Large-Dimensional Covariance Matrices.”</span> <em>Journal of Multivariate Analysis</em> 88 (2): 365–411.
+</div>
+<div id="ref-michaud1989" class="csl-entry" role="listitem">
+Michaud, Richard O. 1989. <span>“The Markowitz Optimization Enigma: Is <span>‘Optimized’</span> Optimal?”</span> <em>Financial Analysts Journal</em> 45 (1): 31–42. <a href="https://doi.org/10.2469/faj.v45.n1.31">https://doi.org/10.2469/faj.v45.n1.31</a>.
+</div>
+<div id="ref-schafer2005" class="csl-entry" role="listitem">
+Schäfer, Juliane, and Korbinian Strimmer. 2005. <span>“A Shrinkage Approach to Large-Scale Covariance Matrix Estimation and Implications for Functional Genomics.”</span> <em>Statistical Applications in Genetics and Molecular Biology</em> 4 (1). <a href="https://doi.org/10.2202/1544-6115.1175">https://doi.org/10.2202/1544-6115.1175</a>.
+</div>
+</div>
+</section></main><!-- /main --><script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+    const viewSource = window.document.getElementById('quarto-view-source') ||
+                       window.document.getElementById('quarto-code-tools-source');
+    if (viewSource) {
+      const sourceUrl = viewSource.getAttribute("data-quarto-source-url");
+      viewSource.addEventListener("click", function(e) {
+        if (sourceUrl) {
+          // rstudio viewer pane
+          if (/\bcapabilities=\b/.test(window.location)) {
+            window.open(sourceUrl);
+          } else {
+            window.location.href = sourceUrl;
+          }
+        } else {
+          const modal = new bootstrap.Modal(document.getElementById('quarto-embedded-source-code-modal'));
+          modal.show();
+        }
+        return false;
+      });
+    }
+    function toggleCodeHandler(show) {
+      return function(e) {
+        const detailsSrc = window.document.querySelectorAll(".cell > details > .sourceCode");
+        for (let i=0; i<detailsSrc.length; i++) {
+          const details = detailsSrc[i].parentElement;
+          if (show) {
+            details.open = true;
+          } else {
+            details.removeAttribute("open");
+          }
+        }
+        const cellCodeDivs = window.document.querySelectorAll(".cell > .sourceCode");
+        const fromCls = show ? "hidden" : "unhidden";
+        const toCls = show ? "unhidden" : "hidden";
+        for (let i=0; i<cellCodeDivs.length; i++) {
+          const codeDiv = cellCodeDivs[i];
+          if (codeDiv.classList.contains(fromCls)) {
+            codeDiv.classList.remove(fromCls);
+            codeDiv.classList.add(toCls);
+          } 
+        }
+        return false;
+      }
+    }
+    const hideAllCode = window.document.getElementById("quarto-hide-all-code");
+    if (hideAllCode) {
+      hideAllCode.addEventListener("click", toggleCodeHandler(false));
+    }
+    const showAllCode = window.document.getElementById("quarto-show-all-code");
+    if (showAllCode) {
+      showAllCode.addEventListener("click", toggleCodeHandler(true));
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/www\.tidy-asset-allocation\.org");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+            // target, if specified
+            link.setAttribute("target", "_blank");
+            if (link.getAttribute("rel") === null) {
+              link.setAttribute("rel", "noopener");
+            }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script><nav class="page-navigation"><div class="nav-page nav-page-previous">
+      <a href="../chapters/04-expected-returns.html" class="pagination-link" aria-label="Expected Returns">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">Expected Returns</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../chapters/06-why-estimates-matter.html" class="pagination-link" aria-label="Why Your Estimates Matter">
+        <span class="nav-page-text"><span class="chapter-number">8</span>&nbsp; <span class="chapter-title">Why Your Estimates Matter</span></span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer"><div class="nav-footer">
+    <div class="nav-footer-left">
+<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl</p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    <div class="toc-actions d-sm-block d-md-none"><ul><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/edit/main/chapters/05-covariance.qmd" class="toc-action"><i class="bi bi-github"></i>Edit this page</a></li><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></div>
+    <div class="nav-footer-right">
+      <ul class="footer-items list-unstyled">
+<li class="nav-item">
+    <a class="nav-link active" href="https://github.com/sstoeckl/tidy-asset-allocation" aria-current="page">
+<p>Source</p>
+</a>
+  </li>  
+    <li class="nav-item">
+    <a class="nav-link" href="https://github.com/sstoeckl/tidy-asset-allocation/issues/new">
+<p>Report an issue</p>
+</a>
+  </li>  
+</ul>
+</div>
+  </div>
+</footer><script>var lightboxQuarto = GLightbox({"closeEffect":"zoom","descPosition":"bottom","loop":false,"openEffect":"zoom","selector":".lightbox"});
+(function() {
+  let previousOnload = window.onload;
+  window.onload = () => {
+    if (previousOnload) {
+      previousOnload();
+    }
+    lightboxQuarto.on('slide_before_load', (data) => {
+      const { slideIndex, slideNode, slideConfig, player, trigger } = data;
+      const href = trigger.getAttribute('href');
+      if (href !== null) {
+        const imgEl = window.document.querySelector(`a[href="${href}"] img`);
+        if (imgEl !== null) {
+          const srcAttr = imgEl.getAttribute("src");
+          if (srcAttr && srcAttr.startsWith("data:")) {
+            slideConfig.href = srcAttr;
+          }
+        }
+      } 
+    });
+  
+    lightboxQuarto.on('slide_after_load', (data) => {
+      const { slideIndex, slideNode, slideConfig, player, trigger } = data;
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(slideNode);
+      }
+    });
+  
+  };
+  
+})();
+          </script>
+
+
+<script src="../site_libs/quarto-html/zenscroll-min.js"></script>
+</body></html>

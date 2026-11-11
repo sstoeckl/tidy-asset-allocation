@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this book or its code, please cite it as below."
+title: "Tidy Asset Allocation in R"
+type: software
+authors:
+  - family-names: "Stöckl"
+    given-names: "Sebastian"
+    affiliation: "University of Liechtenstein"
+repository-code: "https://github.com/sstoeckl/tidy-asset-allocation"
+url: "https://www.tidy-pm.com/dev/"
+abstract: >-
+  A course text on building, constraining and testing multi-asset portfolios
+  with PortfolioAnalytics and the tidyverse: the question first, the
+  mathematics in the running text, the method attributed to the literature,
+  the code executed on a modeled multi-asset market that ships with the
+  companion package tidypm, and takeaways and exercises at the end of every
+  chapter.
+keywords:
+  - asset allocation
+  - portfolio optimization
+  - R
+  - PortfolioAnalytics
+  - textbook
+version: "2026.11"
+date-released: "2026-11-11"
+preferred-citation:
+  type: book
+  title: "Tidy Asset Allocation in R"
+  authors:
+    - family-names: "Stöckl"
+      given-names: "Sebastian"
+  year: 2026
+  url: "https://www.tidy-pm.com/dev/"
+  notes: "Draft under review; the online edition is the edition of record."

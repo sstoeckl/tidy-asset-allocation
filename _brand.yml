@@ -1,7 +1,7 @@
 meta:
   name: Tidy Asset Allocation
   link:
-    home: https://www.tidy-asset-allocation.org
+    home: https://www.tidy-pm.com/dev/
 
 # The design follows Tidy Finance: the stock `cosmo` Bootstrap theme carrying a
 # single accent colour, one sans typeface throughout, and no ornament. The

@@ -21,6 +21,12 @@ REMOTE="$(git remote get-url origin)"
 
 python tools/fix-theme-links.py "$SITE"
 
+# Slide decks render standalone next to their source (CLAUDE.md, "Slides");
+# they ride into the site here, under slides/, where the chapter banner links.
+if ls slides/*.html >/dev/null 2>&1; then
+  mkdir -p "$SITE/slides" && cp slides/*.html "$SITE/slides/"
+fi
+
 if [ ! -d "$CLONE/.git" ]; then
   if git ls-remote --exit-code --heads "$REMOTE" gh-pages >/dev/null 2>&1; then
     git clone -q --branch gh-pages --single-branch "$REMOTE" "$CLONE"

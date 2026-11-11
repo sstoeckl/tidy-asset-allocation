@@ -1,0 +1,136 @@
+---
+metadata:
+  pagetitle: "Teaching with This Book"
+  description-meta: "What comes with each chapter, and three fourteen-week course plans at bachelor's, master's and advanced master's level."
+---
+
+# Teaching with This Book {#sec-966-teaching}
+
+This appendix is for the instructor. It lists what comes with each chapter
+beyond the text, and it lays out three fourteen-week course plans that draw on
+the same twenty-eight chapters at different depths: an introductory
+bachelor's course, a general master's course, and an advanced master's course
+that assumes the general one. The chapters were written to be teachable in one
+session each, and the plans are built on that unit.
+
+## What Comes with Each Chapter {#sec-966-teaching-materials}
+
+Every numbered chapter carries a banner under its title with four things.
+
+- **The code.** One R script with the chapter's code in the order it runs in
+  the book, each chunk under the label the book uses, so that
+  `knitr::read_chunk()` can pick a chunk out by name. Chunks the book shows
+  but does not run are commented out. The script runs from the folder that
+  holds it, beside `_common.R` and the tables the chapters read; a setup
+  script installs the packages, pinned where the book pins them
+  (@sec-93-package-notes). One archive holds the scripts of all chapters.
+- **The exercises as a file.** The chapter's exercises as comments, each
+  followed by room to work, after the chapter's data setup so that the
+  student starts from the same objects the chapter uses.
+- **The solutions.** The worked solutions are @sec-96-solutions, computed at
+  render time on the same data; their code is downloadable beside the
+  exercises. An instructor who prefers to hand the solutions out later can
+  point students at the exercise file alone.
+- **Slides**, where a deck exists. The decks are built from the chapter's own
+  code and figures, so a figure on a slide is the figure in the book.
+
+The chapter's review status sits in the same banner, and the text can be
+annotated in place; @sec-97-colophon-status and the repository's `REVIEWING.md`
+say how that works.
+
+## Three Course Plans {#sec-966-teaching-plans}
+
+The plans assume fourteen weeks of one session each, with the chapter read
+before the session and the exercises worked after it. They differ in what
+they assume and in what they leave out, not in how a chapter is taught.
+
+### An introductory course {#sec-966-teaching-bsc}
+
+For a bachelor's course in portfolio management that follows an introductory
+finance course. One chapter a week, the central chapter over two weeks, and
+nothing from Parts V, VI or VIII: the course ends where a portfolio has been
+built, constrained, tested and costed. The R refresher of @sec-94-r-primer is
+read in the first week.
+
+| Week | Chapter | Exercises |
+|---|---|---|
+| 1 | [Setting Up Your Environment](01-setting-up.qmd), with @sec-94-r-primer | 1–3 |
+| 2 | [Notation and Data](02-notation-and-data.qmd) | 1–3 |
+| 3 | [Return, Risk, and the Investor's Problem](03-return-risk-and-the-investor.qmd) | 1–2 |
+| 4 | [Descriptive Analysis of Asset Returns](04-descriptive-analysis.qmd) | 1–3 |
+| 5 | [Expected Returns](06-expected-returns.qmd) | 1–2 |
+| 6 | [The Covariance Matrix](07-covariance-matrix.qmd) | 1–2 |
+| 7 | [Mean-Variance Optimization](09-mean-variance.qmd), theory and the two-asset case | 1–2 |
+| 8 | [Mean-Variance Optimization](09-mean-variance.qmd), implementation and application | 3–5 |
+| 9 | [Portfolio Constraints](12-constraints.qmd) | 1–2 |
+| 10 | [Risk-Based Allocation](14-risk-based-allocation.qmd) | 1–2 |
+| 11 | [Estimation Error and Its Cost](08-estimation-error.qmd) | 1–2 |
+| 12 | [Rebalancing and Transaction Costs](23-rebalancing.qmd) | 1–2 |
+| 13 | [Backtesting and Diagnostics](25-backtesting.qmd) | 1–2 |
+| 14 | [Benchmarks and Active Risk](24-benchmarks-and-active-risk.qmd), and a review | 1–2 |
+
+: The introductory plan: twelve chapters in fourteen weeks. {#tbl-966-bsc}
+
+Estimation error comes after the optimizer rather than before it, so that the
+student has seen what the optimizer does with a sample moment before learning
+how little the sample moment is worth; risk-based allocation then reads as
+the answer to that problem rather than as a separate topic.
+
+### A general master's course {#sec-966-teaching-msc}
+
+For a master's course in asset allocation that follows a bachelor's course in
+investments. Parts I to IV and VII in full, one chapter from Part V, one
+sleeve from Part VI, and a week left for the instructor's choice. Two
+chapters in a week where one of them is short.
+
+| Week | Chapters | Exercises |
+|---|---|---|
+| 1 | [Setting Up Your Environment](01-setting-up.qmd); [Notation and Data](02-notation-and-data.qmd) | 1.1–1.3, 2.1–2.3 |
+| 2 | [Return, Risk, and the Investor's Problem](03-return-risk-and-the-investor.qmd); [Descriptive Analysis of Asset Returns](04-descriptive-analysis.qmd) | 3.1–3.4, 4.1–4.3 |
+| 3 | [Factor Models and Beta Estimation](05-factor-models.qmd) | 5.1–5.3 |
+| 4 | [Expected Returns](06-expected-returns.qmd); [The Covariance Matrix](07-covariance-matrix.qmd) | 6.1–6.4, 7.1–7.4 |
+| 5 | [Estimation Error and Its Cost](08-estimation-error.qmd) | 8.1–8.4 |
+| 6 | [Mean-Variance Optimization](09-mean-variance.qmd) | 9.1–9.5 |
+| 7 | [Risk Measures Beyond Variance](10-risk-measures.qmd); [Higher Moments](11-higher-moments.qmd) | 10.1–10.4, 11.1–11.2 |
+| 8 | [Portfolio Constraints](12-constraints.qmd); [Numerical Optimization and Solvers](13-solvers.qmd) | 12.1–12.4, 13.1–13.3 |
+| 9 | [Risk-Based Allocation](14-risk-based-allocation.qmd); [Hierarchical and Sleeve-Based Allocation](15-hierarchical-allocation.qmd) | 14.1–14.4, 15.1–15.2 |
+| 10 | [Expressing Views](17-expressing-views.qmd) | 17.1–17.4 |
+| 11 | [The Equity Sleeve](21-equity-sleeve.qmd) | 21.1–21.4 |
+| 12 | [Rebalancing and Transaction Costs](23-rebalancing.qmd) | 23.1–23.4 |
+| 13 | [Benchmarks and Active Risk](24-benchmarks-and-active-risk.qmd); [Backtesting and Diagnostics](25-backtesting.qmd) | 24.1–24.4, 25.1–25.4 |
+| 14 | The instructor's choice: [Signals and Return Forecasts](16-signals-and-forecasts.qmd) or [Regime-Dependent Allocation](19-regimes.qmd), or a project session | |
+
+: The general master's plan: twenty chapters in fourteen weeks. {#tbl-966-msc}
+
+The chapters left out, 18, 20, 22 and 26 to 28, are the advanced course.
+
+### An advanced master's course {#sec-966-teaching-advanced}
+
+For a second master's course that assumes the general one: Parts V, VI and
+VIII in full, the scenario-analysis appendix, and a project. The first week
+reopens the three chapters the rest depend on, read again rather than taught
+again. Every exercise of a chapter is assigned, because at this level the
+exercises are where the chapter is learned.
+
+| Week | Chapters |
+|---|---|
+| 1 | Reopened: [Estimation Error and Its Cost](08-estimation-error.qmd), [Mean-Variance Optimization](09-mean-variance.qmd), [Numerical Optimization and Solvers](13-solvers.qmd) |
+| 2 | [Higher Moments](11-higher-moments.qmd) |
+| 3 | [Signals and Return Forecasts](16-signals-and-forecasts.qmd) |
+| 4 | [Expressing Views](17-expressing-views.qmd) |
+| 5 | [Parametric Portfolio Policies](18-parametric-policies.qmd) |
+| 6 | [Regime-Dependent Allocation](19-regimes.qmd) |
+| 7 | [Sustainable Investing Constraints](20-sustainability.qmd) |
+| 8 | [The Equity Sleeve](21-equity-sleeve.qmd) |
+| 9 | [The Fixed Income Sleeve](22-fixed-income-sleeve.qmd) |
+| 10 | [The Cost of Forecast Error](26-forecast-error-cost.qmd) |
+| 11 | [Decision-Aware Forecasting](27-decision-aware-forecasting.qmd) |
+| 12 | [Robustness and Model Uncertainty](28-robustness.qmd) |
+| 13 | @sec-965-scenario-analysis: the market with its factors shocked |
+| 14 | Project presentations |
+
+: The advanced plan: eleven chapters, one appendix and a project in fourteen weeks. {#tbl-966-advanced}
+
+A project that fits the course is a mandate: a client, a set of constraints,
+a policy, and a backtest that reports what the policy cost and where it
+failed. The chapters of Part VII are the rubric.

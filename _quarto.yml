@@ -4,6 +4,10 @@ project:
   # Chapters live in chapters/ but run from the project root, so that
   # source("R/_common.R") and relative data paths work everywhere.
   execute-dir: project
+  # The code downloads (tools/build-code.py) ride along into the site; the
+  # chapter banner links to them. Build them before a render.
+  resources:
+    - code/
   preview:
     port: 4200
     browser: true
@@ -14,7 +18,7 @@ book:
   author: "Sebastian Stöckl"
   date: today
   date-format: "D MMMM YYYY"
-  site-url: https://www.tidy-asset-allocation.org
+  site-url: https://www.tidy-pm.com/dev/
   repo-url: https://github.com/sstoeckl/tidy-asset-allocation
   repo-actions: [edit, issue]
   search: true
@@ -104,10 +108,36 @@ book:
     - chapters/95-coverage-ledger.qmd
     - chapters/96-solutions.qmd
     - chapters/965-scenario-analysis.qmd
+    - chapters/966-teaching-with-this-book.qmd
     - chapters/97-colophon.qmd
     - chapters/98-acknowledgements.qmd
 
 bibliography: assets/bib/references.bib
+
+# The banner under every chapter title: review status (review/status.csv),
+# code downloads and slides. HTML only; the filter returns early otherwise.
+filters:
+  - tools/chapter-banner.lua
+
+# Feedback, two layers. Hypothesis anchors a note to the sentence it was made
+# on (reviewers post to a private group); giscus puts a GitHub Discussions
+# thread under every page for remarks about the chapter as a whole. How the
+# comments are collected and logged: REVIEWING.md.
+comments:
+  hypothesis:
+    theme: clean
+    openSidebar: false
+    showHighlights: whenSidebarOpen
+  giscus:
+    repo: sstoeckl/tidy-asset-allocation
+    repo-id: R_kgDOVrAPVg
+    category: General
+    category-id: DIC_kwDOVrAPVs4DK6cA
+    mapping: pathname
+    reactions-enabled: false
+    input-position: top
+    theme: light
+    loading: lazy
 
 crossref:
   chapters: true
@@ -158,11 +188,21 @@ format:
     footnotes-hover: true
     crossrefs-hover: true
     email-obfuscation: javascript
+    # Usage counts, when wanted: GoatCounter sets no cookie and stores no
+    # personal data, so it needs no consent banner. Create a site at
+    # goatcounter.com, put its code into assets/analytics.html, and uncomment.
+    # include-in-header: assets/analytics.html
 
   pdf:
     documentclass: scrbook
     papersize: a4
     classoption: [oneside]
+    pdf-engine: xelatex
+    toc: true
+    toc-depth: 2
+    lof: false
+    lot: false
+    fig-pos: "H"
     geometry:
       - inner=3cm
       - outer=3cm

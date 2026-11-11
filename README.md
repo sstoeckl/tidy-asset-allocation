@@ -32,6 +32,21 @@ the tools that check them (execution, inline numbers, cross-references,
 DOIs) in `tools/`. `CLAUDE.md` is the editorial contract the chapters are
 written to.
 
+The code of every chapter is in `code/`, one script per chapter with the
+exercises and solutions beside it, built by `tools/build-code.py` and served
+with the book.
+
+## Reviewing
+
+The book is in review. `REVIEWING.md` says how to comment (annotations on the
+page, a discussion thread under it, issues for the code), who reads what and
+when, and what happens to every comment. `review/status.csv` carries each
+chapter's stage.
+
+## Citing
+
+`CITATION.cff`, or the BibTeX entry in the book's colophon.
+
 ## Licence
 
 To be decided. Code CC-BY or MIT; prose CC-BY-NC-SA is the likely split.

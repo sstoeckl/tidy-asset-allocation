@@ -69,3 +69,14 @@ Rplots.pdf
 
 # knitr caches from a stray knit at the project root
 /cache/
+
+# The code downloads are derived (tools/build-code.py); the scripts are tracked
+# so that they can be browsed, the archive is rebuilt before every render.
+/code/*.zip
+
+# Hypothesis credentials for tools/fetch-hypothesis.py
+/review/.hypothesis.*
+
+# Rendered slide decks are derived; the .qmd and the shared .scss are the sources.
+/slides/*.html
+/slides/*_files/

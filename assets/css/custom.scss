@@ -285,8 +285,43 @@ nav[role="doc-toc"] ul > li > a.active {
   color: $tidyaa-inksoft;
 }
 
+/* --- the chapter banner ------------------------------------------------------
+   One line under the title: review status, code downloads, slides, how to
+   comment. Assembled by tools/chapter-banner.lua; set here in the grey of the
+   title meta so it reads as furniture, not as content.                     */
+
+.chapter-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.6rem;
+  font-size: 0.84rem;
+  color: $tidyaa-inksoft;
+  border-top: 1px solid $tidyaa-rule;
+  border-bottom: 1px solid $tidyaa-rule;
+  padding: 0.55rem 0;
+  margin: -1.4rem 0 2rem 0;
+}
+
+.chapter-banner .banner-sep { color: $tidyaa-rule; }
+
+.chapter-banner .banner-status {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.5rem;
+  border-radius: 3px;
+  background: $tidyaa-bluepale;
+  color: $tidyaa-bluedeep;
+}
+
+.chapter-banner .status-alpha { background: lighten($tidyaa-caution, 38%); color: darken($tidyaa-caution, 25%); }
+.chapter-banner .status-beta  { background: lighten($tidyaa-good, 55%);    color: $tidyaa-good; }
+.chapter-banner .status-final { background: $tidyaa-surface;               color: $tidyaa-ink; }
+
 /* --- print --------------------------------------------------------------------- */
 
 @media print {
-  .sidebar, .nav-page, #quarto-margin-sidebar { display: none; }
+  .sidebar, .nav-page, #quarto-margin-sidebar, .chapter-banner { display: none; }
 }

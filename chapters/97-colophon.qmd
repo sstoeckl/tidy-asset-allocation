@@ -85,7 +85,58 @@ Sans 3; the accent color is a light blue. Figures are drawn with `ggplot2` and
 the theme in `R/_common.R`, and are built from a single data frame per figure
 so that no coordinate can be paired with the wrong label.
 
+## Review Status {#sec-97-colophon-status}
+
+The book is reviewed in four stages, and every numbered chapter shows its
+stage in the banner under its title: *draft* while it waits for the author's
+read, *alpha* while two or three colleagues check the theory, the literature
+and whether the chapter teaches, *beta* while students in a course work it
+with its exercises, and *final* when a semester's readers have been through
+it. The stages, the questions each reader is asked and what happens to a
+comment are in the repository's `REVIEWING.md`; the status itself is one line
+per chapter in `review/status.csv`, read here.
+
+```{r}
+#| label: tbl-97-status
+#| tbl-cap: "Where each chapter stands in review."
+#| echo: false
+st <- read.csv("review/status.csv", stringsAsFactors = FALSE, na.strings = character())
+st$title <- vapply(st$file, function(f)
+  rmarkdown::yaml_front_matter(file.path("chapters", paste0(f, ".qmd")))$title,
+  character(1))
+tibble::tibble(chapter = as.integer(substr(st$file, 1, 2)), title = st$title,
+               status = st$status, since = st$since, note = st$note) |>
+  kable(align = "rllll")
+```
+
+## Citing This Book {#sec-97-colophon-cite}
+
+The online edition is the edition of record, and the version is the date of
+the render shown on each page. The repository carries a `CITATION.cff`; in
+BibTeX:
+
+```{r}
+#| label: citation
+#| echo: false
+#| results: asis
+cat("```bibtex\n",
+    "@book{stoeckl2026tidyaa,\n",
+    "  author = {Stöckl, Sebastian},\n",
+    "  title  = {Tidy Asset Allocation in {R}},\n",
+    "  year   = {", format(Sys.Date(), "%Y"), "},\n",
+    "  url    = {https://www.tidy-pm.com/dev/},\n",
+    "  note   = {Online edition, version of ", format(Sys.Date(), "%d %B %Y"), "}\n",
+    "}\n```\n", sep = "")
+```
+
 ## Changelog {#sec-97-colophon-changelog}
+
+- **2026-11-11.** The build of `PortfolioAnalytics` moved to the fork head
+  that carries all five open pull requests. The review machinery was set up:
+  annotations on the page, a discussion thread under it, a review status per
+  chapter, and the reviewers' guide. The code of every chapter became a
+  download, with the exercises as a file and the solutions beside them, and
+  @sec-966-teaching added three course plans.
 
 - **2026-11-09.** The data moved to dataset version 6.2.0, read out of the
   source model itself, and onto a model calendar: thirty-one model years, with

@@ -1,0 +1,9 @@
+# renv dependency discovery: derived and side material, not chapter code.
+# code/ is generated from the chapters (tools/build-code.py) and names pak,
+# which readers install but the book does not; the cover script and the
+# slide decks reuse what the chapters already load.
+code/
+assets/cover/
+slides/
+_freeze/
+review/

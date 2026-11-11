@@ -451,7 +451,7 @@ back under a limit of five. On the build this book pins, a position limit
 warning, and the unconstrained weights come back, exactly as on the CRAN
 release. ROI honors the limit only on its two mixed-integer paths, maximum
 return and minimum expected shortfall, which it hands to `Rglpk`. A patch that
-refuses the quadratic call is proposed upstream, not in the pinned build
+would refuse the quadratic call exists neither upstream nor on the fork this book pins; the book documents the behavior instead
 (@sec-93-package-notes). The honest check is `pos_limit_fail()`, which the
 sampler uses internally and which takes any weight vector; the full table of
 which solver honors which constraint is @sec-92-solver-matrix.

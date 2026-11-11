@@ -213,7 +213,7 @@ limit (`max_pos`) on ROI's quadratic path is dropped without a message: no
 error, no warning, and the unconstrained weights come back, exactly as on the
 CRAN release. ROI honors the limit only on its two mixed-integer paths, maximum
 return and minimum expected shortfall, which it hands to `Rglpk`. A patch that
-refuses the quadratic call is proposed upstream, not in the pinned build. See
+would refuse the quadratic call exists neither upstream nor on the fork this book pins; the book documents the behavior instead. See
 @sec-93-package-notes.
 
 **Leverage exposure on the quadratic path.** `gmv_opt_leverage()` builds its

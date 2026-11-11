@@ -64,8 +64,8 @@ The full dependency set, `r length(lock$Packages)` packages in all, is pinned
 in `renv.lock`; `renv::restore()` recreates it. Two dependencies do not come
 from CRAN: `tidypm`, the companion package, which ships the modeled market
 and the machinery `PortfolioAnalytics` does not have; and the build of
-`PortfolioAnalytics` itself, which is the CRAN release with three fixes carried
-on a fork while the pull request is open. @sec-93-package-notes records every
+`PortfolioAnalytics` itself, which is the CRAN release with four fixes carried
+on a fork while their pull requests are open. @sec-93-package-notes records every
 deviation.
 
 The data are the modeled market at dataset version 6.2.0, on its model

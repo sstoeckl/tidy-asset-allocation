@@ -58,30 +58,40 @@ below.
 
 ### Patches in flight
 
-Two, split by how much they ask of the maintainers, and only the first is
-pinned here.
+The book's own pull requests against `braverock/PortfolioAnalytics` stand as
+follows at the time of writing (November 2026). Two small ones were merged on
+19 September 2026: #60, a legend that `chart.EfficientFrontierCompare()` failed
+to draw with `guideline = FALSE`, and #61, a test that `ROI` masked in a suite
+run. Neither is needed by the book. The four that the book depends on are
+**open**, and the lockfile therefore points at the fork branch
+`book-integration`, which carries all four; once they are merged and released,
+it points back at CRAN.
 
 **Pinned.** Every fix below either restores an answer that was wrong or turns a
 silent `NA` into a message. None of them makes a call fail that used to succeed,
 which is why the book builds against them.
 
-| What it fixes | Where it bites |
-|---|---|
-| `maxSR` discards a mean supplied through `momentFUN`, so the "maximum Sharpe" answer is not the maximum Sharpe answer | @sec-09-mean-variance-application, @sec-13-solvers-implementation |
-| `full_investment` is encoded as two opposing inequalities, which makes the active set rank deficient; the solver fails and `NA` weights are returned without a message | @sec-25-backtesting-implementation |
-| `maxSR` is recovered from `match.call()`, so it only works when written as a literal `TRUE`; driving it from a variable fails outright | @sec-13-solvers-implementation |
+| Pull request | What it fixes | Where it bites |
+|---|---|---|
+| #55 | `full_investment` is encoded as two opposing inequalities, which makes the active set rank deficient; the solver fails and `NA` weights are returned without a message | @sec-25-backtesting-implementation |
+| #56 | `maxSR` is recovered from `match.call()`, so it only works when written as a literal `TRUE`; driving it from a variable fails outright | @sec-13-solvers-implementation |
+| #57 | `maxSR` discards a mean supplied through `momentFUN`, so the "maximum Sharpe" answer is not the maximum Sharpe answer | @sec-09-mean-variance-application, @sec-13-solvers-implementation |
+| #58 | a rebalancing period whose solver fails is reported, with what went wrong, instead of vanishing from the result | @sec-25-backtesting-implementation |
 
-**Proposed, not pinned.** Position limits and `maxSR` under a turnover
+A fifth, #59, adds an opt-in override to `statistical.factor.model()`'s
+fewer-observations-than-assets check; it is open too but not pinned, because
+no chapter needs it.
+
+**Not fixed anywhere.** Position limits and `maxSR` under a turnover
 constraint are accepted and then dropped, so the returned portfolio violates
-what was asked for. Refusing those calls is the honest fix, but it breaks code
-that runs today, so it is offered separately and this book does not assume it.
-On the build this book pins, a position limit (`max_pos`) on ROI's quadratic
-path is dropped without a message: no error, no warning, and the unconstrained
-weights come back, exactly as on the CRAN release. ROI honors the limit only on
-its two mixed-integer paths, maximum return and minimum expected shortfall,
-which it hands to `Rglpk`. A patch that refuses the quadratic call is proposed
-upstream, not in the pinned build. @sec-12-constraints-implementation and
-@sec-92-solver-matrix measure it.
+what was asked for. On the build this book pins, a position limit (`max_pos`)
+on ROI's quadratic path is dropped without a message: no error, no warning, and
+the unconstrained weights come back, exactly as on the CRAN release. ROI honors
+the limit only on its two mixed-integer paths, maximum return and minimum
+expected shortfall, which it hands to `Rglpk`. Refusing the quadratic call would
+be the honest fix, but it breaks code that runs today; no patch for it exists
+upstream or on the fork, and this book documents the behavior instead.
+@sec-12-constraints-implementation and @sec-92-solver-matrix measure it.
 
 ```{r}
 #| label: pa-build
@@ -193,8 +203,8 @@ sources with commit hashes, so they restore exactly:
 
 | Package | Pinned at |
 |---|---|
-| `PortfolioAnalytics` | `sstoeckl/PortfolioAnalytics@cc22d4fd`, branch `fix-maxsr-momentfun-mean` |
-| `uncertaintymeasures` | `sstoeckl/uncertaintymeasures@d822c2f5` |
+| `PortfolioAnalytics` | `` `r paste0(recorded$RemoteUsername, "/", recorded$RemoteRepo, "@", substr(recorded$RemoteSha, 1, 8))` ``, branch `` `r recorded$RemoteRef` `` |
+| `uncertaintymeasures` | `` `r paste0(lock$Packages$uncertaintymeasures$RemoteUsername, "/", lock$Packages$uncertaintymeasures$RemoteRepo, "@", substr(lock$Packages$uncertaintymeasures$RemoteSha, 1, 8))` `` |
 
 `tidypm` is the one entry that does not resolve from a network location. It is
 recorded as a **local** source at `../tidypm`, because the companion package is

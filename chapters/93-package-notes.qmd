@@ -62,10 +62,9 @@ The book's own pull requests against `braverock/PortfolioAnalytics` stand as
 follows at the time of writing (November 2026). Two small ones were merged on
 19 September 2026: #60, a legend that `chart.EfficientFrontierCompare()` failed
 to draw with `guideline = FALSE`, and #61, a test that `ROI` masked in a suite
-run. Neither is needed by the book. The four that the book depends on are
-**open**, and the lockfile therefore points at the fork branch
-`book-integration`, which carries all four; once they are merged and released,
-it points back at CRAN.
+run. Neither is needed by the book. The five substantive ones are **open**, and the
+lockfile therefore points at the fork branch `book-integration`, which carries
+all five; once they are merged and released, it points back at CRAN.
 
 **Pinned.** Every fix below either restores an answer that was wrong or turns a
 silent `NA` into a message. None of them makes a call fail that used to succeed,
@@ -77,10 +76,7 @@ which is why the book builds against them.
 | #56 | `maxSR` is recovered from `match.call()`, so it only works when written as a literal `TRUE`; driving it from a variable fails outright | @sec-13-solvers-implementation |
 | #57 | `maxSR` discards a mean supplied through `momentFUN`, so the "maximum Sharpe" answer is not the maximum Sharpe answer | @sec-09-mean-variance-application, @sec-13-solvers-implementation |
 | #58 | a rebalancing period whose solver fails is reported, with what went wrong, instead of vanishing from the result | @sec-25-backtesting-implementation |
-
-A fifth, #59, adds an opt-in override to `statistical.factor.model()`'s
-fewer-observations-than-assets check; it is open too but not pinned, because
-no chapter needs it.
+| #59 | `statistical.factor.model()` refuses a window with fewer observations than assets; `allow.fewer.obs = TRUE` lifts the check and bounds `k` by the observations, with the default unchanged | @sec-07-covariance-matrix-implementation, @sec-21-equity-sleeve-implementation |
 
 **Not fixed anywhere.** Position limits and `maxSR` under a turnover
 constraint are accepted and then dropped, so the returned portfolio violates

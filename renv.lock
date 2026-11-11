@@ -717,7 +717,7 @@
       "RemoteUsername": "sstoeckl",
       "RemoteRepo": "PortfolioAnalytics",
       "RemoteRef": "book-integration",
-      "RemoteSha": "2a4dd910b3bd0d927d90a29e098c2bf78171f755"
+      "RemoteSha": "8b021e12aeb5afa63aab67a11632d8963cb17cb5"
     },
     "R6": {
       "Package": "R6",

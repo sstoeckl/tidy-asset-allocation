@@ -745,6 +745,16 @@ when a wave of chapters is done, and never interrupt it:
 python tools/fix-theme-links.py           # always, see "After every render"
 ```
 
+To publish, `bash tools/publish-gh-pages.sh` (fixes the theme links, mirrors
+the output into a clone of the `gh-pages` branch at `D:/tmp/tidyaa_ghpages`,
+commits, pushes). The site is served at
+https://sstoeckl.github.io/tidy-asset-allocation/ and reaches readers as
+https://www.tidy-pm.com/dev/ through a proxy rule (`_book/_redirects`) in the
+old book's `publish` branch on Netlify, where the old book stays at the root
+until this one replaces it. Both repositories are public with a fresh history
+(2026-11-11); never push the local `history-local` branches, which carry the
+source calendar.
+
 To look at the result, `.claude/launch.json` (at the parent folder the app
 treats as the project root) defines a static server `book` on port 4200 serving
 `D:/tmp/tidyaa_book`; `quarto preview` would re-render.

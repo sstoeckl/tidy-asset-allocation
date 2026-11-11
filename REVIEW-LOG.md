@@ -101,6 +101,23 @@ Open, for the restructuring pass that follows the reverse outline
 - [ ] **21** — the observation-check callout never says the pinned build
       lifts the check with `allow.fewer.obs = TRUE`; several captions type
       their numbers ("372 month-starts", "123 equities", "observation 121").
+- [ ] **13** — "three of the five we test" and "two orders of magnitude" are
+      typed; the claim that `max_pos` is honored on the MILP paths is not
+      tested in this chapter.
+- [ ] **20** — "twenty model years", "two percentage points of return a
+      year" and "roughly half of an exclusion list" are typed, and the last
+      holds at the start of the register only.
+- [ ] **23** — "an eighth" for `turnover()` is typed (it is 2/N); the
+      chapter's own `turnover` shadows the package export of that name.
+- [ ] **24** — the opening and a takeaway say an information-ratio objective
+      is built in `CVXR`, and none is; "thirty times smaller" should be about
+      eight by the chapter's own equation; the appraisal ratio is defined one
+      way and described another; a caption names a column its table lacks.
+- [ ] **25** — the parallel timings and the speedup are typed.
+- [ ] **26** — "chapter 8 measured" twice as plain text instead of a
+      cross-reference.
+- [ ] **28** — `tbl-28-kl` has a header shifted by one column; a missing
+      "that" in the out-of-sample paragraph; "cut to about a fifth" is typed.
 
 ### 09 · Mean-Variance Optimization — first Word round, 2026-09-13
 

@@ -81,9 +81,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-0f05cba98e93abd5bfacabf37e46c573.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
-<link href="../site_libs/bootstrap/bootstrap-dark-189f37bffb98b27434de1cced1e4d8c0.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
-<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light"><script id="quarto-search-options" type="application/json">{
+<link href="../site_libs/bootstrap/bootstrap-75d6dbbc802bd81c7f95867827fb2180.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-59d30803870f1c5a515752fc4d99d562.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-75d6dbbc802bd81c7f95867827fb2180.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light"><script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
   "collapse-after": 3,
@@ -110,7 +110,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     "search-label": "Search"
   }
 }</script><style>html{ scroll-behavior: smooth; }</style>
-<script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script><script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script><script type="text/javascript">
+<script type="application/json" class="js-hypothesis-config">
+{
+  "theme": "clean",
+  "openSidebar": false,
+  "showHighlights": "whenSidebarOpen"
+}
+</script><script async="" src="https://hypothes.is/embed.js"></script><script>
+  window.document.addEventListener("DOMContentLoaded", function (_event) {
+    document.body.classList.add('hypothesis-enabled');
+  });
+</script><script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script><script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script><script type="text/javascript">
 const typesetMath = (el) => {
   if (window.MathJax) {
     // MathJax Typeset
@@ -136,6 +146,14 @@ window.Quarto = {
   typesetMath
 };
 </script>
+<meta property="og:title" content="Data Description">
+<meta property="og:description" content="">
+<meta property="og:image" content="https://www.tidy-pm.com/dev/chapters/assets/cover/cover-social.png">
+<meta property="og:site_name" content="Tidy Asset Allocation in R">
+<meta name="twitter:title" content="Data Description">
+<meta name="twitter:description" content="">
+<meta name="twitter:image" content="https://www.tidy-pm.com/dev/chapters/assets/cover/cover-social.png">
+<meta name="twitter:card" content="summary_large_image">
 </head>
 <body class="nav-sidebar docked quarto-light">
 
@@ -500,14 +518,20 @@ window.Quarto = {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../chapters/966-teaching-with-this-book.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Teaching with This Book</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../chapters/97-colophon.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
+ <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../chapters/98-acknowledgements.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
+ <span class="menu-text"><span class="chapter-number">K</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
   </div>
 </li>
       </ul>
@@ -542,7 +566,10 @@ window.Quarto = {
   
 
 
-</header><p>This appendix documents the modeled market in full. Chapter 2 (<a href="02-notation-and-data.html#sec-02-notation-and-data-simulated-market" class="quarto-xref"><span>Section 2.2</span></a>) introduces it and says why the book runs on it; chapter 4 (<a href="04-descriptive-analysis.html#sec-04-descriptive-analysis-implementation" class="quarto-xref"><span>Section 4.2</span></a>) measures its properties. Here we record what each shipped object contains, how it was constructed, and what it cannot support. Everything below is computed from the objects as they ship in <code>tidypm</code>, so the appendix cannot drift from the data.</p>
+</header><div class="chapter-banner">
+<span class="banner-status status-draft" title="complete, awaiting the author's read">Draft</span><span class="banner-sep">|</span><span class="banner-annotate">To comment, select a passage and annotate it; see <a href="https://github.com/sstoeckl/tidy-asset-allocation/blob/main/REVIEWING.md">how reviews work</a>.</span>
+</div>
+<p>This appendix documents the modeled market in full. Chapter 2 (<a href="02-notation-and-data.html#sec-02-notation-and-data-simulated-market" class="quarto-xref"><span>Section 2.2</span></a>) introduces it and says why the book runs on it; chapter 4 (<a href="04-descriptive-analysis.html#sec-04-descriptive-analysis-implementation" class="quarto-xref"><span>Section 4.2</span></a>) measures its properties. Here we record what each shipped object contains, how it was constructed, and what it cannot support. Everything below is computed from the objects as they ship in <code>tidypm</code>, so the appendix cannot drift from the data.</p>
 <p>The dataset is modeled and contains no real data. Factor models for government bonds, credit, equities and commodities were estimated by historical simulation on market data from 1992 to 2022; the factors were replayed, the idiosyncratic components drawn afresh, and the asset paths reassembled, so that no series is the history of a real security. The market therefore runs on its own calendar, model years 1 to 31, read with the tools of <a href="02-notation-and-data.html#sec-02-notation-and-data-model-calendar" class="quarto-xref"><span>Section 2.2.1</span></a>. Its stress episodes are named for what happens in them and ship as <code>sim_episodes</code>. And because every series is the output of a factor model, the market can be re-run with its factors shocked, which a history cannot, and <a href="965-scenario-analysis.html" class="quarto-xref"><span>Appendix H</span></a> does so.</p>
 <div class="cell" data-layout-align="center">
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">objects</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">"sim_assets"</span>,</span>
@@ -1492,7 +1519,7 @@ Table&nbsp;A.5: Equity instruments by sector.
     }
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
       var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp("https:\/\/www\.tidy-asset-allocation\.org");
+        var filterRegex = new RegExp("https:\/\/www\.tidy-pm\.com\/dev\/");
       var isInternal = (href) => {
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
@@ -1823,7 +1850,33 @@ Table&nbsp;A.5: Equity instruments by sector.
       }
     }
   });
-  </script><nav class="page-navigation"><div class="nav-page nav-page-previous">
+  </script><input type="hidden" id="giscus-base-theme" value="light"><input type="hidden" id="giscus-alt-theme" value="light"><script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "sstoeckl/tidy-asset-allocation";
+    script.dataset.repoId = "R_kgDOVrAPVg";
+    script.dataset.category = "General";
+    script.dataset.categoryId = "DIC_kwDOVrAPVs4DK6cA";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "0";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script><nav class="page-navigation"><div class="nav-page nav-page-previous">
       <a href="../chapters/99-references.html" class="pagination-link" aria-label="References">
         <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text">References</span>
       </a>          
@@ -1837,7 +1890,7 @@ Table&nbsp;A.5: Equity instruments by sector.
 </div> <!-- /content -->
 <footer class="footer"><div class="nav-footer">
     <div class="nav-footer-left">
-<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl</p>
+<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl · text <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>, code <a href="https://github.com/sstoeckl/tidy-asset-allocation/blob/main/LICENSE.md">MIT</a></p>
 </div>   
     <div class="nav-footer-center">
       &nbsp;

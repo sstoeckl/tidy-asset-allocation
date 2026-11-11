@@ -66,9 +66,9 @@ div.csl-indent {
 <link href="site_libs/quarto-html/quarto-syntax-highlighting-0f05cba98e93abd5bfacabf37e46c573.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
 <script src="site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
-<link href="site_libs/bootstrap/bootstrap-dark-189f37bffb98b27434de1cced1e4d8c0.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
-<link href="site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light"><script id="quarto-search-options" type="application/json">{
+<link href="site_libs/bootstrap/bootstrap-75d6dbbc802bd81c7f95867827fb2180.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-dark-59d30803870f1c5a515752fc4d99d562.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-75d6dbbc802bd81c7f95867827fb2180.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light"><script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
   "collapse-after": 3,
@@ -95,6 +95,29 @@ div.csl-indent {
     "search-label": "Search"
   }
 }</script><style>html{ scroll-behavior: smooth; }</style>
+<script type="application/json" class="js-hypothesis-config">
+{
+  "theme": "clean",
+  "openSidebar": false,
+  "showHighlights": "whenSidebarOpen"
+}
+</script><script async="" src="https://hypothes.is/embed.js"></script><script>
+  window.document.addEventListener("DOMContentLoaded", function (_event) {
+    document.body.classList.add('hypothesis-enabled');
+  });
+</script>
+<meta property="og:title" content="Preface">
+<meta property="og:description" content="A course text on building, constraining and testing multi-asset portfolios">
+<meta property="og:image" content="https://www.tidy-pm.com/dev/assets/cover/cover-social.png">
+<meta property="og:site_name" content="Tidy Asset Allocation in R">
+<meta property="og:image:height" content="1600">
+<meta property="og:image:width" content="1600">
+<meta name="twitter:title" content="Preface">
+<meta name="twitter:description" content="A course text on building, constraining and testing multi-asset portfolios">
+<meta name="twitter:image" content="https://www.tidy-pm.com/dev/assets/cover/cover-social.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image-height" content="1600">
+<meta name="twitter:image-width" content="1600">
 </head>
 <body class="nav-sidebar docked quarto-light">
 
@@ -459,14 +482,20 @@ div.csl-indent {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="./chapters/966-teaching-with-this-book.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Teaching with This Book</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="./chapters/97-colophon.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
+ <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="./chapters/98-acknowledgements.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
+ <span class="menu-text"><span class="chapter-number">K</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
   </div>
 </li>
       </ul>
@@ -499,7 +528,7 @@ div.csl-indent {
 <!-- main -->
 <main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block default"><div class="quarto-title">
 <h1 class="title">Tidy Asset Allocation in R</h1>
-<p class="subtitle lead">A handbook for building, constraining and testing multi-asset portfolios</p>
+<p class="subtitle lead">A course text on building, constraining and testing multi-asset portfolios</p>
 </div>
 
 
@@ -525,7 +554,8 @@ div.csl-indent {
   
 
 
-</header><section id="preface" class="level1 unnumbered"><h1 class="unnumbered">Preface</h1>
+</header>
+<section id="preface" class="level1 unnumbered"><h1 class="unnumbered">Preface</h1><p><img src="assets/cover/cover.png" title="Tidy Asset Allocation in R" class="quarto-cover-image nolightbox img-fluid" alt="Tidy Asset Allocation in R, by Sebastian Stöckl: the title over a blue gradient, with the efficient frontier drawn below it."></p>
 <section id="why-this-book-exists" class="level2 unnumbered"><h2 class="unnumbered anchored" data-anchor-id="why-this-book-exists">Why this book exists</h2>
 <p>Asset allocation is taught as a small set of ideas — a frontier, a risk measure, a constraint, a backtest — and practiced as a long chain of decisions about data, estimation, solvers and costs, in which the ideas are the shortest links. The gap between the two is where most of the difficulty lives. A student who can derive the tangency portfolio on paper is often unable to produce it from a return matrix, not because the mathematics is hard but because the implementation asks questions the derivation never did: in excess of what rate, on which window, under which constraint, with which solver, and did the solver actually do what it was told.</p>
 <p>There is an excellent R package for this work. <code>PortfolioAnalytics</code> <span class="citation" data-cites="peterson2026">(<a href="chapters/99-references.html#ref-peterson2026" role="doc-biblioref">Peterson and Carl 2026</a>)</span> has been under development for more than a decade, it supports nine solvers, fourteen constraint types and eleven risk measures, and almost nobody uses more than a tenth of it — partly because a reference manual answers <em>what does this function do</em> and never <em>which of these constraints does my mandate need, and which solver will still honour it once I have added it</em>, and partly because several of its defaults are wrong in ways that produce a plausible answer rather than an error. This book is a course text built on that package. It states each method in mathematics, attributes it to the literature, implements it in R on a market whose every property can be inspected, and then measures how much of the textbook answer survives contact with data the optimizer had not seen.</p>
@@ -561,9 +591,9 @@ div.csl-indent {
 #&gt; PortfolioAnalytics: 2.1.2
 #&gt; tidypm:             0.2.0</code></pre>
 </div>
-<p>The full dependency set, pinned to the versions this book was built against, lives in <code>renv.lock</code>, and <code><a href="https://rstudio.github.io/renv/reference/restore.html">renv::restore()</a></code> recreates it. Every deviation from the released package versions is listed in <a href="chapters/93-package-notes.html" class="quarto-xref"><span>Appendix D — Package Notes</span></a>, and <a href="chapters/97-colophon.html" class="quarto-xref"><span>Appendix I — Colophon and Changelog</span></a> records how the book was built and what has changed.</p>
+<p>The full dependency set, pinned to the versions this book was built against, lives in <code>renv.lock</code>, and <code><a href="https://rstudio.github.io/renv/reference/restore.html">renv::restore()</a></code> recreates it. Every deviation from the released package versions is listed in <a href="chapters/93-package-notes.html" class="quarto-xref"><span>Appendix D — Package Notes</span></a>, and <a href="chapters/97-colophon.html" class="quarto-xref"><span>Appendix J — Colophon and Changelog</span></a> records how the book was built and what has changed.</p>
 </section><section id="acknowledgements" class="level2 unnumbered"><h2 class="unnumbered anchored" data-anchor-id="acknowledgements">Acknowledgements</h2>
-<p>See <a href="chapters/98-acknowledgements.html" class="quarto-xref"><span>Appendix J — Acknowledgements</span></a>.</p>
+<p>See <a href="chapters/98-acknowledgements.html" class="quarto-xref"><span>Appendix K — Acknowledgements</span></a>.</p>
 
 
 <div id="refs" class="references csl-bib-body hanging-indent" role="list" style="display: none">
@@ -704,7 +734,7 @@ Wickham, Hadley, Mine Çetinkaya-Rundel, and Garrett Grolemund. 2023. <em>R for 
     }
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
       var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp("https:\/\/www\.tidy-asset-allocation\.org");
+        var filterRegex = new RegExp("https:\/\/www\.tidy-pm\.com\/dev\/");
       var isInternal = (href) => {
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
@@ -1035,7 +1065,33 @@ Wickham, Hadley, Mine Çetinkaya-Rundel, and Garrett Grolemund. 2023. <em>R for 
       }
     }
   });
-  </script><nav class="page-navigation"><div class="nav-page nav-page-previous">
+  </script><input type="hidden" id="giscus-base-theme" value="light"><input type="hidden" id="giscus-alt-theme" value="light"><script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "sstoeckl/tidy-asset-allocation";
+    script.dataset.repoId = "R_kgDOVrAPVg";
+    script.dataset.category = "General";
+    script.dataset.categoryId = "DIC_kwDOVrAPVs4DK6cA";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "0";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script><nav class="page-navigation"><div class="nav-page nav-page-previous">
   </div>
   <div class="nav-page nav-page-next">
       <a href="./chapters/01-setting-up.html" class="pagination-link" aria-label="Setting Up Your Environment">
@@ -1046,7 +1102,7 @@ Wickham, Hadley, Mine Çetinkaya-Rundel, and Garrett Grolemund. 2023. <em>R for 
 </div> <!-- /content -->
 <footer class="footer"><div class="nav-footer">
     <div class="nav-footer-left">
-<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl</p>
+<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl · text <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>, code <a href="https://github.com/sstoeckl/tidy-asset-allocation/blob/main/LICENSE.md">MIT</a></p>
 </div>   
     <div class="nav-footer-center">
       &nbsp;

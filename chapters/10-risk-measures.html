@@ -100,9 +100,9 @@ div.csl-indent {
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-0f05cba98e93abd5bfacabf37e46c573.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
-<link href="../site_libs/bootstrap/bootstrap-dark-189f37bffb98b27434de1cced1e4d8c0.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
-<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-75d6dbbc802bd81c7f95867827fb2180.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-59d30803870f1c5a515752fc4d99d562.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-75d6dbbc802bd81c7f95867827fb2180.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light">
 <script src="../site_libs/quarto-contrib/glightbox/glightbox.min.js"></script>
 <link href="../site_libs/quarto-contrib/glightbox/glightbox.min.css" rel="stylesheet">
 <link href="../site_libs/quarto-contrib/glightbox/lightbox.css" rel="stylesheet"><script id="quarto-search-options" type="application/json">{
@@ -132,7 +132,17 @@ div.csl-indent {
     "search-label": "Search"
   }
 }</script><style>html{ scroll-behavior: smooth; }</style>
-<script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script><script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script><script type="text/javascript">
+<script type="application/json" class="js-hypothesis-config">
+{
+  "theme": "clean",
+  "openSidebar": false,
+  "showHighlights": "whenSidebarOpen"
+}
+</script><script async="" src="https://hypothes.is/embed.js"></script><script>
+  window.document.addEventListener("DOMContentLoaded", function (_event) {
+    document.body.classList.add('hypothesis-enabled');
+  });
+</script><script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script><script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script><script type="text/javascript">
 const typesetMath = (el) => {
   if (window.MathJax) {
     // MathJax Typeset
@@ -158,6 +168,14 @@ window.Quarto = {
   typesetMath
 };
 </script>
+<meta property="og:title" content="Risk Measures Beyond Variance">
+<meta property="og:description" content="">
+<meta property="og:image" content="https://www.tidy-pm.com/dev/chapters/assets/cover/cover-social.png">
+<meta property="og:site_name" content="Tidy Asset Allocation in R">
+<meta name="twitter:title" content="Risk Measures Beyond Variance">
+<meta name="twitter:description" content="">
+<meta name="twitter:image" content="https://www.tidy-pm.com/dev/chapters/assets/cover/cover-social.png">
+<meta name="twitter:card" content="summary_large_image">
 </head>
 <body class="nav-sidebar docked quarto-light">
 
@@ -522,14 +540,20 @@ window.Quarto = {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../chapters/966-teaching-with-this-book.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Teaching with This Book</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../chapters/97-colophon.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
+ <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../chapters/98-acknowledgements.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
+ <span class="menu-text"><span class="chapter-number">K</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
   </div>
 </li>
       </ul>
@@ -591,7 +615,10 @@ window.Quarto = {
   
 
 
-</header><p>Every optimizer in <a href="09-mean-variance.html#sec-09-mean-variance-theory" class="quarto-xref"><span>Section 9.1</span></a> measured risk by the variance of the portfolio, and nothing in the data required it: <span class="citation" data-cites="markowitz1959">Markowitz (<a href="99-references.html#ref-markowitz1959" role="doc-biblioref">1959</a>)</span> himself proposed the semi-variance, which counts only the returns below the mean, as the measure an investor who fears losses rather than dispersion should prefer. <span class="citation" data-cites="artzner1999">Artzner et al. (<a href="99-references.html#ref-artzner1999" role="doc-biblioref">1999</a>)</span> turned the question around and asked which properties a number must have before it can be called a measure of risk at all, and found that the industry’s standard, value at risk, lacks the one that matters most for building portfolios. This chapter asks what changes when variance is replaced by a measure that has that property.</p>
+</header><div class="chapter-banner">
+<span class="banner-status status-draft" title="complete, awaiting the author's read (since 2026-11-11)">Draft</span><span class="banner-sep">|</span><span class="banner-code">Code: <a href="../code/10-risk-measures.R" download="">script</a> · <a href="../code/10-risk-measures-exercises.R" download="">exercises</a> · <a href="../code/10-risk-measures-solutions.R" download="">solutions</a> · <a href="../code/tidy-asset-allocation-code.zip" download="">all chapters</a></span><span class="banner-sep">|</span><span class="banner-annotate">To comment, select a passage and annotate it; see <a href="https://github.com/sstoeckl/tidy-asset-allocation/blob/main/REVIEWING.md">how reviews work</a>.</span>
+</div>
+<p>Every optimizer in <a href="09-mean-variance.html#sec-09-mean-variance-theory" class="quarto-xref"><span>Section 9.1</span></a> measured risk by the variance of the portfolio, and nothing in the data required it: <span class="citation" data-cites="markowitz1959">Markowitz (<a href="99-references.html#ref-markowitz1959" role="doc-biblioref">1959</a>)</span> himself proposed the semi-variance, which counts only the returns below the mean, as the measure an investor who fears losses rather than dispersion should prefer. <span class="citation" data-cites="artzner1999">Artzner et al. (<a href="99-references.html#ref-artzner1999" role="doc-biblioref">1999</a>)</span> turned the question around and asked which properties a number must have before it can be called a measure of risk at all, and found that the industry’s standard, value at risk, lacks the one that matters most for building portfolios. This chapter asks what changes when variance is replaced by a measure that has that property.</p>
 <p>We first set out the coherence axioms, value at risk and why it fails them, expected shortfall and the linear program that makes it as easy to optimize as variance, its Cornish-Fisher extension, and the downside and drawdown measures that sit beside them; then show which of these <code>PortfolioAnalytics</code> can solve, with which solver, and where its defaults do something other than what the specification says; then solve one long-only problem on the sixteen class series under four objectives and read what each bought. The allocation is <strong>strategic</strong> in the sense of <a href="03-return-risk-and-the-investor.html#sec-03-return-risk-and-the-investor-theory" class="quarto-xref"><span>Section 3.1</span></a>: full-sample moments, no timing, and the out-of-sample check read from the register of <a href="25-backtesting.html#sec-25-backtesting-application" class="quarto-xref"><span>Section 25.3</span></a> rather than recomputed.</p>
 <p>The data are the sixteen risky class series of <a href="02-notation-and-data.html#sec-02-notation-and-data-simulated-market" class="quarto-xref"><span>Section 2.2</span></a>, in excess of the Treasury bill for the reasons of <a href="03-return-risk-and-the-investor.html#sec-03-return-risk-and-the-investor-theory" class="quarto-xref"><span>Section 3.1</span></a>, loaded as <a href="09-mean-variance.html#sec-09-mean-variance-theory" class="quarto-xref"><span>Section 9.1</span></a> loads them.</p>
 <div class="cell" data-layout-align="center">
@@ -1667,7 +1694,7 @@ Yamai, Yasuhiro, and Toshinao Yoshiba. 2005. <span>“Value-at-Risk Versus Expec
     }
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
       var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp("https:\/\/www\.tidy-asset-allocation\.org");
+        var filterRegex = new RegExp("https:\/\/www\.tidy-pm\.com\/dev\/");
       var isInternal = (href) => {
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
@@ -1998,7 +2025,33 @@ Yamai, Yasuhiro, and Toshinao Yoshiba. 2005. <span>“Value-at-Risk Versus Expec
       }
     }
   });
-  </script><nav class="page-navigation"><div class="nav-page nav-page-previous">
+  </script><input type="hidden" id="giscus-base-theme" value="light"><input type="hidden" id="giscus-alt-theme" value="light"><script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "sstoeckl/tidy-asset-allocation";
+    script.dataset.repoId = "R_kgDOVrAPVg";
+    script.dataset.category = "General";
+    script.dataset.categoryId = "DIC_kwDOVrAPVs4DK6cA";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "0";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script><nav class="page-navigation"><div class="nav-page nav-page-previous">
       <a href="../chapters/09-mean-variance.html" class="pagination-link" aria-label="Mean-Variance Optimization">
         <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">9</span>&nbsp; <span class="chapter-title">Mean-Variance Optimization</span></span>
       </a>          
@@ -2012,7 +2065,7 @@ Yamai, Yasuhiro, and Toshinao Yoshiba. 2005. <span>“Value-at-Risk Versus Expec
 </div> <!-- /content -->
 <footer class="footer"><div class="nav-footer">
     <div class="nav-footer-left">
-<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl</p>
+<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl · text <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>, code <a href="https://github.com/sstoeckl/tidy-asset-allocation/blob/main/LICENSE.md">MIT</a></p>
 </div>   
     <div class="nav-footer-center">
       &nbsp;

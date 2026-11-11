@@ -1,163 +1,167 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://www.tidy-asset-allocation.org/index.html</loc>
+    <loc>https://www.tidy-pm.com/dev/index.html</loc>
     <lastmod>2026-11-09T22:37:17.626Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/01-setting-up.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/01-setting-up.html</loc>
     <lastmod>2026-11-09T22:37:17.629Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/02-notation-and-data.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/02-notation-and-data.html</loc>
     <lastmod>2026-11-09T18:39:13.115Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/03-return-risk-and-the-investor.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/03-return-risk-and-the-investor.html</loc>
     <lastmod>2026-11-09T18:32:04.730Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/04-descriptive-analysis.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/04-descriptive-analysis.html</loc>
     <lastmod>2026-11-11T16:20:19.544Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/05-factor-models.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/05-factor-models.html</loc>
     <lastmod>2026-11-09T18:38:25.938Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/06-expected-returns.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/06-expected-returns.html</loc>
     <lastmod>2026-11-09T18:33:30.877Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/07-covariance-matrix.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/07-covariance-matrix.html</loc>
     <lastmod>2026-11-09T22:15:34.289Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/08-estimation-error.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/08-estimation-error.html</loc>
     <lastmod>2026-11-09T18:53:21.455Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/09-mean-variance.html</loc>
-    <lastmod>2026-11-09T22:25:27.301Z</lastmod>
+    <loc>https://www.tidy-pm.com/dev/chapters/09-mean-variance.html</loc>
+    <lastmod>2026-11-11T21:09:19.151Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/10-risk-measures.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/10-risk-measures.html</loc>
     <lastmod>2026-11-09T18:54:01.861Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/11-higher-moments.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/11-higher-moments.html</loc>
     <lastmod>2026-11-09T22:11:42.006Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/12-constraints.html</loc>
-    <lastmod>2026-11-11T15:11:24.033Z</lastmod>
+    <loc>https://www.tidy-pm.com/dev/chapters/12-constraints.html</loc>
+    <lastmod>2026-11-11T19:23:53.037Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/13-solvers.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/13-solvers.html</loc>
     <lastmod>2026-11-11T16:18:57.244Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/14-risk-based-allocation.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/14-risk-based-allocation.html</loc>
     <lastmod>2026-11-11T16:18:57.121Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/15-hierarchical-allocation.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/15-hierarchical-allocation.html</loc>
     <lastmod>2026-11-11T17:26:25.801Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/16-signals-and-forecasts.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/16-signals-and-forecasts.html</loc>
     <lastmod>2026-11-09T22:37:17.633Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/17-expressing-views.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/17-expressing-views.html</loc>
     <lastmod>2026-11-09T22:38:33.143Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/18-parametric-policies.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/18-parametric-policies.html</loc>
     <lastmod>2026-11-09T22:10:38.821Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/19-regimes.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/19-regimes.html</loc>
     <lastmod>2026-11-09T22:12:49.901Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/20-sustainability.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/20-sustainability.html</loc>
     <lastmod>2026-11-11T15:48:52.430Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/21-equity-sleeve.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/21-equity-sleeve.html</loc>
     <lastmod>2026-11-09T22:42:24.301Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/22-fixed-income-sleeve.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/22-fixed-income-sleeve.html</loc>
     <lastmod>2026-11-09T22:47:55.451Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/23-rebalancing.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/23-rebalancing.html</loc>
     <lastmod>2026-11-09T22:31:43.739Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/24-benchmarks-and-active-risk.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/24-benchmarks-and-active-risk.html</loc>
     <lastmod>2026-11-11T15:12:47.325Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/25-backtesting.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/25-backtesting.html</loc>
     <lastmod>2026-11-09T22:31:45.044Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/26-forecast-error-cost.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/26-forecast-error-cost.html</loc>
     <lastmod>2026-11-11T15:35:23.689Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/27-decision-aware-forecasting.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/27-decision-aware-forecasting.html</loc>
     <lastmod>2026-11-11T16:13:45.028Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/28-robustness.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/28-robustness.html</loc>
     <lastmod>2026-11-11T15:59:12.802Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/99-references.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/99-references.html</loc>
     <lastmod>2026-09-12T12:16:36.098Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/90-data-description.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/90-data-description.html</loc>
     <lastmod>2026-11-09T18:39:15.226Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/91-proofs.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/91-proofs.html</loc>
     <lastmod>2026-09-12T12:56:35.539Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/92-solver-matrix.html</loc>
-    <lastmod>2026-11-11T15:11:35.250Z</lastmod>
+    <loc>https://www.tidy-pm.com/dev/chapters/92-solver-matrix.html</loc>
+    <lastmod>2026-11-11T19:23:53.038Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/93-package-notes.html</loc>
-    <lastmod>2026-11-09T22:37:17.632Z</lastmod>
+    <loc>https://www.tidy-pm.com/dev/chapters/93-package-notes.html</loc>
+    <lastmod>2026-11-11T19:36:32.243Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/94-r-primer.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/94-r-primer.html</loc>
     <lastmod>2026-09-14T06:41:32.060Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/95-coverage-ledger.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/95-coverage-ledger.html</loc>
     <lastmod>2026-09-14T06:38:30.279Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/96-solutions.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/96-solutions.html</loc>
     <lastmod>2026-11-11T16:14:58.079Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/965-scenario-analysis.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/965-scenario-analysis.html</loc>
     <lastmod>2026-11-11T15:40:16.189Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/97-colophon.html</loc>
-    <lastmod>2026-11-09T22:37:17.958Z</lastmod>
+    <loc>https://www.tidy-pm.com/dev/chapters/966-teaching-with-this-book.html</loc>
+    <lastmod>2026-11-11T20:13:05.162Z</lastmod>
   </url>
   <url>
-    <loc>https://www.tidy-asset-allocation.org/chapters/98-acknowledgements.html</loc>
+    <loc>https://www.tidy-pm.com/dev/chapters/97-colophon.html</loc>
+    <lastmod>2026-11-11T20:40:59.558Z</lastmod>
+  </url>
+  <url>
+    <loc>https://www.tidy-pm.com/dev/chapters/98-acknowledgements.html</loc>
     <lastmod>2026-09-14T06:40:56.996Z</lastmod>
   </url>
 </urlset>

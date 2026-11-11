@@ -1,1 +1,1 @@
-Sitemap: https://www.tidy-asset-allocation.org/sitemap.xml
+Sitemap: https://www.tidy-pm.com/dev/sitemap.xml

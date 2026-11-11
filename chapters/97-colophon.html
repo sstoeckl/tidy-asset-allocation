@@ -24,6 +24,41 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
 /* CSS for citations */
 div.csl-bib-body { }
 div.csl-entry {
@@ -53,7 +88,7 @@ div.csl-indent {
 <script src="../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../">
 <link href="../chapters/98-acknowledgements.html" rel="next">
-<link href="../chapters/965-scenario-analysis.html" rel="prev">
+<link href="../chapters/966-teaching-with-this-book.html" rel="prev">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
 <script src="../site_libs/quarto-html/popper.min.js"></script>
@@ -65,9 +100,9 @@ div.csl-indent {
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-0f05cba98e93abd5bfacabf37e46c573.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
-<link href="../site_libs/bootstrap/bootstrap-dark-189f37bffb98b27434de1cced1e4d8c0.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
-<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light"><script id="quarto-search-options" type="application/json">{
+<link href="../site_libs/bootstrap/bootstrap-75d6dbbc802bd81c7f95867827fb2180.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-59d30803870f1c5a515752fc4d99d562.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-75d6dbbc802bd81c7f95867827fb2180.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light"><script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
   "collapse-after": 3,
@@ -94,6 +129,25 @@ div.csl-indent {
     "search-label": "Search"
   }
 }</script><style>html{ scroll-behavior: smooth; }</style>
+<script type="application/json" class="js-hypothesis-config">
+{
+  "theme": "clean",
+  "openSidebar": false,
+  "showHighlights": "whenSidebarOpen"
+}
+</script><script async="" src="https://hypothes.is/embed.js"></script><script>
+  window.document.addEventListener("DOMContentLoaded", function (_event) {
+    document.body.classList.add('hypothesis-enabled');
+  });
+</script>
+<meta property="og:title" content="Colophon and Changelog">
+<meta property="og:description" content="">
+<meta property="og:image" content="https://www.tidy-pm.com/dev/chapters/assets/cover/cover-social.png">
+<meta property="og:site_name" content="Tidy Asset Allocation in R">
+<meta name="twitter:title" content="Colophon and Changelog">
+<meta name="twitter:description" content="">
+<meta name="twitter:image" content="https://www.tidy-pm.com/dev/chapters/assets/cover/cover-social.png">
+<meta name="twitter:card" content="summary_large_image">
 </head>
 <body class="nav-sidebar docked quarto-light">
 
@@ -102,7 +156,7 @@ div.csl-indent {
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/90-data-description.html">Appendices</a></li><li class="breadcrumb-item"><a href="../chapters/97-colophon.html"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/90-data-description.html">Appendices</a></li><li class="breadcrumb-item"><a href="../chapters/97-colophon.html"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
       <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
@@ -458,14 +512,20 @@ div.csl-indent {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../chapters/966-teaching-with-this-book.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Teaching with This Book</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../chapters/97-colophon.html" class="sidebar-item-text sidebar-link active">
- <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
+ <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../chapters/98-acknowledgements.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
+ <span class="menu-text"><span class="chapter-number">K</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
   </div>
 </li>
       </ul>
@@ -478,13 +538,16 @@ div.csl-indent {
         <nav id="TOC" role="doc-toc" class="toc-active"><h2 id="toc-title">On this page</h2>
    
   <ul>
-<li><a href="#sec-97-colophon-built" id="toc-sec-97-colophon-built" class="nav-link active" data-scroll-target="#sec-97-colophon-built"><span class="header-section-number">I.1</span> How This Book Was Built</a></li>
-  <li><a href="#sec-97-colophon-changelog" id="toc-sec-97-colophon-changelog" class="nav-link" data-scroll-target="#sec-97-colophon-changelog"><span class="header-section-number">I.2</span> Changelog</a></li>
+<li><a href="#sec-97-colophon-built" id="toc-sec-97-colophon-built" class="nav-link active" data-scroll-target="#sec-97-colophon-built"><span class="header-section-number">J.1</span> How This Book Was Built</a></li>
+  <li><a href="#sec-97-colophon-status" id="toc-sec-97-colophon-status" class="nav-link" data-scroll-target="#sec-97-colophon-status"><span class="header-section-number">J.2</span> Review Status</a></li>
+  <li><a href="#sec-97-colophon-license" id="toc-sec-97-colophon-license" class="nav-link" data-scroll-target="#sec-97-colophon-license"><span class="header-section-number">J.3</span> License</a></li>
+  <li><a href="#sec-97-colophon-cite" id="toc-sec-97-colophon-cite" class="nav-link" data-scroll-target="#sec-97-colophon-cite"><span class="header-section-number">J.4</span> Citing This Book</a></li>
+  <li><a href="#sec-97-colophon-changelog" id="toc-sec-97-colophon-changelog" class="nav-link" data-scroll-target="#sec-97-colophon-changelog"><span class="header-section-number">J.5</span> Changelog</a></li>
   </ul><div class="toc-actions"><ul><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/edit/main/chapters/97-colophon.qmd" class="toc-action"><i class="bi bi-github"></i>Edit this page</a></li><li><a href="https://github.com/sstoeckl/tidy-asset-allocation/issues/new" class="toc-action"><i class="bi empty"></i>Report an issue</a></li></ul></div></nav>
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/90-data-description.html">Appendices</a></li><li class="breadcrumb-item"><a href="../chapters/97-colophon.html"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></a></li></ol></nav><div class="quarto-title">
-<h1 class="title"><span id="sec-97-colophon" class="quarto-section-identifier">Appendix I — Colophon and Changelog</span></h1>
+<main class="content" id="quarto-document-content"><header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../chapters/90-data-description.html">Appendices</a></li><li class="breadcrumb-item"><a href="../chapters/97-colophon.html"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></a></li></ol></nav><div class="quarto-title">
+<h1 class="title"><span id="sec-97-colophon" class="quarto-section-identifier">Appendix J — Colophon and Changelog</span></h1>
 </div>
 
 
@@ -498,14 +561,17 @@ div.csl-indent {
   
 
 
-</header><p>This appendix records what the book was built with, so that a reader who wants to reproduce a number knows which versions produced it, and what has changed between editions of the text.</p>
-<section id="sec-97-colophon-built" class="level2" data-number="I.1"><h2 data-number="I.1" class="anchored" data-anchor-id="sec-97-colophon-built">
-<span class="header-section-number">I.1</span> How This Book Was Built</h2>
+</header><div class="chapter-banner">
+<span class="banner-status status-draft" title="complete, awaiting the author's read">Draft</span><span class="banner-sep">|</span><span class="banner-annotate">To comment, select a passage and annotate it; see <a href="https://github.com/sstoeckl/tidy-asset-allocation/blob/main/REVIEWING.md">how reviews work</a>.</span>
+</div>
+<p>This appendix records what the book was built with, so that a reader who wants to reproduce a number knows which versions produced it, and what has changed between editions of the text.</p>
+<section id="sec-97-colophon-built" class="level2" data-number="J.1"><h2 data-number="J.1" class="anchored" data-anchor-id="sec-97-colophon-built">
+<span class="header-section-number">J.1</span> How This Book Was Built</h2>
 <p>The book is a Quarto project. Every chapter is a <code>.qmd</code> file whose code runs when the book is rendered, so every number, table and figure in the text is the output of the code shown beside it. Results are cached with Quarto’s freeze mechanism and re-executed only when a chapter’s source changes. The chapters run from the project root and share one setup file, <code>R/_common.R</code>, which fixes the random seed, the display options and the figure theme.</p>
 <div class="cell" data-layout-align="center">
 <div id="tbl-97-versions" class="cell quarto-float quarto-figure quarto-figure-center anchored" data-layout-align="center">
 <figure class="quarto-float quarto-float-tbl figure"><figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-97-versions-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Table&nbsp;I.1: The versions this book was rendered against, read from the project’s lockfile.
+Table&nbsp;J.1: The versions this book was rendered against, read from the project’s lockfile.
 </figcaption><div aria-describedby="tbl-97-versions-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 <div class="cell-output-display">
 <table class="cell caption-top table table-sm table-striped small">
@@ -642,24 +708,262 @@ Table&nbsp;I.1: The versions this book was rendered against, read from the proje
 </figure>
 </div>
 </div>
-<p>The full dependency set, 299 packages in all, is pinned in <code>renv.lock</code>; <code><a href="https://rstudio.github.io/renv/reference/restore.html">renv::restore()</a></code> recreates it. Two dependencies do not come from CRAN: <code>tidypm</code>, the companion package, which ships the modeled market and the machinery <code>PortfolioAnalytics</code> does not have; and the build of <code>PortfolioAnalytics</code> itself, which is the CRAN release with three fixes carried on a fork while the pull request is open. <a href="93-package-notes.html" class="quarto-xref"><span>Appendix D</span></a> records every deviation.</p>
+<p>The full dependency set, 299 packages in all, is pinned in <code>renv.lock</code>; <code><a href="https://rstudio.github.io/renv/reference/restore.html">renv::restore()</a></code> recreates it. Two dependencies do not come from CRAN: <code>tidypm</code>, the companion package, which ships the modeled market and the machinery <code>PortfolioAnalytics</code> does not have; and the build of <code>PortfolioAnalytics</code> itself, which is the CRAN release with five fixes carried on a fork while their pull requests are open. <a href="93-package-notes.html" class="quarto-xref"><span>Appendix D</span></a> records every deviation.</p>
 <p>The data are the modeled market at dataset version 6.2.0, on its model calendar of thirty-one model years, described in <a href="02-notation-and-data.html#sec-02-notation-and-data-simulated-market" class="quarto-xref"><span>Section 2.2</span></a> and in full in <a href="90-data-description.html" class="quarto-xref"><span>Appendix A</span></a>. The dataset is frozen: the source model redraws the idiosyncratic component of every instrument on each run, so a regenerated dataset is a different realized path, and every number in the book is pinned to this one. <code>R/verify-claims.R</code> in the repository recomputes the load-bearing numbers and names the ones a new dataset would move.</p>
 <p>The prose follows the conventions of <em>Tidy Finance with R</em> <span class="citation" data-cites="scheuch2023">(<a href="99-references.html#ref-scheuch2023" role="doc-biblioref">Scheuch et al. 2023</a>)</span> and <em>Machine Learning for Factor Investing</em> <span class="citation" data-cites="coqueret2020">(<a href="99-references.html#ref-coqueret2020" role="doc-biblioref">Coqueret and Guida 2020</a>)</span>: the question first, the mathematics in the running text, the method attributed on first use, the code executed, and takeaways and exercises at the end. The typeface is Source Sans 3; the accent color is a light blue. Figures are drawn with <code>ggplot2</code> and the theme in <code>R/_common.R</code>, and are built from a single data frame per figure so that no coordinate can be paired with the wrong label.</p>
-</section><section id="sec-97-colophon-changelog" class="level2" data-number="I.2"><h2 data-number="I.2" class="anchored" data-anchor-id="sec-97-colophon-changelog">
-<span class="header-section-number">I.2</span> Changelog</h2>
+</section><section id="sec-97-colophon-status" class="level2" data-number="J.2"><h2 data-number="J.2" class="anchored" data-anchor-id="sec-97-colophon-status">
+<span class="header-section-number">J.2</span> Review Status</h2>
+<p>The book is reviewed in four stages, and every numbered chapter shows its stage in the banner under its title: <em>draft</em> while it waits for the author’s read, <em>alpha</em> while two or three colleagues check the theory, the literature and whether the chapter teaches, <em>beta</em> while readers in the student’s seat work it with its exercises, and <em>final</em> when they have been through it. The stages, the questions each reader is asked and what happens to a comment are in the repository’s <code>REVIEWING.md</code>; the status itself is one line per chapter in <code>review/status.csv</code>, read here.</p>
+<div class="cell" data-layout-align="center">
+<div id="tbl-97-status" class="cell quarto-float quarto-figure quarto-figure-center anchored" data-layout-align="center">
+<figure class="quarto-float quarto-float-tbl figure"><figcaption class="quarto-float-caption-top quarto-float-caption quarto-float-tbl" id="tbl-97-status-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Table&nbsp;J.2: Where each chapter stands in review.
+</figcaption><div aria-describedby="tbl-97-status-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="cell-output-display">
+<table class="cell caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 6%">
+<col style="width: 31%">
+<col style="width: 5%">
+<col style="width: 8%">
+<col style="width: 48%">
+</colgroup>
+<thead><tr class="header">
+<th style="text-align: right;">chapter</th>
+<th style="text-align: left;">title</th>
+<th style="text-align: left;">status</th>
+<th style="text-align: left;">since</th>
+<th style="text-align: left;">note</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td style="text-align: left;">Setting Up Your Environment</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td style="text-align: left;">Notation and Data</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td style="text-align: left;">Return, Risk, and the Investor’s Problem</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td style="text-align: left;">Descriptive Analysis of Asset Returns</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td style="text-align: left;">Factor Models and Beta Estimation</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td style="text-align: left;">Expected Returns</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td style="text-align: left;">The Covariance Matrix</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td style="text-align: left;">Estimation Error and Its Cost</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td style="text-align: left;">Mean-Variance Optimization</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;">first Word round 2026-09-13; rewritten for dataset 6.2.0 since</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td style="text-align: left;">Risk Measures Beyond Variance</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td style="text-align: left;">Higher Moments</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td style="text-align: left;">Portfolio Constraints</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td style="text-align: left;">Numerical Optimization and Solvers</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td style="text-align: left;">Risk-Based Allocation</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td style="text-align: left;">Hierarchical and Sleeve-Based Allocation</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td style="text-align: left;">Signals and Return Forecasts</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td style="text-align: left;">Expressing Views</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td style="text-align: left;">Parametric Portfolio Policies</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td style="text-align: left;">Regime-Dependent Allocation</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td style="text-align: left;">Sustainable Investing Constraints</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;">waits for simulated fundamentals and ESG levels</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td style="text-align: left;">The Equity Sleeve</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td style="text-align: left;">The Fixed Income Sleeve</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td style="text-align: left;">Rebalancing and Transaction Costs</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td style="text-align: left;">Benchmarks and Active Risk</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">25</td>
+<td style="text-align: left;">Backtesting and Diagnostics</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">26</td>
+<td style="text-align: left;">The Cost of Forecast Error</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">27</td>
+<td style="text-align: left;">Decision-Aware Forecasting</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">28</td>
+<td style="text-align: left;">Robustness and Model Uncertainty</td>
+<td style="text-align: left;">draft</td>
+<td style="text-align: left;">2026-11-11</td>
+<td style="text-align: left;"></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</figure>
+</div>
+</div>
+</section><section id="sec-97-colophon-license" class="level2" data-number="J.3"><h2 data-number="J.3" class="anchored" data-anchor-id="sec-97-colophon-license">
+<span class="header-section-number">J.3</span> License</h2>
+<p>The text of this book, its figures and its tables are licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License (<a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>): it may be shared and adapted for non-commercial purposes with attribution, and adaptations carry the same license. The code in the chapters, the downloadable scripts and the companion package <code>tidypm</code> are licensed under the MIT License, so that a chunk copied into a reader’s own project carries no obligation beyond the copyright notice. This is the arrangement of <em>Tidy Finance with R</em> <span class="citation" data-cites="scheuch2023">(<a href="99-references.html#ref-scheuch2023" role="doc-biblioref">Scheuch et al. 2023</a>)</span>, whose example the book follows in this as in its form.</p>
+</section><section id="sec-97-colophon-cite" class="level2" data-number="J.4"><h2 data-number="J.4" class="anchored" data-anchor-id="sec-97-colophon-cite">
+<span class="header-section-number">J.4</span> Citing This Book</h2>
+<p>The online edition is the edition of record, and the version is the date of the render shown on each page. The repository carries a <code>CITATION.cff</code>; in BibTeX:</p>
+<div class="cell" data-layout-align="center">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="sourceCode bibtex code-with-copy"><code class="sourceCode bibtex"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="va">@book</span>{<span class="ot">stoeckl2026tidyaa</span>,</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">author</span> = {Stöckl, Sebastian},</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">title</span>  = {Tidy Asset Allocation in {R}},</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">year</span>   = {2026},</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">url</span>    = {https://www.tidy-pm.com/dev/},</span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">note</span>   = {Online edition, version of 11 November 2026}</span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section><section id="sec-97-colophon-changelog" class="level2" data-number="J.5"><h2 data-number="J.5" class="anchored" data-anchor-id="sec-97-colophon-changelog">
+<span class="header-section-number">J.5</span> Changelog</h2>
 <ul>
-<li>
-<strong>2026-11-09.</strong> The data moved to dataset version 6.2.0, read out of the source model itself, and onto a model calendar: thirty-one model years, with the stress episodes named for what happens in them. Every chapter was re-executed against it and its sentences checked against their numbers; chapters 18 and 19 were written.</li>
-<li>
-<strong>2026-09-14.</strong> The modeled market moved to export 5.1.0 and the class universe was fixed at the sixteen risky series, with the money markets shipped beside it. Every chapter was written or rewritten to the present contract, the appendices were generated from the sources, and the bibliography was checked entry by entry against Crossref. This is the first complete baseline of the book.</li>
-<li>
-<strong>2026-09-13.</strong> Chapter 9 was rewritten as the reference chapter and reviewed; the review produced the rules on data preparation, dominance vocabulary and worked examples that the other chapters follow. The review round-trip through Word was set up.</li>
-<li>
-<strong>2026-09-12.</strong> The book was restructured into its present twenty-eight chapters and eight parts, the four-beat chapter form was retired in favor of theory, implementation and application, mathematics returned to the running text with proofs in an appendix, and the design was rebuilt on one accent color.</li>
-<li>
-<strong>2026-08-27.</strong> The data layer: the companion package, the tibble–<code>xts</code> boundary, and the first export of the simulated market.</li>
-<li>
-<strong>2018–2024.</strong> Earlier drafts, as <em>Tidy Portfoliomanagement in R</em>, from which parts of the present material descend; see <a href="98-acknowledgements.html" class="quarto-xref"><span>Appendix J</span></a>.</li>
+<li><p><strong>2026-11-11.</strong> The build of <code>PortfolioAnalytics</code> moved to the fork head that carries all five open pull requests. The review machinery was set up: annotations on the page, a discussion thread under it, a review status per chapter, and the reviewers’ guide. The code of every chapter became a download, with the exercises as a file and the solutions beside them, and <a href="966-teaching-with-this-book.html" class="quarto-xref"><span>Appendix I</span></a> added three course plans.</p></li>
+<li><p><strong>2026-11-09.</strong> The data moved to dataset version 6.2.0, read out of the source model itself, and onto a model calendar: thirty-one model years, with the stress episodes named for what happens in them. Every chapter was re-executed against it and its sentences checked against their numbers; chapters 18 and 19 were written.</p></li>
+<li><p><strong>2026-09-14.</strong> The modeled market moved to export 5.1.0 and the class universe was fixed at the sixteen risky series, with the money markets shipped beside it. Every chapter was written or rewritten to the present contract, the appendices were generated from the sources, and the bibliography was checked entry by entry against Crossref. This is the first complete baseline of the book.</p></li>
+<li><p><strong>2026-09-13.</strong> Chapter 9 was rewritten as the reference chapter and reviewed; the review produced the rules on data preparation, dominance vocabulary and worked examples that the other chapters follow. The review round-trip through Word was set up.</p></li>
+<li><p><strong>2026-09-12.</strong> The book was restructured into its present twenty-eight chapters and eight parts, the four-beat chapter form was retired in favor of theory, implementation and application, mathematics returned to the running text with proofs in an appendix, and the design was rebuilt on one accent color.</p></li>
+<li><p><strong>2026-08-27.</strong> The data layer: the companion package, the tibble–<code>xts</code> boundary, and the first export of the simulated market.</p></li>
+<li><p><strong>2018–2024.</strong> Earlier drafts, as <em>Tidy Portfoliomanagement in R</em>, from which parts of the present material descend; see <a href="98-acknowledgements.html" class="quarto-xref"><span>Appendix K</span></a>.</p></li>
 </ul>
 
 
@@ -795,7 +1099,7 @@ Scheuch, Christoph, Stefan Voigt, and Patrick Weiss. 2023. <em>Tidy Finance with
     }
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
       var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp("https:\/\/www\.tidy-asset-allocation\.org");
+        var filterRegex = new RegExp("https:\/\/www\.tidy-pm\.com\/dev\/");
       var isInternal = (href) => {
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
@@ -1126,21 +1430,47 @@ Scheuch, Christoph, Stefan Voigt, and Patrick Weiss. 2023. <em>Tidy Finance with
       }
     }
   });
-  </script><nav class="page-navigation"><div class="nav-page nav-page-previous">
-      <a href="../chapters/965-scenario-analysis.html" class="pagination-link" aria-label="Scenario Analysis">
-        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">H</span>&nbsp; <span class="chapter-title">Scenario Analysis</span></span>
+  </script><input type="hidden" id="giscus-base-theme" value="light"><input type="hidden" id="giscus-alt-theme" value="light"><script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "sstoeckl/tidy-asset-allocation";
+    script.dataset.repoId = "R_kgDOVrAPVg";
+    script.dataset.category = "General";
+    script.dataset.categoryId = "DIC_kwDOVrAPVs4DK6cA";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "0";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script><nav class="page-navigation"><div class="nav-page nav-page-previous">
+      <a href="../chapters/966-teaching-with-this-book.html" class="pagination-link" aria-label="Teaching with This Book">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Teaching with This Book</span></span>
       </a>          
   </div>
   <div class="nav-page nav-page-next">
       <a href="../chapters/98-acknowledgements.html" class="pagination-link" aria-label="Acknowledgements">
-        <span class="nav-page-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span> <i class="bi bi-arrow-right-short"></i>
+        <span class="nav-page-text"><span class="chapter-number">K</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span> <i class="bi bi-arrow-right-short"></i>
       </a>
   </div>
 </nav>
 </div> <!-- /content -->
 <footer class="footer"><div class="nav-footer">
     <div class="nav-footer-left">
-<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl</p>
+<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl · text <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>, code <a href="https://github.com/sstoeckl/tidy-asset-allocation/blob/main/LICENSE.md">MIT</a></p>
 </div>   
     <div class="nav-footer-center">
       &nbsp;

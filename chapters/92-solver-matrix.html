@@ -80,9 +80,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-0f05cba98e93abd5bfacabf37e46c573.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
-<link href="../site_libs/bootstrap/bootstrap-dark-189f37bffb98b27434de1cced1e4d8c0.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
-<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light"><script id="quarto-search-options" type="application/json">{
+<link href="../site_libs/bootstrap/bootstrap-75d6dbbc802bd81c7f95867827fb2180.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-59d30803870f1c5a515752fc4d99d562.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-75d6dbbc802bd81c7f95867827fb2180.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light"><script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
   "collapse-after": 3,
@@ -109,7 +109,17 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     "search-label": "Search"
   }
 }</script><style>html{ scroll-behavior: smooth; }</style>
-<script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script><script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script><script type="text/javascript">
+<script type="application/json" class="js-hypothesis-config">
+{
+  "theme": "clean",
+  "openSidebar": false,
+  "showHighlights": "whenSidebarOpen"
+}
+</script><script async="" src="https://hypothes.is/embed.js"></script><script>
+  window.document.addEventListener("DOMContentLoaded", function (_event) {
+    document.body.classList.add('hypothesis-enabled');
+  });
+</script><script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script><script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script><script type="text/javascript">
 const typesetMath = (el) => {
   if (window.MathJax) {
     // MathJax Typeset
@@ -135,6 +145,14 @@ window.Quarto = {
   typesetMath
 };
 </script>
+<meta property="og:title" content="Appendix C — Solver and Constraint Support – Tidy Asset Allocation in R">
+<meta property="og:description" content="">
+<meta property="og:image" content="https://www.tidy-pm.com/dev/chapters/assets/cover/cover-social.png">
+<meta property="og:site_name" content="Tidy Asset Allocation in R">
+<meta name="twitter:title" content="Appendix C — Solver and Constraint Support – Tidy Asset Allocation in R">
+<meta name="twitter:description" content="">
+<meta name="twitter:image" content="https://www.tidy-pm.com/dev/chapters/assets/cover/cover-social.png">
+<meta name="twitter:card" content="summary_large_image">
 </head>
 <body class="nav-sidebar docked quarto-light">
 
@@ -499,14 +517,20 @@ window.Quarto = {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../chapters/966-teaching-with-this-book.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Teaching with This Book</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../chapters/97-colophon.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
+ <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../chapters/98-acknowledgements.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
+ <span class="menu-text"><span class="chapter-number">K</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
   </div>
 </li>
       </ul>
@@ -541,7 +565,10 @@ window.Quarto = {
   
 
 
-</header><p>Which solver honors which constraint, measured rather than transcribed. Read alongside <a href="13-solvers.html#sec-13-solvers-implementation" class="quarto-xref"><span>Section 13.2</span></a>, which explains why the distinction between <em>accepts</em> and <em>honors</em> is the one that matters.</p>
+</header><div class="chapter-banner">
+<span class="banner-status status-draft" title="complete, awaiting the author's read">Draft</span><span class="banner-sep">|</span><span class="banner-annotate">To comment, select a passage and annotate it; see <a href="https://github.com/sstoeckl/tidy-asset-allocation/blob/main/REVIEWING.md">how reviews work</a>.</span>
+</div>
+<p>Which solver honors which constraint, measured rather than transcribed. Read alongside <a href="13-solvers.html#sec-13-solvers-implementation" class="quarto-xref"><span>Section 13.2</span></a>, which explains why the distinction between <em>accepts</em> and <em>honors</em> is the one that matters.</p>
 <p>Two tables follow. The first is what the package documents: which combinations are supported. The second is what the package does: whether the returned portfolio actually satisfies what was asked. They do not agree, and the disagreement is silent in every case.</p>
 <div class="cell" data-layout-align="center">
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1"><pre class="downlit sourceCode r code-with-copy"><code class="sourceCode R"><span><span class="va">R</span>  <span class="op">&lt;-</span> <span class="fu">as_xts_pm</span><span class="op">(</span><span class="va">sim_class_returns_monthly</span>, <span class="va">date</span>, <span class="va">class</span>, <span class="va">return</span><span class="op">)</span></span>
@@ -788,14 +815,14 @@ Table&nbsp;C.2: The plain tangency problem, which is convex and has one answer. 
 <td style="text-align: right;">100.0%</td>
 <td style="text-align: right;">5</td>
 <td style="text-align: left;">solved</td>
-<td style="text-align: right;">6</td>
+<td style="text-align: right;">5</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">pso</td>
 <td style="text-align: right;">73.1%</td>
 <td style="text-align: right;">14</td>
 <td style="text-align: left;">solved</td>
-<td style="text-align: right;">32</td>
+<td style="text-align: right;">35</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">DEoptim</td>
@@ -809,14 +836,14 @@ Table&nbsp;C.2: The plain tangency problem, which is convex and has one answer. 
 <td style="text-align: right;">69.8%</td>
 <td style="text-align: right;">16</td>
 <td style="text-align: left;">solved</td>
-<td style="text-align: right;">59</td>
+<td style="text-align: right;">74</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">random</td>
 <td style="text-align: right;">66.2%</td>
 <td style="text-align: right;">10</td>
 <td style="text-align: left;">solved</td>
-<td style="text-align: right;">43</td>
+<td style="text-align: right;">40</td>
 </tr>
 </tbody>
 </table>
@@ -855,7 +882,7 @@ Table&nbsp;C.3: The same problem with a position limit one below the number of p
 <td style="text-align: right;">4</td>
 <td style="text-align: right;">2</td>
 <td style="text-align: left;">feasible</td>
-<td style="text-align: right;">47</td>
+<td style="text-align: right;">48</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">DEoptim</td>
@@ -863,7 +890,7 @@ Table&nbsp;C.3: The same problem with a position limit one below the number of p
 <td style="text-align: right;">4</td>
 <td style="text-align: right;">3</td>
 <td style="text-align: left;">feasible</td>
-<td style="text-align: right;">13</td>
+<td style="text-align: right;">16</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">pso</td>
@@ -871,7 +898,7 @@ Table&nbsp;C.3: The same problem with a position limit one below the number of p
 <td style="text-align: right;">4</td>
 <td style="text-align: right;">15</td>
 <td style="text-align: left;">VIOLATES</td>
-<td style="text-align: right;">49</td>
+<td style="text-align: right;">60</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">GenSA</td>
@@ -879,7 +906,7 @@ Table&nbsp;C.3: The same problem with a position limit one below the number of p
 <td style="text-align: right;">4</td>
 <td style="text-align: right;">16</td>
 <td style="text-align: left;">VIOLATES</td>
-<td style="text-align: right;">101</td>
+<td style="text-align: right;">103</td>
 </tr>
 </tbody>
 </table>
@@ -1000,7 +1027,7 @@ Table&nbsp;C.4: ROI on the build this book pins: three constraints on the quadra
 </div>
 </section><section id="the-gaps-worth-knowing" class="level2" data-number="C.3"><h2 data-number="C.3" class="anchored" data-anchor-id="the-gaps-worth-knowing">
 <span class="header-section-number">C.3</span> The gaps worth knowing</h2>
-<p><strong>Position limits on the quadratic path.</strong> No cardinality formulation exists, so the constraint cannot be honored. On the build this book pins, a position limit (<code>max_pos</code>) on ROI’s quadratic path is dropped without a message: no error, no warning, and the unconstrained weights come back, exactly as on the CRAN release. ROI honors the limit only on its two mixed-integer paths, maximum return and minimum expected shortfall, which it hands to <code>Rglpk</code>. A patch that refuses the quadratic call is proposed upstream, not in the pinned build. See <a href="93-package-notes.html" class="quarto-xref"><span>Appendix D</span></a>.</p>
+<p><strong>Position limits on the quadratic path.</strong> No cardinality formulation exists, so the constraint cannot be honored. On the build this book pins, a position limit (<code>max_pos</code>) on ROI’s quadratic path is dropped without a message: no error, no warning, and the unconstrained weights come back, exactly as on the CRAN release. ROI honors the limit only on its two mixed-integer paths, maximum return and minimum expected shortfall, which it hands to <code>Rglpk</code>. A patch that would refuse the quadratic call exists neither upstream nor on the fork this book pins; the book documents the behavior instead. See <a href="93-package-notes.html" class="quarto-xref"><span>Appendix D</span></a>.</p>
 <p><strong>Leverage exposure on the quadratic path.</strong> <code>gmv_opt_leverage()</code> builds its <code><a href="https://rdrr.io/pkg/ROI/man/OP.html">ROI::OP()</a></code> without the variable bounds that <code>gmv_opt()</code> passes, so ROI’s default of <span class="math inline">\(x \ge 0\)</span> overrules the box and the long-only minimum-variance portfolio comes back, with gross exposure of one. Under CVXR the constraint is not written at all. <a href="12-constraints.html#sec-12-constraints-implementation" class="quarto-xref"><span>Section 12.2</span></a> solves the same problem by hand.</p>
 <p><strong><code>pso</code> and <code>GenSA</code> under a position limit.</strong> Both accept the constraint and return portfolios of 15 and 16 positions against a limit of 4, most or all of the universe. This is not a convergence failure — the search never encoded the restriction.</p>
 <p><strong>An exact <code>full_investment</code> constraint.</strong> On the CRAN release, <code>min_sum == max_sum</code> is written as two opposing inequality rows, which quadprog reports as infeasible; ROI then returns <code>NA</code> weights without raising. Measured with the CRAN release on dataset 6.2.0, as <a href="09-mean-variance.html#sec-09-mean-variance-implementation" class="quarto-xref"><span>Section 9.2</span></a> does, 30 of 312 rolling sixty-month minimum-variance windows fail this way; the build this book pins carries the fix (<a href="93-package-notes.html" class="quarto-xref"><span>Appendix D</span></a>). The metaheuristics meet the same constraint differently, warning that it is “restrictive” and advising <code>min_sum = 0.99, max_sum = 1.01</code> — which is advice to leave a percent of the portfolio uninvested in order to make a solver comfortable.</p>
@@ -1135,7 +1162,7 @@ Table&nbsp;C.4: ROI on the build this book pins: three constraints on the quadra
     }
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
       var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp("https:\/\/www\.tidy-asset-allocation\.org");
+        var filterRegex = new RegExp("https:\/\/www\.tidy-pm\.com\/dev\/");
       var isInternal = (href) => {
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
@@ -1466,7 +1493,33 @@ Table&nbsp;C.4: ROI on the build this book pins: three constraints on the quadra
       }
     }
   });
-  </script><nav class="page-navigation"><div class="nav-page nav-page-previous">
+  </script><input type="hidden" id="giscus-base-theme" value="light"><input type="hidden" id="giscus-alt-theme" value="light"><script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "sstoeckl/tidy-asset-allocation";
+    script.dataset.repoId = "R_kgDOVrAPVg";
+    script.dataset.category = "General";
+    script.dataset.categoryId = "DIC_kwDOVrAPVs4DK6cA";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "0";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script><nav class="page-navigation"><div class="nav-page nav-page-previous">
       <a href="../chapters/91-proofs.html" class="pagination-link" aria-label="Proofs">
         <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">B</span>&nbsp; <span class="chapter-title">Proofs</span></span>
       </a>          
@@ -1480,7 +1533,7 @@ Table&nbsp;C.4: ROI on the build this book pins: three constraints on the quadra
 </div> <!-- /content -->
 <footer class="footer"><div class="nav-footer">
     <div class="nav-footer-left">
-<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl</p>
+<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl · text <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>, code <a href="https://github.com/sstoeckl/tidy-asset-allocation/blob/main/LICENSE.md">MIT</a></p>
 </div>   
     <div class="nav-footer-center">
       &nbsp;

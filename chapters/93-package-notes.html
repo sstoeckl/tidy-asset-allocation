@@ -99,9 +99,9 @@ div.csl-indent {
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-0f05cba98e93abd5bfacabf37e46c573.css" rel="stylesheet" class="quarto-color-scheme-extra" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
-<link href="../site_libs/bootstrap/bootstrap-dark-189f37bffb98b27434de1cced1e4d8c0.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
-<link href="../site_libs/bootstrap/bootstrap-e9888ae2facb18e0e45944e3924ca954.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light"><script id="quarto-search-options" type="application/json">{
+<link href="../site_libs/bootstrap/bootstrap-75d6dbbc802bd81c7f95867827fb2180.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-dark-59d30803870f1c5a515752fc4d99d562.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-75d6dbbc802bd81c7f95867827fb2180.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme-extra" id="quarto-bootstrap" data-mode="light"><script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
   "collapse-after": 3,
@@ -128,6 +128,25 @@ div.csl-indent {
     "search-label": "Search"
   }
 }</script><style>html{ scroll-behavior: smooth; }</style>
+<script type="application/json" class="js-hypothesis-config">
+{
+  "theme": "clean",
+  "openSidebar": false,
+  "showHighlights": "whenSidebarOpen"
+}
+</script><script async="" src="https://hypothes.is/embed.js"></script><script>
+  window.document.addEventListener("DOMContentLoaded", function (_event) {
+    document.body.classList.add('hypothesis-enabled');
+  });
+</script>
+<meta property="og:title" content="Appendix D — Package Notes – Tidy Asset Allocation in R">
+<meta property="og:description" content="">
+<meta property="og:image" content="https://www.tidy-pm.com/dev/chapters/assets/cover/cover-social.png">
+<meta property="og:site_name" content="Tidy Asset Allocation in R">
+<meta name="twitter:title" content="Appendix D — Package Notes – Tidy Asset Allocation in R">
+<meta name="twitter:description" content="">
+<meta name="twitter:image" content="https://www.tidy-pm.com/dev/chapters/assets/cover/cover-social.png">
+<meta name="twitter:card" content="summary_large_image">
 </head>
 <body class="nav-sidebar docked quarto-light">
 
@@ -492,14 +511,20 @@ div.csl-indent {
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../chapters/966-teaching-with-this-book.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Teaching with This Book</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../chapters/97-colophon.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">I</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
+ <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Colophon and Changelog</span></span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../chapters/98-acknowledgements.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text"><span class="chapter-number">J</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
+ <span class="menu-text"><span class="chapter-number">K</span>&nbsp; <span class="chapter-title">Acknowledgements</span></span></a>
   </div>
 </li>
       </ul>
@@ -544,7 +569,10 @@ div.csl-indent {
   
 
 
-</header><p>What this book was built against, where it deviates from the released packages, and why. Everything here is a deliberate choice rather than an accident of whatever happened to be installed.</p>
+</header><div class="chapter-banner">
+<span class="banner-status status-draft" title="complete, awaiting the author's read">Draft</span><span class="banner-sep">|</span><span class="banner-annotate">To comment, select a passage and annotate it; see <a href="https://github.com/sstoeckl/tidy-asset-allocation/blob/main/REVIEWING.md">how reviews work</a>.</span>
+</div>
+<p>What this book was built against, where it deviates from the released packages, and why. Everything here is a deliberate choice rather than an accident of whatever happened to be installed.</p>
 <section id="the-build-environment" class="level2" data-number="D.1"><h2 data-number="D.1" class="anchored" data-anchor-id="the-build-environment">
 <span class="header-section-number">D.1</span> The build environment</h2>
 <div class="cell" data-layout-align="center">
@@ -597,19 +625,34 @@ div.csl-indent {
 <p>The exception is a patch that this book itself contributes. While such a patch is under review, the lockfile points at a branch of a fork; once merged and released, it points back at CRAN. Any patch currently in that state is listed below.</p>
 <section id="patches-in-flight" class="level3" data-number="D.2.1"><h3 data-number="D.2.1" class="anchored" data-anchor-id="patches-in-flight">
 <span class="header-section-number">D.2.1</span> Patches in flight</h3>
-<p>Two, split by how much they ask of the maintainers, and only the first is pinned here.</p>
+<p>The book’s own pull requests against <code>braverock/PortfolioAnalytics</code> stand as follows at the time of writing (November 2026). Two small ones were merged on 19 September 2026: #60, a legend that <code>chart.EfficientFrontierCompare()</code> failed to draw with <code>guideline = FALSE</code>, and #61, a test that <code>ROI</code> masked in a suite run. Neither is needed by the book. The five substantive ones are <strong>open</strong>, and the lockfile therefore points at the fork branch <code>book-integration</code>, which carries all five; once they are merged and released, it points back at CRAN.</p>
 <p><strong>Pinned.</strong> Every fix below either restores an answer that was wrong or turns a silent <code>NA</code> into a message. None of them makes a call fail that used to succeed, which is why the book builds against them.</p>
 <table class="caption-top table">
 <colgroup>
-<col style="width: 50%">
-<col style="width: 50%">
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
 </colgroup>
 <thead><tr class="header">
+<th>Pull request</th>
 <th>What it fixes</th>
 <th>Where it bites</th>
 </tr></thead>
 <tbody>
 <tr class="odd">
+<td>#55</td>
+<td>
+<code>full_investment</code> is encoded as two opposing inequalities, which makes the active set rank deficient; the solver fails and <code>NA</code> weights are returned without a message</td>
+<td><a href="25-backtesting.html#sec-25-backtesting-implementation" class="quarto-xref"><span>Section 25.2</span></a></td>
+</tr>
+<tr class="even">
+<td>#56</td>
+<td>
+<code>maxSR</code> is recovered from <code><a href="https://rdrr.io/r/base/match.call.html">match.call()</a></code>, so it only works when written as a literal <code>TRUE</code>; driving it from a variable fails outright</td>
+<td><a href="13-solvers.html#sec-13-solvers-implementation" class="quarto-xref"><span>Section 13.2</span></a></td>
+</tr>
+<tr class="odd">
+<td>#57</td>
 <td>
 <code>maxSR</code> discards a mean supplied through <code>momentFUN</code>, so the “maximum Sharpe” answer is not the maximum Sharpe answer</td>
 <td>
@@ -617,18 +660,21 @@ div.csl-indent {
 </td>
 </tr>
 <tr class="even">
-<td>
-<code>full_investment</code> is encoded as two opposing inequalities, which makes the active set rank deficient; the solver fails and <code>NA</code> weights are returned without a message</td>
+<td>#58</td>
+<td>a rebalancing period whose solver fails is reported, with what went wrong, instead of vanishing from the result</td>
 <td><a href="25-backtesting.html#sec-25-backtesting-implementation" class="quarto-xref"><span>Section 25.2</span></a></td>
 </tr>
 <tr class="odd">
+<td>#59</td>
 <td>
-<code>maxSR</code> is recovered from <code><a href="https://rdrr.io/r/base/match.call.html">match.call()</a></code>, so it only works when written as a literal <code>TRUE</code>; driving it from a variable fails outright</td>
-<td><a href="13-solvers.html#sec-13-solvers-implementation" class="quarto-xref"><span>Section 13.2</span></a></td>
+<code>statistical.factor.model()</code> refuses a window with fewer observations than assets; <code>allow.fewer.obs = TRUE</code> lifts the check and bounds <code>k</code> by the observations, with the default unchanged</td>
+<td>
+<a href="07-covariance-matrix.html#sec-07-covariance-matrix-implementation" class="quarto-xref"><span>Section 7.2</span></a>, <a href="21-equity-sleeve.html#sec-21-equity-sleeve-implementation" class="quarto-xref"><span>Section 21.2</span></a>
+</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Proposed, not pinned.</strong> Position limits and <code>maxSR</code> under a turnover constraint are accepted and then dropped, so the returned portfolio violates what was asked for. Refusing those calls is the honest fix, but it breaks code that runs today, so it is offered separately and this book does not assume it. On the build this book pins, a position limit (<code>max_pos</code>) on ROI’s quadratic path is dropped without a message: no error, no warning, and the unconstrained weights come back, exactly as on the CRAN release. ROI honors the limit only on its two mixed-integer paths, maximum return and minimum expected shortfall, which it hands to <code>Rglpk</code>. A patch that refuses the quadratic call is proposed upstream, not in the pinned build. <a href="12-constraints.html#sec-12-constraints-implementation" class="quarto-xref"><span>Section 12.2</span></a> and <a href="92-solver-matrix.html" class="quarto-xref"><span>Appendix C</span></a> measure it.</p>
+<p><strong>Not fixed anywhere.</strong> Position limits and <code>maxSR</code> under a turnover constraint are accepted and then dropped, so the returned portfolio violates what was asked for. On the build this book pins, a position limit (<code>max_pos</code>) on ROI’s quadratic path is dropped without a message: no error, no warning, and the unconstrained weights come back, exactly as on the CRAN release. ROI honors the limit only on its two mixed-integer paths, maximum return and minimum expected shortfall, which it hands to <code>Rglpk</code>. Refusing the quadratic call would be the honest fix, but it breaks code that runs today; no patch for it exists upstream or on the fork, and this book documents the behavior instead. <a href="12-constraints.html#sec-12-constraints-implementation" class="quarto-xref"><span>Section 12.2</span></a> and <a href="92-solver-matrix.html" class="quarto-xref"><span>Appendix C</span></a> measure it.</p>
 <div class="cell" data-layout-align="center">
 <div class="cell-output-display">
 <table class="caption-top table table-sm table-striped small">
@@ -778,7 +824,7 @@ div.csl-indent {
 <tr class="odd">
 <td><code>PortfolioAnalytics</code></td>
 <td>
-<code>sstoeckl/PortfolioAnalytics@cc22d4fd</code>, branch <code>fix-maxsr-momentfun-mean</code>
+<code>sstoeckl/PortfolioAnalytics@8b021e12</code>, branch <code>book-integration</code>
 </td>
 </tr>
 <tr class="even">
@@ -850,7 +896,7 @@ div.csl-indent {
 #&gt;  PerformanceAnalytics * 2.1.0     2026-04-11 [1] CRAN (R 4.6.1)
 #&gt;  pillar                 1.11.1    2025-09-17 [1] CRAN (R 4.6.1)
 #&gt;  pkgconfig              2.0.3     2019-09-22 [1] CRAN (R 4.6.1)
-#&gt;  PortfolioAnalytics   * 2.1.2     2026-09-10 [1] Github (sstoeckl/PortfolioAnalytics@2a4dd91)
+#&gt;  PortfolioAnalytics   * 2.1.2     2026-11-11 [1] Github (sstoeckl/PortfolioAnalytics@8b021e1)
 #&gt;  pso                    1.0.4     2022-04-12 [1] CRAN (R 4.6.1)
 #&gt;  purrr                * 1.2.2     2026-04-10 [1] CRAN (R 4.6.1)
 #&gt;  quadprog               1.5-8     2019-11-20 [1] CRAN (R 4.6.1)
@@ -1023,7 +1069,7 @@ Stöckl, Sebastian. 2020. <em>Uncertaintymeasures: Functions to Create Uncertain
     }
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
       var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp("https:\/\/www\.tidy-asset-allocation\.org");
+        var filterRegex = new RegExp("https:\/\/www\.tidy-pm\.com\/dev\/");
       var isInternal = (href) => {
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
@@ -1354,7 +1400,33 @@ Stöckl, Sebastian. 2020. <em>Uncertaintymeasures: Functions to Create Uncertain
       }
     }
   });
-  </script><nav class="page-navigation"><div class="nav-page nav-page-previous">
+  </script><input type="hidden" id="giscus-base-theme" value="light"><input type="hidden" id="giscus-alt-theme" value="light"><script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "sstoeckl/tidy-asset-allocation";
+    script.dataset.repoId = "R_kgDOVrAPVg";
+    script.dataset.category = "General";
+    script.dataset.categoryId = "DIC_kwDOVrAPVs4DK6cA";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "0";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script><nav class="page-navigation"><div class="nav-page nav-page-previous">
       <a href="../chapters/92-solver-matrix.html" class="pagination-link" aria-label="Solver and Constraint Support">
         <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">C</span>&nbsp; <span class="chapter-title">Solver and Constraint Support</span></span>
       </a>          
@@ -1368,7 +1440,7 @@ Stöckl, Sebastian. 2020. <em>Uncertaintymeasures: Functions to Create Uncertain
 </div> <!-- /content -->
 <footer class="footer"><div class="nav-footer">
     <div class="nav-footer-left">
-<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl</p>
+<p><em>Tidy Asset Allocation in R</em> · Sebastian Stöckl · text <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>, code <a href="https://github.com/sstoeckl/tidy-asset-allocation/blob/main/LICENSE.md">MIT</a></p>
 </div>   
     <div class="nav-footer-center">
       &nbsp;

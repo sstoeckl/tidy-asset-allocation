@@ -45,7 +45,9 @@ vary_rho <- function(r) {
   cv <- r * s1 * s2
   w  <- (s2^2 - cv) / (s1^2 + s2^2 - 2 * cv)
   c(rho = r, w_equity = w,
-    portfolio_vol = sqrt(w^2 * s1^2 + (1 - w)^2 * s2^2 + 2 * w * (1 - w) * cv))
+    # at rho = -1 the variance is zero and floating point can return a tiny
+    # negative number; the floor keeps the square root defined
+    portfolio_vol = sqrt(pmax(0, w^2 * s1^2 + (1 - w)^2 * s2^2 + 2 * w * (1 - w) * cv)))
 }
 
 round(t(vapply(c(-1, -0.5, 0, rho, 0.5, 0.9, 1), vary_rho, numeric(3))), 4)

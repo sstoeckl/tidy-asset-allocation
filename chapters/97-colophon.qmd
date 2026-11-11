@@ -109,6 +109,19 @@ tibble::tibble(chapter = as.integer(substr(st$file, 1, 2)), title = st$title,
   kable(align = "rllll")
 ```
 
+## License {#sec-97-colophon-license}
+
+The text of this book, its figures and its tables are licensed under the
+Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+License ([CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)):
+it may be shared and adapted for non-commercial purposes with attribution,
+and adaptations carry the same license. The code in the chapters, the
+downloadable scripts and the companion package `tidypm` are licensed under
+the MIT License, so that a chunk copied into a reader's own project carries
+no obligation beyond the copyright notice. This is the arrangement of *Tidy
+Finance with R* [@scheuch2023], whose example the book follows in this as in
+its form.
+
 ## Citing This Book {#sec-97-colophon-cite}
 
 The online edition is the edition of record, and the version is the date of

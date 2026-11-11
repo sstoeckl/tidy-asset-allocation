@@ -21,6 +21,9 @@ keywords:
   - R
   - PortfolioAnalytics
   - textbook
+license:
+  - CC-BY-NC-SA-4.0
+  - MIT
 version: "2026.11"
 date-released: "2026-11-11"
 preferred-citation:

@@ -33,7 +33,7 @@ book:
   page-footer:
     border: false
     left: |
-      *Tidy Asset Allocation in R* &middot; Sebastian Stöckl
+      *Tidy Asset Allocation in R* &middot; Sebastian Stöckl &middot; text [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/), code [MIT](https://github.com/sstoeckl/tidy-asset-allocation/blob/main/LICENSE.md)
     right:
       - text: "Source"
         href: https://github.com/sstoeckl/tidy-asset-allocation

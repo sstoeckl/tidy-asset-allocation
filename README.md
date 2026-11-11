@@ -47,6 +47,8 @@ chapter's stage.
 
 `CITATION.cff`, or the BibTeX entry in the book's colophon.
 
-## Licence
+## License
 
-To be decided. Code CC-BY or MIT; prose CC-BY-NC-SA is the likely split.
+The text is [CC BY-NC-SA 4.0](LICENSE-CC-BY-NC-SA-4.0.txt), the code (in the
+chapters, `code/`, `R/`, `tools/`) and the companion package are MIT; see
+`LICENSE.md`. The same split as *Tidy Finance with R*.

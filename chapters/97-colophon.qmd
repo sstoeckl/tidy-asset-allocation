@@ -90,9 +90,8 @@ so that no coordinate can be paired with the wrong label.
 The book is reviewed in four stages, and every numbered chapter shows its
 stage in the banner under its title: *draft* while it waits for the author's
 read, *alpha* while two or three colleagues check the theory, the literature
-and whether the chapter teaches, *beta* while students in a course work it
-with its exercises, and *final* when a semester's readers have been through
-it. The stages, the questions each reader is asked and what happens to a
+and whether the chapter teaches, *beta* while readers in the student's seat
+work it with its exercises, and *final* when they have been through it. The stages, the questions each reader is asked and what happens to a
 comment are in the repository's `REVIEWING.md`; the status itself is one line
 per chapter in `review/status.csv`, read here.
 

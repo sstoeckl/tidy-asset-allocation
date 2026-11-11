@@ -43,14 +43,15 @@ banner; the colophon lists all of them.
 |---|---|---|---|
 | **Draft** | the author | every chapter, in Word or on the page | structure, voice, direction; what to cut |
 | **Alpha** | two or three colleagues who teach or research the subject | one part at a time | Is the theory right and the notation consistent? Is the literature fairly attributed, and is anything load-bearing missing? Would this chapter teach in one session? |
-| **Beta** | students in the course, chapter by chapter in the semester's rhythm | the chapter of the week, with its exercises | Where did you stop understanding? Which exercise could you not start, and why? What did the code do that the text did not say? |
+| **Beta** | the chair's assistants and doctoral students, one chapter at a time, in the reader's seat | the chapter with its exercises, worked as a student would | Where did you stop understanding? Which exercise could you not start, and why? What did the code do that the text did not say? |
 | **Code** | package users and anyone who runs the scripts | `code/` and `tidypm` | what fails, what is wrong, what should be a function |
 
 **Order for the alpha round.** Chapters 9 and 25 first, because every other
 chapter refers to them; then Parts I to IV in order; then Parts V to VII; Part
 VIII last. A chapter moves from *draft* to *alpha* when the author has read it
-once and to *beta* when the alpha comments are closed; *final* means a
-semester's beta readers have been through it. The status lives in
+once and to *beta* when the alpha comments are closed; *final* means the beta
+readers have been through it. A beta round with students in a course is not
+planned for now. The status lives in
 `review/status.csv`, one line per chapter.
 
 ## What happens to a comment

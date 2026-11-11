@@ -86,3 +86,5 @@ Rplots.pdf
 /assets/cover/cover-*.png
 !/assets/cover/cover-social.png
 !/assets/cover/cover-wide.png
+
+__pycache__/

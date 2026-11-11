@@ -587,6 +587,32 @@ and what happens to a comment. Each chapter's level is one line in
 (`tools/chapter-banner.lua`) and tabulated in the colophon; move a chapter by
 editing that line, never the chapter.
 
+### The reverse outline
+
+Made 2026-11-11, after Sebastian said he disliked the language and the
+structure inside the chapters and wanted to work top down, asking at every
+level why something is written where it is. `review/outline/` holds one file
+per chapter in the format of `review/outline/FORMAT.md`: the chapter's claim,
+question, placement ("Why here") and order; for every section what it says
+and why it comes there, as the text itself gives the reason ("not stated"
+when it gives none); and one line per paragraph with its type (claim,
+evidence, definition, derivation, method, code, result, caveat, transition,
+example, takeaway, exercise), with every code chunk noted where it falls.
+`review/outline/parts.md` is the level above: the book's argument, the stated
+reason for the order of the parts, the dependencies that run against that
+order, and the patterns that recur across chapters.
+
+```bash
+python tools/build-outline.py     # assembles review/outline/index.html
+```
+
+The page is published as a Claude Artifact (level switch: parts and
+chapters, sections, paragraphs) and Sebastian comments on it there; read his
+threads with the ArtifactComments tool when he says so. An outline reports
+the text as it stands. Rewrite a chapter's outline file after the chapter is
+restructured, never before, so that the outline stays a record of what the
+text does and not of what was planned.
+
 ### Every comment lands in `REVIEW-LOG.md`
 
 Not as a courtesy. A comment that is fixed and forgotten arrives again, and the
@@ -686,8 +712,14 @@ Settled with the user. Recorded in full in `chapters/93-package-notes.qmd`.
 
 ## Parked until the data exists
 
-Chapter 20 in full, and the value-factor material in chapters 16, 18 and 21.
-Both need firm fundamentals and ESG *levels*, which this export does not carry:
+The value-factor material in chapters 16, 18 and 21, which each say in one
+sentence that value cannot be built for want of fundamentals. Chapter 20 is
+no longer parked: it is written (2026-11) on rating levels it **constructs**
+from the shipped changes under a stated assumption, a drawn starting grade
+that is an argument of a function, and it says so in a callout; shipped
+levels would replace that construction. The background, unchanged:
+value and sustainability need firm fundamentals and ESG *levels*, which this
+export does not carry:
 it holds 1,113 ESG rating **changes** but no starting grade, so cumulating them
 gives a level up to an unknown constant. Real vendor fundamentals cannot be
 shipped, and attaching them to simulated prices would pair a real numerator with

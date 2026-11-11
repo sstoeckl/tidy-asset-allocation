@@ -29,9 +29,34 @@ Rules that came from review comments rather than from planning:
 
 ## Open
 
-*(nothing — the five comments of the first round are closed below)*
+*(nothing)*
 
 ## Done
+
+### Found by the slide-deck agents, 2026-11-11
+
+Each deck reuses its chapter's chunks by label, so building the decks read
+every chapter's code once more. What came back, and what was done:
+
+- [x] **09** — the two-asset table printed `NaN` at ρ = −1: the variance is
+      zero to machine precision and came out as a tiny negative number under
+      the square root. Floored at zero.
+- [x] **01** — two inline expressions printed raw model dates into prose
+      (`format(start(R), "%Y-%m")` and `format(date[5])`), against the
+      calendar rule. Now `fmt_model()`.
+- [x] **01** — `code/01-setting-up.R` read `renv.lock` from the project root
+      and failed from `code/`. The lockfile now ships with the code downloads.
+- [x] **04** — the caption of the tails table called the Cornish-Fisher
+      figure "Gaussian-corrected"; reworded. The drawdown sentence read as a
+      run-on; a colon. The clustering chunk assigned `exp`, masking
+      `base::exp` for the rest of the chapter; renamed `expct`.
+- [ ] **04** — the instability paragraph says rolling volatility never
+      disagrees in sign, "which it cannot": true by construction, so the
+      sign-flip column for volatility carries no information. Left as is; a
+      sentence to reconsider when the chapter is read.
+- [ ] **03** — "Chapters 9 to 14 and chapter 15" in the strategic/tactical
+      paragraph; read as intended (Part IV, then the hierarchical chapter)
+      and left.
 
 ### 09 · Mean-Variance Optimization — first Word round, 2026-09-13
 

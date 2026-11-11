@@ -274,7 +274,7 @@ the message the reader will meet in practice is printed here first.
 
 **A ragged panel.** Drop one row, the
 `r sim_class_returns_monthly$class[5]` observation for
-`r format(sim_class_returns_monthly$date[5])`, and cross the boundary.
+`r fmt_model(sim_class_returns_monthly$date[5])`, and cross the boundary.
 
 ```{r}
 #| label: ragged-build
@@ -461,7 +461,7 @@ c(months = nrow(R), assets = ncol(R),
 ```
 
 `r nrow(R)` months of `r ncol(R)` series, from
-`r format(start(R), "%Y-%m")` to `r format(end(R), "%Y-%m")`,
+`r fmt_model(start(R))` to `r fmt_model(end(R))`,
 `r nrow(R) / 12` years on a `r p$scale` grid. A figure of three of them shows
 the reverse crossing in use: the matrix goes back to long form, a grouped
 mutate compounds each series, and the plot is drawn from that one frame.

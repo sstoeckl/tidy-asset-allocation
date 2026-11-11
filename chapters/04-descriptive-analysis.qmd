@@ -328,7 +328,7 @@ The three largest statistics belong to credit series rather than to equity, and
 
 ```{r}
 #| label: tbl-04-tails
-#| tbl-cap: "Expected shortfall at 95%, computed two ways. The Gaussian-corrected figure is the Cornish-Fisher expansion, which adjusts a normal quantile for skewness and kurtosis; the historical figure simply averages the realized tail."
+#| tbl-cap: "Expected shortfall at 95%, computed two ways. The Cornish-Fisher figure adjusts a normal quantile for the measured skewness and kurtosis; the historical figure simply averages the realized tail."
 tails <- tibble::tibble(
   series = colnames(R),
   es_hist = apply(R, 2, function(x)
@@ -483,7 +483,7 @@ deepest$series[still_down]
 
 `r sum(still_down)` of the `r ncol(R)` series end the sample inside their
 deepest drawdown, having not recovered by its last month. A single
-`maxDrawdown()` call reports nothing but a depth, the same kind of number for
+`maxDrawdown()` call reports nothing but a depth: the same kind of number for
 `r paste0("\x60", deepest$series[which.min(deepest$Recovery)], "\x60")`, whose
 deepest drawdown was recovered in `r min(deepest$Recovery, na.rm = TRUE)`
 months, and for a series that never recovered at all. The episode table
@@ -509,15 +509,15 @@ hit <- rowSums(abs(z) > 2.5)
 p   <- mean(abs(z) > 2.5)
 
 obs <- table(factor(hit, levels = 0:ncol(Rr)))
-exp <- stats::dbinom(0:ncol(Rr), ncol(Rr), p) * nrow(Rr)
+expct <- stats::dbinom(0:ncol(Rr), ncol(Rr), p) * nrow(Rr)
 
-tibble::tibble(k = 0:ncol(Rr), observed = as.integer(obs), expected = round(exp, 2)) |>
+tibble::tibble(k = 0:ncol(Rr), observed = as.integer(obs), expected = round(expct, 2)) |>
   dplyr::filter(k >= 3, observed > 0)
 ```
 
 Months in which five or more of the `r ncol(Rr)` risky series moved beyond two
 and a half standard deviations number `r sum(hit >= 5)` observed against
-`r sprintf("%.2f", sum(exp[6:length(exp)]))` expected under independence. The
+`r sprintf("%.2f", sum(expct[6:length(expct)]))` expected under independence. The
 excess is not marginal; it is a different phenomenon.
 
 ```{r}
@@ -750,7 +750,7 @@ sleeve and the equity sleeve of the same country, and
   of `r sprintf("%.1f", tails$ratio[tails$series == "US_credit"])`.
 - Fat tails in this market are events rather than a distribution.
   `r sum(hit >= 5)` months show joint exceedances of a kind that independence
-  would produce once in `r sprintf("%.0f", 1 / sum(exp[6:length(exp)]))` samples
+  would produce once in `r sprintf("%.0f", 1 / sum(expct[6:length(expct)]))` samples
   of this length. Independent fat tails diversify; shared ones do not.
 - The four episodes of `sim_episodes` are not one crisis. Average correlation
   rises in the credit crisis and the rates shock and falls in the equity bear

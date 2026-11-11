@@ -251,6 +251,8 @@ def main():
 
     # shared files
     shutil.copy(os.path.join(ROOT, "R", "_common.R"), os.path.join(CODE, "_common.R"))
+    # chapter 1 reads the lockfile to list the versions; it travels with the scripts
+    shutil.copy(os.path.join(ROOT, "renv.lock"), os.path.join(CODE, "renv.lock"))
     tables = os.path.join(ROOT, "output", "tables")
     os.makedirs(os.path.join(CODE, "tables"), exist_ok=True)
     for name in os.listdir(tables):

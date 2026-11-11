@@ -14,8 +14,18 @@ project:
 
 book:
   title: "Tidy Asset Allocation in R"
-  subtitle: "A handbook for building, constraining and testing multi-asset portfolios"
+  subtitle: "A course text on building, constraining and testing multi-asset portfolios"
   author: "Sebastian Stöckl"
+  # The cover (assets/cover/make-cover.R, Sebastian's choice 2026-11-11: the
+  # typographic variant on the blue wash); the square card is the social
+  # preview, the 16:9 card the slide title card.
+  cover-image: assets/cover/cover.png
+  cover-image-alt: "Tidy Asset Allocation in R, by Sebastian Stöckl: the title over a blue gradient, with the efficient frontier drawn below it."
+  open-graph:
+    image: assets/cover/cover-social.png
+  twitter-card:
+    image: assets/cover/cover-social.png
+    card-style: summary_large_image
   date: today
   date-format: "D MMMM YYYY"
   site-url: https://www.tidy-pm.com/dev/

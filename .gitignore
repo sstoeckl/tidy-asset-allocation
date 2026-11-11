@@ -80,3 +80,9 @@ Rplots.pdf
 # Rendered slide decks are derived; the .qmd and the shared .scss are the sources.
 /slides/*.html
 /slides/*_files/
+
+# The cover: the script, the fonts it needs and the three finals are tracked;
+# the variants and previews it can regenerate are not.
+/assets/cover/cover-*.png
+!/assets/cover/cover-social.png
+!/assets/cover/cover-wide.png

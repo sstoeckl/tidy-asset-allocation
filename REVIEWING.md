@@ -14,8 +14,9 @@ one exists, its slide deck.
 [Hypothesis](https://web.hypothes.is/) client. Select any text on a page, click
 *Annotate*, write, and post. The note is stored with the exact sentence it was
 made on, which is what makes it actionable. Reviewers need a free Hypothesis
-account and a place in the reviewers' group; the invitation link comes from the
-author, and a note posted to that group is visible to its members only. Choose
+account and a place in the reviewers' group, *tidy-asset-allocation*; the
+invitation link comes from the author, and a note posted to that group is
+visible to its members only. Choose
 the group in the sidebar before posting; the default is *Public*. Highlights
 without text are fine for "this sentence does not read well". Tags are
 optional; `theory`, `code`, `citation`, `language`, `teaching` help the sorting.

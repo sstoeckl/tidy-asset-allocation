@@ -1,0 +1,226 @@
+# Package Notes {#sec-93-package-notes}
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+```
+
+What this book was built against, where it deviates from the released packages,
+and why. Everything here is a deliberate choice rather than an accident of
+whatever happened to be installed.
+
+## The build environment
+
+```{r}
+#| label: build-environment
+#| echo: false
+lock <- jsonlite::read_json("renv.lock")
+
+tibble::tibble(
+  Item = c("R", "PortfolioAnalytics", "PerformanceAnalytics", "tidyfinance",
+           "CVXR", "xts", "packages pinned"),
+  Version = c(
+    lock$R$Version,
+    lock$Packages$PortfolioAnalytics$Version %||% "--",
+    lock$Packages$PerformanceAnalytics$Version %||% "--",
+    lock$Packages$tidyfinance$Version %||% "--",
+    lock$Packages$CVXR$Version %||% "--",
+    lock$Packages$xts$Version %||% "--",
+    as.character(length(lock$Packages))
+  )
+) |>
+  knitr::kable()
+```
+
+The complete set is in `renv.lock`. To reproduce the book exactly:
+
+```r
+renv::restore()
+quarto::quarto_render()
+```
+
+## Why PortfolioAnalytics is pinned to the CRAN release
+
+The development version on GitHub is usually ahead of CRAN, sometimes by
+several months and several bug fixes. This book nonetheless builds against the
+**CRAN release**, for one reason: you install from CRAN, and a book that only
+runs against an unreleased commit is not reproducible for its readers.
+
+The cost is that a fix landing upstream in, say, July does not reach the book
+until the next CRAN release. Where that gap matters, it is named in the chapter
+that hits it.
+
+The exception is a patch that this book itself contributes. While such a patch
+is under review, the lockfile points at a branch of a fork; once merged and
+released, it points back at CRAN. Any patch currently in that state is listed
+below.
+
+### Patches in flight
+
+Two, split by how much they ask of the maintainers, and only the first is
+pinned here.
+
+**Pinned.** Every fix below either restores an answer that was wrong or turns a
+silent `NA` into a message. None of them makes a call fail that used to succeed,
+which is why the book builds against them.
+
+| What it fixes | Where it bites |
+|---|---|
+| `maxSR` discards a mean supplied through `momentFUN`, so the "maximum Sharpe" answer is not the maximum Sharpe answer | @sec-09-mean-variance-application, @sec-13-solvers-implementation |
+| `full_investment` is encoded as two opposing inequalities, which makes the active set rank deficient; the solver fails and `NA` weights are returned without a message | @sec-25-backtesting-implementation |
+| `maxSR` is recovered from `match.call()`, so it only works when written as a literal `TRUE`; driving it from a variable fails outright | @sec-13-solvers-implementation |
+
+**Proposed, not pinned.** Position limits and `maxSR` under a turnover
+constraint are accepted and then dropped, so the returned portfolio violates
+what was asked for. Refusing those calls is the honest fix, but it breaks code
+that runs today, so it is offered separately and this book does not assume it.
+On the build this book pins, a position limit (`max_pos`) on ROI's quadratic
+path is dropped without a message: no error, no warning, and the unconstrained
+weights come back, exactly as on the CRAN release. ROI honors the limit only on
+its two mixed-integer paths, maximum return and minimum expected shortfall,
+which it hands to `Rglpk`. A patch that refuses the quadratic call is proposed
+upstream, not in the pinned build. @sec-12-constraints-implementation and
+@sec-92-solver-matrix measure it.
+
+```{r}
+#| label: pa-build
+#| echo: false
+patched <- tidyaa_pa_patched()
+recorded <- lock$Packages$PortfolioAnalytics
+
+tibble::tibble(
+  fact = c("version string", "build actually loaded",
+           "what the lockfile restores"),
+  value = c(
+    as.character(utils::packageVersion("PortfolioAnalytics")),
+    if (isTRUE(patched)) "patched" else "CRAN, unpatched",
+    paste0(recorded$Source,
+           if (!is.null(recorded$Repository)) paste0(" / ", recorded$Repository) else "")
+  )
+) |>
+  knitr::kable()
+```
+
+::: {.callout-warning appearance="simple"}
+**The two builds share a version string.** Both call themselves 2.1.2, so
+`packageVersion()` cannot tell them apart and neither can `renv`. The patched
+build is identified by a formal argument the patch adds, which is what
+`tidyaa_pa_patched()` in `R/_common.R` checks; a render against the unpatched
+build emits a warning rather than silently producing different numbers.
+
+`renv.lock` pins the patched build by commit, so `renv::restore()` installs it
+and no extra step is needed. Should the pin ever revert to CRAN, the warning is
+how you find out.
+:::
+
+### Upstream issues this book documents
+
+These are live limitations, not bugs the book works around silently. Each is
+taught in the chapter where it bites.
+
+| Issue | Effect | Chapter |
+|---|---|---|
+| [#45](https://github.com/braverock/PortfolioAnalytics/issues/45) | `optimize.portfolio.rebalancing()` reports nothing when a solver fails in a period | @sec-25-backtesting-implementation |
+| [#43](https://github.com/braverock/PortfolioAnalytics/issues/43) | No control over the parallelisation level in rolling optimization | @sec-14-risk-based-allocation-implementation |
+| [#51](https://github.com/braverock/PortfolioAnalytics/issues/51) | CSM objective unavailable to the metaheuristic solvers | @sec-10-risk-measures-implementation |
+
+## Version holds
+
+Not every available update is taken. Where the book stays behind, the reason is
+recorded here rather than left as an accident.
+
+| Package | Pinned at | Available | Why |
+|---|---|---|---|
+| `clarabel` | 0.11.2 | 0.11.3 | No binary is published for R 4.6 yet, and `clarabel` compiles from Rust rather than C, so building from source needs a `cargo` toolchain that Rtools does not provide. 0.11.2 is a working CVXR backend; revisit once a binary appears. |
+
+`zoo` moved to 1.9-0 with the R 4.6 upgrade. That is a major version directly
+underneath `xts`, which every chapter depends on, so it is worth stating
+explicitly: `xts` 0.14.2 loads and passes against it, and no chapter has yet
+exercised the combination in anger. If a time-series operation behaves oddly,
+this pairing is the first place to look.
+
+## The two packages that do not come from CRAN
+
+Everything the book uses installs from CRAN with one deliberate exception each
+side of the boundary.
+
+`tidypm` is the companion package. It is not on CRAN and is not meant to be
+installed from there; it holds the modeled market and the machinery
+`PortfolioAnalytics` does not cover.
+
+`uncertaintymeasures` [@stoeckl-uncertaintymeasures] implements the
+turbulence-based uncertainty measures used in @sec-05-factor-models-application, and the
+Garlappi-Uppal-Wang multi-prior adjustment [@garlappi2007] used in
+@sec-28-robustness-application. It installs from GitHub:
+
+```r
+renv::install("sstoeckl/uncertaintymeasures")
+```
+
+A GitHub dependency is a reproducibility cost, and it is worth being explicit
+about who pays it. The book renders the excursus live rather than from a stored
+figure, so a reader who wants to rebuild that section needs the package; a
+reader who only wants the rest does not. The alternative — printing a frozen
+image and disabling the code — would have shown the result while hiding the one
+thing worth showing, which is how it is computed.
+
+## Which package to reach for
+
+Four packages overlap across data, estimation and evaluation, and the obvious
+guess is wrong at least once. The division used throughout:
+
+| Job | Package | Why |
+|---|---|---|
+| Moments, distributions, drawdowns, alphas and betas, active-management measures, exploratory charts | `PerformanceAnalytics` | On CRAN since 2007 with a stable interface, and already a hard dependency. It covers more than most readers realize: `CAPM.beta.bull()` and `CAPM.beta.bear()` give conditional betas in one call, `table.DownsideRisk()` and `table.Distributions()` replace a page of hand-written summaries. |
+| Staying in tibbles across that boundary | `tidyquant` | `tq_performance()` wraps the above and returns a tibble. |
+| Fetching data nobody else wraps — JKP factors, Goyal–Welch predictors, WRDS and its credential-free substitutes | `tidyfinance` | Nothing else offers these. **Used for data access only, never for estimation:** it is pre-1.0 and its estimation interfaces are still moving, which is a poor foundation for a book that has to keep rendering. |
+| Optimization | `PortfolioAnalytics` | The subject of the book. |
+
+Written by hand only where none of the four has the function. Rolling betas as a
+*table* are one such case: `PerformanceAnalytics` charts them through
+`chart.RollingRegression()` but returns nothing, so the book composes
+`zoo::rollapply()` with `CAPM.beta()`. Three visible lines that will not move
+beat one call that might.
+
+## Notes on the snapshot
+
+Most of `renv.lock` resolves from CRAN, but three entries do not, and each
+needs a word.
+
+`uncertaintymeasures` and `PortfolioAnalytics` are both recorded as GitHub
+sources with commit hashes, so they restore exactly:
+
+| Package | Pinned at |
+|---|---|
+| `PortfolioAnalytics` | `sstoeckl/PortfolioAnalytics@cc22d4fd`, branch `fix-maxsr-momentfun-mean` |
+| `uncertaintymeasures` | `sstoeckl/uncertaintymeasures@d822c2f5` |
+
+`tidypm` is the one entry that does not resolve from a network location. It is
+recorded as a **local** source at `../tidypm`, because the companion package is
+a sibling directory rather than a published one, so restoring it needs that
+directory to be present.
+
+```r
+renv::restore()
+source("R/_common.R")   # warns if the PortfolioAnalytics patch did not take
+```
+
+## R version
+
+The book targets R `r paste(R.version$major, R.version$minor, sep = ".")`.
+
+The companion package `tidypm` deliberately declares a lower floor
+(`R (>= 4.2)`). The book's lockfile pins a *build* environment; the package
+states what a *reader* needs. These are different constraints and there is no
+reason to make readers follow the build.
+
+## Session information
+
+```{r}
+#| label: session-info
+#| echo: false
+sessioninfo::session_info(pkgs = c("PortfolioAnalytics", "PerformanceAnalytics",
+                                   "CVXR", "xts", "tidyfinance"),
+                          include_base = FALSE)
+```

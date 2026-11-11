@@ -1,0 +1,316 @@
+### Chapter 10: Risk Measures Beyond Variance {.unnumbered}
+
+```{r}
+#| label: sol-10-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+stopifnot(ncol(Re) == 16L, !anyNA(Re))
+
+loss_es <- function(x) as.numeric(ES(x, p = 0.95, method = "historical", invert = FALSE))
+w_of    <- function(opt) extractWeights(opt)[colnames(Re)]
+base_spec <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only")
+w_var <- w_of(optimize.portfolio(Re, base_spec |> add.objective(type = "risk", name = "var"),
+                                 optimize_method = "ROI"))
+```
+
+#### Exercise 1
+
+The level enters @eq-10-lp only through $\alpha$, so each solve is one line
+apart from the last; the number of months in the tail is $\alpha T$.
+
+```{r}
+#| label: sol-10-ex1
+min_es_at <- function(p) {
+  spec <- base_spec |>
+    add.objective(type = "risk", name = "ES", arguments = list(p = p, method = "historical"))
+  w <- w_of(optimize.portfolio(Re, spec, optimize_method = "ROI"))
+  tibble::tibble(p = p, tail_months = (1 - p) * nrow(Re),
+                 US_credit = w[["US_credit"]],
+                 largest = names(which.max(w)), largest_weight = max(w),
+                 to_min_variance = sum(abs(w - w_var)) / 2)
+}
+ex1 <- dplyr::bind_rows(lapply(c(0.90, 0.95, 0.99), min_es_at))
+ex1 |> dplyr::mutate(dplyr::across(where(is.numeric), ~ round(.x, 4))) |> as.data.frame()
+```
+
+```{r}
+#| label: sol-10-ex1-facts
+#| include: false
+# What the answer states: no credit at any level, one largest holding, and a
+# distance to minimum variance that grows with the level.
+stopifnot(all(ex1$US_credit < 0.005), length(unique(ex1$largest)) == 1L,
+          all(ex1$to_min_variance > 0), !is.unsorted(ex1$p), all(diff(ex1$to_min_variance) > 0))
+```
+
+`US_credit` is held at none of the three levels, and the largest holding is
+`r paste0("\x60", unique(ex1$largest), "\x60")` at every one of
+them. The last column is the share of the portfolio that would have to be
+traded to reach the minimum-variance solution: it is
+`r sprintf("%.3f", ex1$to_min_variance[ex1$p == 0.90])` at `p = 0.90`,
+`r sprintf("%.3f", ex1$to_min_variance[ex1$p == 0.95])` at `p = 0.95` and
+`r sprintf("%.3f", ex1$to_min_variance[ex1$p == 0.99])` at `p = 0.99`. The
+solutions never coincide with the minimum-variance portfolio, and they move
+away from it as the level rises, because what changes with `p` is the support
+of the estimate. At `p = 0.99` the tail holds
+`r sprintf("%.1f", ex1$tail_months[ex1$p == 0.99])` months, and @eq-10-lp then
+chooses sixteen weights to make the average of three or four observations
+as small as possible, which is a fit to those months rather than an estimate
+of a tail; @yamai2005 give the standard error that grows as the tail
+shrinks, and @sec-08-estimation-error-theory is about what an optimizer
+does with such an input.
+
+#### Exercise 2
+
+The weekly returns are the model's native frequency and the monthly ones are
+compounded from them, so the two panels describe the same sample with about
+four times as many observations in every tail. The weekly bill starts one
+week before the returns do and is matched by date.
+
+```{r}
+#| label: sol-10-ex2
+#| warning: false
+Rw  <- as_xts_pm(sim_class_returns_weekly, date, class, return)
+rfw <- sim_riskfree_weekly$return[match(zoo::index(Rw), sim_riskfree_weekly$date)]
+stopifnot(!anyNA(rfw), ncol(Rw) == 16L)
+Rew <- Rw - rfw
+spec_w <- portfolio.spec(assets = colnames(Rew)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only")
+
+credit_gap <- function(X, spec, n = 25) {
+  fr_es <- as.data.frame(unclass(create.EfficientFrontier(X,
+    spec |> add.objective(type = "return", name = "mean") |>
+            add.objective(type = "risk", name = "ES", arguments = list(p = 0.95)),
+    type = "mean-ETL", n.portfolios = n, optimize_method = "ROI")$frontier))
+  fr_sd <- as.data.frame(unclass(create.EfficientFrontier(X,
+    spec |> add.objective(type = "return", name = "mean") |>
+            add.objective(type = "risk", name = "StdDev"),
+    type = "mean-StdDev", n.portfolios = n, optimize_method = "ROI")$frontier))
+  grid <- seq(max(min(fr_es$mean), min(fr_sd$mean)),
+              min(max(fr_es$mean), max(fr_sd$mean)), length.out = 40)
+  at <- function(fr) stats::approx(fr$mean, fr$w.US_credit, xout = grid)$y
+  gap <- at(fr_sd) - at(fr_es)                    # negative: the ES frontier holds more
+  c(tail_obs = 0.05 * nrow(X),
+    peak_variance_frontier = max(fr_sd$w.US_credit),
+    peak_es_frontier = max(fr_es$w.US_credit),
+    largest_gap = gap[which.max(abs(gap))])
+}
+ex2 <- rbind(monthly = credit_gap(Re, base_spec), weekly = credit_gap(Rew, spec_w))
+round(ex2, 4)
+
+# What changed between the two grids, for the series the gap is about: skewness,
+# and expected shortfall per standard deviation with its rank among the sixteen.
+tail_shape <- function(X) {
+  es_sd <- apply(X, 2, function(x) loss_es(as.numeric(x)) / stats::sd(x))
+  c(skewness = as.numeric(skewness(X[, "US_credit"])),
+    ES_per_sd = es_sd[["US_credit"]], rank = rank(-es_sd)[["US_credit"]])
+}
+shape <- rbind(monthly = tail_shape(Re), weekly = tail_shape(Rew))
+
+# The weeks that compound into the worst month, and the monthly variance against
+# the weekly one scaled by the weeks in a month.
+x_m   <- as.numeric(Re[, "US_credit"]); i <- which.min(x_m); d <- zoo::index(Re)
+weeks <- as.numeric(Rew[zoo::index(Rew) > d[i - 1] & zoo::index(Rew) <= d[i], "US_credit"])
+q     <- nrow(Rew) / nrow(Re)
+var_ratio <- stats::var(x_m) / (q * stats::var(as.numeric(Rew[, "US_credit"])))
+round(cbind(shape, weeks_in_worst_month = c(NA, length(weeks)), variance_ratio = c(NA, var_ratio)), 2)
+```
+
+```{r}
+#| label: sol-10-ex2-facts
+#| include: false
+# The orders the answer states; rows are monthly, then weekly.
+stopifnot(identical(rownames(ex2), c("monthly", "weekly")), identical(rownames(shape), rownames(ex2)),
+          all(ex2[, "largest_gap"] < 0), diff(abs(ex2[, "largest_gap"])) > 0,
+          diff(ex2[, "peak_variance_frontier"]) > 0, diff(ex2[, "peak_es_frontier"]) > 0,
+          ex2["weekly", "peak_es_frontier"] > ex2["weekly", "peak_variance_frontier"],
+          in_episode(d[i], "credit_crisis"), all(weeks < 0), var_ratio > 1,
+          diff(abs(shape[, "skewness"])) < 0, diff(shape[, "rank"]) > 0)
+```
+
+On the weekly grid the tail holds `r sprintf("%.0f", ex2["weekly", "tail_obs"])`
+observations against `r sprintf("%.1f", ex2["monthly", "tail_obs"])`, and the
+largest gap in the `US_credit` weight between the two frontiers widens,
+from `r sprintf("%.0f", 100 * abs(ex2["monthly", "largest_gap"]))` to
+`r sprintf("%.0f", 100 * abs(ex2["weekly", "largest_gap"]))` percentage points, on
+both grids with the expected-shortfall frontier holding more. Both peaks rise,
+the variance frontier's from
+`r sprintf("%.1f%%", 100 * ex2["monthly", "peak_variance_frontier"])` to
+`r sprintf("%.1f%%", 100 * ex2["weekly", "peak_variance_frontier"])` and the
+expected-shortfall frontier's from
+`r sprintf("%.1f%%", 100 * ex2["monthly", "peak_es_frontier"])` to
+`r sprintf("%.1f%%", 100 * ex2["weekly", "peak_es_frontier"])`. Four times as
+many observations did not bring the two frontiers together, and they are not
+observations of the same tail. The skewness of
+`US_credit` is `r sprintf("%.2f", shape["monthly", "skewness"])` on the
+monthly grid and `r sprintf("%.2f", shape["weekly", "skewness"])` on the
+weekly one, because its worst month, `r fmt_model(d[i])` in the credit
+crisis, is `r length(weeks)` consecutive weeks of losses that
+compounding concentrates into one observation; and its weekly returns are
+positively autocorrelated in the sense of @eq-03-lo, so that the monthly
+variance is `r sprintf("%.2f", var_ratio)` times the weekly one scaled by the
+`r sprintf("%.1f", q)` weeks in a month. Seen weekly, credit is less skewed
+and, scaled to a month, less volatile, and its expected shortfall of
+`r sprintf("%.2f", shape["weekly", "ES_per_sd"])` standard deviations ranks
+`r shape["weekly", "rank"]` of the sixteen where the monthly one ranks
+`r shape["monthly", "rank"]`: both measures buy more of it, and the
+tail measure more than variance. Neither frontier was the noisier estimate of
+the other's quantity: the horizon changed what there was to measure, and a tail
+chosen at the weekly frequency says little about the tail an investor who
+rebalances monthly will hold.
+
+#### Exercise 3
+
+The maximum-STARR portfolio can be read off the frontier by scanning, exactly
+as chapter 9 read the tangency portfolio off the mean-variance frontier, or
+requested through the default of a `mean` plus `ES` specification.
+
+```{r}
+#| label: sol-10-ex3
+#| warning: false
+spec_mean_es <- base_spec |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "ES", arguments = list(p = 0.95))
+spec_mean_sd <- base_spec |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "StdDev")
+fr_es <- as.data.frame(unclass(create.EfficientFrontier(Re, spec_mean_es, type = "mean-ETL",
+                                                        n.portfolios = 100, optimize_method = "ROI")$frontier))
+fr_sd <- as.data.frame(unclass(create.EfficientFrontier(Re, spec_mean_sd, type = "mean-StdDev",
+                                                        n.portfolios = 100, optimize_method = "ROI")$frontier))
+row_w <- function(fr, i) {
+  wc <- grep("^w[.]", colnames(fr))
+  setNames(as.numeric(fr[i, wc]), sub("^w[.]", "", colnames(fr)[wc]))[colnames(Re)]
+}
+w_starr_scan  <- row_w(fr_es, which.max(fr_es$mean / fr_es$ES))
+w_starr_solve <- w_of(optimize.portfolio(Re, spec_mean_es, optimize_method = "ROI"))  # maxSTARR = TRUE
+w_tan         <- row_w(fr_sd, which.max(fr_sd$mean / fr_sd$StdDev))
+
+mu <- colMeans(Re); S <- stats::cov(Re)
+starr   <- function(w) { x <- as.numeric(Re %*% w); mean(x) / loss_es(x) }
+p_vol   <- function(w) sqrt(as.numeric(t(w) %*% S %*% w)) * sqrt(12)
+utility <- function(w, gamma = 4) 12 * (sum(mu * w) - gamma / 2 * as.numeric(t(w) %*% S %*% w))
+w_qu4 <- w_of(optimize.portfolio(Re, base_spec |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "var", risk_aversion = 4 / 2), optimize_method = "ROI"))
+
+cand <- list(`maximum STARR, scanned` = w_starr_scan, `maximum STARR, solved` = w_starr_solve,
+             `tangency, scanned` = w_tan, `quadratic utility, gamma = 4` = w_qu4)
+ex3 <- tibble::tibble(
+  portfolio = names(cand),
+  US_credit = vapply(cand, function(w) w[["US_credit"]], numeric(1)),
+  vol       = vapply(cand, p_vol, numeric(1)),
+  STARR     = vapply(cand, starr, numeric(1)),
+  utility_gamma_4 = vapply(cand, utility, numeric(1)),
+  from_solved = vapply(cand, function(w) sum(abs(w - w_starr_solve)) / 2, numeric(1)),
+  from_gamma_4 = vapply(cand, function(w) sum(abs(w - w_qu4)) / 2, numeric(1))
+)
+ex3 |> dplyr::mutate(dplyr::across(where(is.numeric), ~ round(.x, 4))) |> as.data.frame()
+```
+
+```{r}
+#| label: sol-10-ex3-facts
+#| include: false
+# The comparisons the answer makes, read by name rather than by row, and the
+# two statements about `US_credit` asserted.
+e3    <- function(p, col) ex3[[col]][ex3$portfolio == p]
+ratio <- c(tangency = "tangency, scanned", `maximum-STARR` = "maximum STARR, solved")
+ce    <- vapply(ratio, e3, numeric(1), col = "utility_gamma_4")
+enter <- function(fr) min(fr$mean[fr$w.US_credit > 0.005])   # target at which the series is taken up
+stopifnot(e3(ratio[["tangency"]], "US_credit") < 0.01, e3(ratio[["maximum-STARR"]], "US_credit") < 0.005,
+          enter(fr_sd) < enter(fr_es))
+```
+
+The scanned and the solved maximum-STARR portfolios are
+`r sprintf("%.3f", e3("maximum STARR, scanned", "from_solved"))` apart in turnover terms, the
+discretization of a hundred-point frontier rather than a disagreement. The
+tangency portfolio holds
+`r sprintf("%.1f%%", 100 * e3(ratio[["tangency"]], "US_credit"))` in `US_credit` and the
+tail-ratio portfolio
+`r sprintf("%.1f%%", 100 * e3(ratio[["maximum-STARR"]], "US_credit"))`: both lie at
+the low-return end of @fig-10-credit-weight, where the variance frontier has
+just begun to take the series up and the expected-shortfall frontier has not.
+Between the two ratio portfolios the investor of @eq-03-quadratic-utility with
+$\gamma = 4$ prefers the `r names(which.max(ce))` portfolio,
+at an annualized certainty equivalent of
+`r sprintf("%.2f%%", 100 * max(ce))` against
+`r sprintf("%.2f%%", 100 * min(ce))` for the `r names(which.min(ce))`
+portfolio, and not because of any tail, which quadratic utility cannot see.
+Both sit near the left end of the frontier, at volatilities of
+`r sprintf("%.1f%%", 100 * e3(ratio[["maximum-STARR"]], "vol"))` and
+`r sprintf("%.1f%%", 100 * e3(ratio[["tangency"]], "vol"))`, while that investor's own fully
+invested optimum has `r sprintf("%.1f%%", 100 * e3("quadratic utility, gamma = 4", "vol"))` and a certainty
+equivalent of `r sprintf("%.2f%%", 100 * e3("quadratic utility, gamma = 4", "utility_gamma_4"))`; the preferred
+ratio portfolio is simply the less bad of two portfolios that
+sit `r sprintf("%.0f%%", 100 * e3(ratio[["maximum-STARR"]], "from_gamma_4"))` and
+`r sprintf("%.0f%%", 100 * e3(ratio[["tangency"]], "from_gamma_4"))` of the
+portfolio away from what a $\gamma = 4$ investor holds under full investment.
+That is the point of @sec-03-return-risk-and-the-investor-application: a
+ratio portfolio is the risky holding of an investor who can scale it against
+the bill, not the choice of one who must be fully invested in it.
+
+#### Exercise 4
+
+Each search is seeded and given the same budget of about two thousand
+objective evaluations; the linear program's portfolio is the benchmark,
+evaluated on the modified measure it was not asked to minimize.
+
+```{r}
+#| label: sol-10-ex4
+#| message: false
+spec_mes <- base_spec |>
+  add.objective(type = "risk", name = "ES", arguments = list(p = 0.95, method = "modified"))
+w_es <- w_of(optimize.portfolio(Re, base_spec |>
+  add.objective(type = "risk", name = "ES", arguments = list(p = 0.95, method = "historical")),
+  optimize_method = "ROI"))
+mes_of <- function(w) {
+  x <- as.numeric(Re %*% w); as.numeric(ES(x, p = 0.95, method = "modified", invert = FALSE))
+}
+set.seed(1602)
+rp <- random_portfolios(base_spec, permutations = 2000, rp_method = "simplex")
+search <- function(method, ...) {
+  set.seed(1602)
+  invisible(utils::capture.output(
+    o <- optimize.portfolio(Re, spec_mes, optimize_method = method, ...)))
+  mes_of(w_of(o))
+}
+ex4 <- tibble::tibble(
+  route = c("random portfolios, simplex", "DEoptim, itermax = 25", "DEoptim, itermax = 100",
+            "linear program, minimum historical ES"),
+  modified_ES = c(search("random", rp = rp),
+                  search("DEoptim", search_size = 2000, itermax = 25,  traceDE = 0),
+                  search("DEoptim", search_size = 2000, itermax = 100, traceDE = 0),
+                  mes_of(w_es))
+) |>
+  dplyr::mutate(relative_to_LP = modified_ES / modified_ES[route == "linear program, minimum historical ES"])
+ex4 |> dplyr::mutate(modified_ES = round(modified_ES, 5), relative_to_LP = round(relative_to_LP, 3)) |>
+  as.data.frame()
+```
+
+```{r}
+#| label: sol-10-ex4-facts
+#| include: false
+searched <- ex4$relative_to_LP[ex4$route != "linear program, minimum historical ES"]
+stopifnot(length(searched) == 3L, all(searched > 1))     # no search reaches the benchmark
+```
+
+None of the three searches reaches the modified expected shortfall of the
+linear program's portfolio, which was chosen on a different measure: the best
+of them lands
+`r sprintf("%.1f%%", 100 * (min(searched) - 1))` above it and
+the worst `r sprintf("%.1f%%", 100 * (max(searched) - 1))`
+above it. Because the objective is a smooth function of sixteen weights whose
+minimum lies at a corner of the simplex, most of the population a
+differential-evolution run spends its budget on is nowhere near that corner,
+and a random-portfolio draw reaches it only by chance. This is the same
+shortfall @sec-13-solvers-application reports on a problem with a known
+answer, where the searches stop at a fraction of the attainable optimum; the
+fraction here is of the same order once one recalls that the benchmark is
+itself not the minimum of this objective, so the true gap is larger than the
+table shows.

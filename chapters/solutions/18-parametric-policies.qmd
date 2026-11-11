@@ -1,0 +1,146 @@
+### Chapter 18: Parametric Portfolio Policies {.unnumbered}
+
+```{r}
+#| label: sol-18-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+# The chapter's panels and functions, rebuilt so that this fragment runs on its own.
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+eq <- sim_assets$asset_id[sim_assets$asset_class == "equity"]
+Ra <- as_xts_pm(dplyr::filter(sim_asset_returns_monthly, asset %in% eq), date, asset, return)
+dates <- zoo::index(R); Tn <- nrow(R); gamma <- 5
+held <- 14:Tn; known <- held - 1L
+lag_rows <- function(M, k) rbind(matrix(NA_real_, k, ncol(M)), M[seq_len(nrow(M) - k), , drop = FALSE])
+zscore   <- function(M) (M - rowMeans(M)) / apply(M, 1, stats::sd)
+mom_12_1 <- function(Rm) { P <- apply(1 + Rm, 2, cumprod); lag_rows(P, 1) / lag_rows(P, 12) - 1 }
+cap <- sim_marketcap_weekly |> dplyr::filter(asset %in% eq) |>
+  tidyr::pivot_wider(names_from = asset, values_from = market_cap) |> dplyr::arrange(date)
+ME <- as.matrix(cap[findInterval(dates, cap$date), colnames(Ra)])
+region <- sim_assets$region[match(colnames(Ra), sim_assets$asset_id)]
+within_region <- function(M) { for (g in unique(region)) M[, region == g] <- zscore(M[, region == g]); M }
+panel <- function(chars, Rm) {
+  X <- array(unlist(lapply(chars, function(M) M[known, ])), c(length(held), ncol(Rm), length(chars)),
+             dimnames = list(as.character(dates[held]), colnames(Rm), names(chars)))
+  Rn <- Rm[held, ]; rownames(Rn) <- dimnames(X)[[1]]
+  stopifnot(!anyNA(X), max(abs(apply(X, c(1, 3), sum))) < 1e-10)
+  list(X = X, Rn = Rn)
+}
+Rm_eq <- zoo::coredata(Ra); mom_eq <- mom_12_1(Rm_eq)
+p_eq <- panel(list(size = within_region(log(ME)), momentum = within_region(mom_eq)), Rm_eq)
+X_eq <- p_eq$X; Rn_eq <- p_eq$Rn
+wbar_eq <- (ME / rowSums(ME))[known, ]; dimnames(wbar_eq) <- dimnames(Rn_eq)
+ppp_weights <- function(theta, X, wbar, long_only = FALSE) {
+  tilt <- 0
+  for (k in seq_along(theta)) tilt <- tilt + theta[k] * X[, , k]
+  w <- wbar + tilt / ncol(wbar)
+  if (long_only) { w <- pmax(w, 0); w <- w / rowSums(w) }
+  w
+}
+crra <- function(r, gamma) (1 + r)^(1 - gamma) / (1 - gamma)
+path_returns <- function(W, Rn, cost) {
+  gross <- rowSums(W * Rn); hold <- W * (1 + Rn) / (1 + gross)
+  trade <- abs(W - rbind(0, hold[-nrow(W), , drop = FALSE]))
+  cbind(gross = gross, net = gross - as.numeric(trade %*% cost), turnover = rowSums(trade) / 2)
+}
+ppp_utility <- function(theta, X, wbar, Rn, cost = NULL, gamma = 5, long_only = FALSE) {
+  W <- ppp_weights(theta, X, wbar, long_only)
+  r <- if (is.null(cost)) rowSums(W * Rn) else path_returns(W, Rn, cost)[, "net"]
+  mean(crra(r, gamma))
+}
+ppp_estimate <- function(X, wbar, Rn, cost = NULL, gamma = 5, start = rep(0, dim(X)[3])) {
+  f <- function(th) -ppp_utility(th, X, wbar, Rn, cost, gamma)
+  setNames(stats::optim(start, f, method = "BFGS", control = list(reltol = 1e-12))$par, dimnames(X)[[3]])
+}
+theta_eq <- ppp_estimate(X_eq, wbar_eq, Rn_eq)
+```
+
+#### Exercise 1
+
+Standardizing across all names makes size partly a region characteristic,
+because the US names are the largest. The coefficients move and, more to the
+point, the policy now takes a regional bet that the region-neutral version
+did not: its average weight in US names drifts away from the benchmark's.
+
+```{r}
+#| label: sol-18-ex1
+p_gl <- panel(list(size = zscore(log(ME)), momentum = zscore(mom_eq)), Rm_eq)
+theta_gl <- ppp_estimate(p_gl$X, wbar_eq, p_gl$Rn)
+us <- region == "US"
+us_share <- function(W) mean(rowSums(W[, us]))
+round(rbind(within_region = c(theta_eq, us_share = us_share(ppp_weights(theta_eq, X_eq, wbar_eq))),
+            global        = c(theta_gl, us_share = us_share(ppp_weights(theta_gl, p_gl$X, wbar_eq))),
+            benchmark     = c(NA, NA, us_share = us_share(wbar_eq))), 3)
+```
+
+The within-region policy holds exactly the benchmark's US share by
+construction; the global one does not, and the difference is the region bet
+of @sec-05-factor-models-implementation entering through the back door.
+
+#### Exercise 2
+
+```{r}
+#| label: sol-18-ex2
+by_gamma <- t(vapply(c(2, 5, 10), function(g) {
+  th <- ppp_estimate(X_eq, wbar_eq, Rn_eq, gamma = g)
+  W  <- ppp_weights(th, X_eq, wbar_eq)
+  c(gamma = g, th, theta_x_gamma = unname(th[["size"]] * g), short = mean(rowSums(pmin(W, 0))))
+}, numeric(5)))
+round(by_gamma, 2)
+```
+
+The product of the size coefficient and $\gamma$ is roughly constant, so the
+tilt scales close to $1/\gamma$, as the invested fraction of
+@eq-03-separation does; it is not exact because power utility is not
+quadratic. The short side shrinks faster than $1/\gamma$, because the
+leverage of the policy falls with the size of every tilt.
+
+#### Exercise 3
+
+```{r}
+#| label: sol-18-ex3
+cost_at <- function(bp) setNames(rep(bp / 1e4, ncol(Ra)), colnames(Ra))
+th_10 <- ppp_estimate(X_eq, wbar_eq, Rn_eq, cost_at(10), start = theta_eq)
+th_50 <- ppp_estimate(X_eq, wbar_eq, Rn_eq, cost_at(50), start = theta_eq)
+char_turnover <- apply(X_eq, 3, function(M) mean(abs(diff(M))))   # mean monthly change of a standardized characteristic
+round(rbind(no_cost = theta_eq, bp_10 = th_10, bp_50 = th_50, char_turnover = char_turnover), 3)
+```
+
+Momentum is the characteristic that changes fastest from month to month, so
+its tilt is the expensive one to hold and its coefficient shrinks most as the
+cost rate rises, exactly as @eq-18-cost implies.
+
+#### Exercise 4
+
+```{r}
+#| label: sol-18-ex4
+grp <- sub(".*_", "", colnames(R))
+cv <- sim_curve_weekly |> dplyr::filter(series %in% c("US_Slope", "US_IG_Spread")) |>
+  tidyr::pivot_wider(names_from = series, values_from = value) |> dplyr::arrange(date)
+j_last <- findInterval(dates, cv$date)
+expanding_z <- function(x, first = 12L, clip = 2) {
+  z <- vapply(seq_along(x), function(t) if (t < first) NA_real_ else (x[t] - mean(x[1:t])) / stats::sd(x[1:t]), numeric(1))
+  pmax(pmin(z, clip), -clip)
+}
+loading <- function(g) { x <- as.numeric(grp == g); (x - mean(x)) / stats::sd(x) }
+Rm_cl <- zoo::coredata(R)
+p_cl <- panel(list(momentum = zscore(mom_12_1(Rm_cl)),
+                   term = outer(expanding_z(-cv$US_Slope[j_last]), loading("government")),
+                   credit = outer(expanding_z(cv$US_IG_Spread[j_last]), loading("credit"))), Rm_cl)
+ins <- held <= 120L
+X_i <- p_cl$X[ins, , ]; R_i <- p_cl$Rn[ins, ]; w_i <- R_i; w_i[] <- 1 / ncol(R)
+f_trunc <- function(th) -ppp_utility(th, X_i, w_i, R_i, long_only = TRUE)
+fits <- lapply(list(c(0.3, 0.2, 0.2), c(3, 2, 2)), function(s)
+  stats::optim(s, f_trunc, method = "Nelder-Mead", control = list(maxit = 400)))
+round(rbind(start_small = c(fits[[1]]$par, utility = -fits[[1]]$value, scale = sum(abs(fits[[1]]$par))),
+            start_large = c(fits[[2]]$par, utility = -fits[[2]]$value, scale = sum(abs(fits[[2]]$par)))), 4)
+```
+
+The two searches stop at coefficient vectors of very different scale with
+almost the same utility and nearly the same direction: once the tilts are large
+enough to drive most weights to zero, the truncated and renormalized weights
+of @eq-18-longonly depend only on the ranking of $\boldsymbol{\theta}'\hat{\boldsymbol{x}}$
+and are homogeneous of degree zero in $\boldsymbol{\theta}$, so the objective
+flattens along a ray and the scale of the estimate is not identified. The
+simplex restriction of the chapter avoids this by keeping the benchmark in
+the policy.

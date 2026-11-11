@@ -1,0 +1,394 @@
+### Chapter 24: Benchmarks and Active Risk {.unnumbered}
+
+```{r}
+#| label: sol-24-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+stopifnot(ncol(Re) == 16L, !anyNA(Re), length(rf) == nrow(R))
+
+# The chapter's policy benchmark, manager, return series and measures, repeated
+# so that this fragment runs on its own.
+sleeve_of <- function(a) dplyr::case_when(
+  grepl("_equity$", a)     ~ "equity",
+  grepl("_government$", a) ~ "government",
+  grepl("_credit$", a)     ~ "credit",
+  TRUE                     ~ "commodity")
+sleeve_policy <- c(equity = 0.50, government = 0.30, credit = 0.15, commodity = 0.05)
+sl <- sleeve_of(colnames(R))
+b  <- setNames(sleeve_policy[sl] / as.numeric(table(sl)[sl]), colnames(R))
+stopifnot(abs(sum(b) - 1) < 1e-12, identical(names(b), colnames(R)))
+
+win <- 60L
+spec_mv <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only") |>
+  add.objective(type = "risk", name = "var")
+bt <- optimize.portfolio.rebalancing(
+  Re, spec_mv, optimize_method = "ROI",
+  rebalance_on = "months", training_period = win, rolling_window = win - 1L)
+W_act <- extractWeights(bt)
+stopifnot(all(diagnose_rebalancing(bt)$status == "converged"),
+          identical(colnames(W_act), colnames(R)))
+
+first_w <- zoo::index(W_act)[1]
+R_oos   <- R[zoo::index(R) > first_w]
+rf_oos  <- xts::xts(rf[zoo::index(R) > first_w], order.by = zoo::index(R_oos))
+Rp <- Return.portfolio(R_oos, weights = W_act)
+Rb <- Return.portfolio(R_oos, weights = b, rebalance_on = "months")
+colnames(Rp) <- "active"; colnames(Rb) <- "policy"
+W_used <- zoo::coredata(W_act)[-nrow(W_act), ]
+stopifnot(nrow(W_used) == nrow(R_oos),
+          all.equal(as.numeric(Rp), rowSums(W_used * zoo::coredata(R_oos))),
+          all.equal(as.numeric(Rb), as.numeric(zoo::coredata(R_oos) %*% b)))
+a <- Rp - Rb
+colnames(a) <- "active_return"
+
+te_pa <- TrackingError(Rp, Rb)
+ir_ar <- InformationRatio(Rp, Rb, geometric = FALSE)
+stopifnot(all.equal(as.numeric(ir_ar), mean(a) / stats::sd(a) * sqrt(12)))
+
+# The Brinson chunk of the chapter, with the benchmark as an argument so that a
+# second yardstick can be attributed against without repeating it.
+sleeves  <- sort(unique(sl))
+W_used_x <- xts::xts(W_used, order.by = zoo::index(R_oos))
+brinson_against <- function(b) {
+  brinson_month <- function(t) {
+    r <- as.numeric(R_oos[t, ]); w <- as.numeric(W_used_x[t, ]); r_b <- sum(b * r)
+    out <- vapply(sleeves, function(s) {
+      i  <- sl == s
+      bs <- sum(b[i]); ws <- sum(w[i])
+      beta_s <- sum(b[i] * r[i]) / bs
+      r_s    <- if (ws > 1e-10) sum(w[i] * r[i]) / ws else beta_s
+      c(allocation  = (ws - bs) * (beta_s - r_b),
+        selection   = bs * (r_s - beta_s),
+        interaction = (ws - bs) * (r_s - beta_s))
+    }, numeric(3))
+    t(out)
+  }
+  effects <- lapply(seq_len(nrow(R_oos)), brinson_month)
+  stopifnot(all.equal(vapply(effects, sum, numeric(1)),
+                      as.numeric(Rp) - as.numeric(zoo::coredata(R_oos) %*% b)))
+  attribution <- Reduce(`+`, effects) / length(effects) * 12
+  tibble::tibble(sleeve = sleeves,
+                 held   = as.numeric(tapply(colMeans(W_used), sl, sum)[sleeves]),
+                 policy = as.numeric(tapply(b, sl, sum)[sleeves]),
+                 allocation  = attribution[, "allocation"],
+                 selection   = attribution[, "selection"],
+                 interaction = attribution[, "interaction"]) |>
+    dplyr::mutate(total = allocation + selection + interaction)
+}
+attr_tbl <- brinson_against(b)
+stopifnot(abs(sum(attr_tbl$total) - mean(a) * 12) < 1e-10,
+          all.equal(attr_tbl$policy, as.numeric(sleeve_policy[sleeves])))
+
+# Moments, the tracking-error tilt, and the frontier it is measured against.
+mu <- colMeans(Re); S <- stats::cov(Re)
+p_vol <- function(w) sqrt(as.numeric(t(w) %*% S %*% w)) * sqrt(12)
+p_ret <- function(w) sum(mu * w) * 12
+p_te  <- function(w) p_vol(w - b)
+p_ar  <- function(w) p_ret(w - b)
+
+te_tilt <- function(tau, sigma_max = NULL) {
+  w <- CVXR::Variable(length(mu))
+  x <- w - b
+  cons <- list(sum(w) == 1, w >= 0,
+               CVXR::quad_form(x, S) <= (tau / sqrt(12))^2)
+  if (!is.null(sigma_max))
+    cons <- c(cons, CVXR::quad_form(w, S) <= (sigma_max / sqrt(12))^2)
+  problem <- CVXR::Problem(CVXR::Maximize(t(mu) %*% x), cons)
+  CVXR::psolve(problem, solver = "CLARABEL")
+  stopifnot(CVXR::status(problem) == "optimal")
+  setNames(as.numeric(CVXR::value(w)), colnames(Re))
+}
+
+ef <- create.EfficientFrontier(
+  Re,
+  portfolio.spec(assets = colnames(Re)) |>
+    add.constraint(type = "full_investment") |>
+    add.constraint(type = "long_only") |>
+    add.objective(type = "return", name = "mean") |>
+    add.objective(type = "risk",   name = "StdDev"),
+  type = "mean-StdDev", n.portfolios = 100)
+fr <- as.data.frame(unclass(ef$frontier))
+frontier_ret_at <- function(v) stats::approx(fr$StdDev * sqrt(12), fr$mean * 12, xout = v)$y
+
+# The capitalization shares of the cap-weights chunk.
+eq  <- sim_assets$asset_id[sim_assets$asset_class == "equity"]
+Ra  <- as_xts_pm(sim_asset_returns_monthly[sim_asset_returns_monthly$asset %in% eq, ],
+                 date, asset, return)
+stopifnot(identical(zoo::index(Ra), zoo::index(R)), ncol(Ra) == length(eq))
+cap <- sim_marketcap_weekly[sim_marketcap_weekly$asset %in% eq, ] |>
+  tidyr::pivot_wider(names_from = asset, values_from = market_cap) |>
+  dplyr::arrange(date)
+capm <- zoo::na.locf(as.matrix(cap[, colnames(Ra)]), na.rm = FALSE)
+stopifnot(identical(colnames(capm), colnames(Ra)))
+cutoff <- c(zoo::index(R)[1] - 40, zoo::index(R)[-nrow(R)])
+Wc <- capm[findInterval(cutoff, cap$date), , drop = FALSE]
+Wc[is.na(Wc)] <- 0
+Wc <- Wc / rowSums(Wc)
+region <- sim_assets$region[match(colnames(Ra), sim_assets$asset_id)]
+stopifnot(!anyNA(region))
+share <- vapply(c("CH", "EU", "JP", "UK", "US"),
+                function(rg) rowSums(Wc[, region == rg, drop = FALSE]), numeric(nrow(Wc)))
+stopifnot(all(abs(rowSums(share) - 1) < 1e-10))
+eq_cls <- paste0(colnames(share), "_equity")
+stopifnot(all(eq_cls %in% colnames(R)))
+
+# The error bar of the chapter.
+Tn   <- nrow(a)
+ir_m <- mean(a) / stats::sd(a)
+se_m <- sqrt((1 + ir_m^2 / 2) / Tn)
+ci   <- (ir_m + c(-1.96, 1.96) * se_m) * sqrt(12)
+```
+
+#### Exercise 1
+
+```{r}
+#| label: sol-24-ex1
+b_ew  <- setNames(rep(1 / ncol(R), ncol(R)), colnames(R))
+Rb_ew <- Return.portfolio(R_oos, weights = b_ew, rebalance_on = "months")
+colnames(Rb_ew) <- "equal_weight"
+stopifnot(all.equal(as.numeric(Rb_ew), rowMeans(zoo::coredata(R_oos))))
+te_ew <- TrackingError(Rp, Rb_ew)
+ir_ew <- InformationRatio(Rp, Rb_ew, geometric = FALSE)
+attr_ew <- brinson_against(b_ew)
+stopifnot(te_ew < te_pa, ir_ew > ir_ar)
+round(c(TE_policy = te_pa, TE_equal_weight = te_ew,
+        IR_policy = ir_ar, IR_equal_weight = ir_ew), 3)
+
+dplyr::bind_rows(policy = attr_tbl, `equal weight` = attr_ew, .id = "benchmark") |>
+  dplyr::mutate(dplyr::across(c(held, policy), ~ sprintf("%.0f%%", 100 * .x)),
+                dplyr::across(c(allocation, selection, interaction, total),
+                              ~ sprintf("%+.2f%%", 100 * .x))) |>
+  kable(align = "llrrrrrr")
+
+# no sleeve changes sign; the one that moves most is the one to split
+stopifnot(identical(sign(attr_ew$allocation), sign(attr_tbl$allocation)))
+moved <- attr_ew$sleeve[which.max(abs(attr_ew$allocation - attr_tbl$allocation))]
+
+# the allocation term of one sleeve, split into its level and its timing:
+# (mean w_s - b_s) * mean(beta_s - r_b)  +  cov(w_s, beta_s - r_b)
+pieces <- function(b, s = moved) {
+  i <- sl == s; ws <- rowSums(W_used[, i, drop = FALSE]); bs <- sum(b[i])
+  d <- as.numeric(zoo::coredata(R_oos)[, i, drop = FALSE] %*% (b[i] / bs)) -
+       as.numeric(zoo::coredata(R_oos) %*% b)
+  c(overweight = mean(ws) - bs, relative_return = mean(d) * 12,
+    level  = (mean(ws) - bs) * mean(d) * 12,
+    timing = mean((ws - mean(ws)) * (d - mean(d))) * 12)
+}
+cr <- rbind(policy = pieces(b), `equal weight` = pieces(b_ew))
+stopifnot(all(abs(rowSums(cr[, c("level", "timing")]) -
+                  c(attr_tbl$allocation[attr_tbl$sleeve == moved],
+                    attr_ew$allocation[attr_ew$sleeve == moved])) < 1e-12),
+          all(cr[, "overweight"] > 0), all(cr[, "relative_return"] < 0),
+          all(cr[, "level"] < 0), all(cr[, "timing"] < 0),
+          abs(cr["equal weight", "level"]) < abs(cr["policy", "level"]))
+held_moved <- stats::quantile(rowSums(W_used[, sl == moved, drop = FALSE]), c(0.5, 1))
+round(cr, 4)
+
+moves <- c(total       = sum(attr_ew$total)       - sum(attr_tbl$total),
+           benchmark   = mean(Rb - Rb_ew) * 12,
+           allocation  = sum(attr_ew$allocation)  - sum(attr_tbl$allocation),
+           selection   = sum(attr_ew$selection)   - sum(attr_tbl$selection),
+           interaction = sum(attr_ew$interaction) - sum(attr_tbl$interaction))
+stopifnot(abs(moves[["total"]] - moves[["benchmark"]]) < 1e-12,
+          abs(moves[["total"]] - moves[["allocation"]]) < 1e-12,
+          abs(moves[["selection"]] + moves[["interaction"]]) < 1e-12)
+round(moves, 4)
+```
+
+Against equal weighting the tracking error falls from
+`r sprintf("%.1f%%", 100 * te_pa)` to `r sprintf("%.1f%%", 100 * te_ew)` and
+the information ratio rises from `r sprintf("%.2f", ir_ar)` to
+`r sprintf("%.2f", ir_ew)`, because a benchmark with
+`r sprintf("%.0f%%", 100 * attr_ew$policy[attr_ew$sleeve == "equity"])` in
+equities is closer to a manager holding
+`r sprintf("%.0f%%", 100 * attr_tbl$held[attr_tbl$sleeve == "equity"])` than
+one with `r sprintf("%.0f%%", 100 * sleeve_policy[["equity"]])`. No sleeve's
+allocation effect changes sign: the overweight in government bonds and the
+underweight in equities cost under both benchmarks, and the underweight in
+credit pays under both. The `r moved` line is the one that moves most, from
+`r sprintf("%+.2f%%", 100 * attr_tbl$allocation[attr_tbl$sleeve == moved])` to
+`r sprintf("%+.2f%%", 100 * attr_ew$allocation[attr_ew$sleeve == moved])`,
+and the split above says why. The sleeve trailed both benchmarks, by
+`r sprintf("%.1f", 100 * abs(cr["policy", "relative_return"]))` percentage
+points a year against the policy and
+`r sprintf("%.1f", 100 * abs(cr["equal weight", "relative_return"]))` against
+equal weighting, so being overweight it cost under both, and it cost less
+against equal weighting, `r sprintf("%+.2f", 100 * cr["equal weight", "level"])`
+points against `r sprintf("%+.2f", 100 * cr["policy", "level"])`, because the
+overweight is nearly the same,
+`r sprintf("%.0f", 100 * cr["equal weight", "overweight"])` points against
+`r sprintf("%.0f", 100 * cr["policy", "overweight"])`, while the benchmark it
+trails is the one that earns less. The timing part is small and costs under
+both, `r sprintf("%+.2f", 100 * cr["policy", "timing"])` and
+`r sprintf("%+.2f", 100 * cr["equal weight", "timing"])` points, because the
+manager, which holds `r sprintf("%.0f%%", 100 * held_moved[[1]])` in
+`r moved` bonds in the median month and up to
+`r sprintf("%.0f%%", 100 * held_moved[[2]])` at the peak, held more of them in
+the months they did worst. The
+total moves by exactly `r sprintf("%.2f", 100 * moves[["total"]])` percentage
+points, the difference between the two benchmarks' returns, because the
+manager is unchanged and the active return is $r^p - r^b$. All of it lands in
+the allocation line, since
+$\sum_s (w_s - b_s)(\beta_s - r^b) = \sum_s w_s \beta_s - r^b$ once the
+weights sum to one, and the segment benchmarks $\beta_s$ are the same equally
+weighted sleeves under both policies. Selection and interaction move by
+`r sprintf("%+.2f", 100 * moves[["selection"]])` and
+`r sprintf("%+.2f", 100 * moves[["interaction"]])` points, equal and opposite,
+because their sum $\sum_s w_s (r_s - \beta_s)$ does not contain the benchmark's
+sleeve weights at all: changing the benchmark relabels a little selection as
+interaction and back, and nothing else.
+
+#### Exercise 2
+
+```{r}
+#| label: sol-24-ex2
+bound <- 1.1 * p_vol(b)
+ex2 <- dplyr::bind_rows(lapply(c(0.02, 0.04, 0.06), function(tau) {
+  w_free <- te_tilt(tau); w_bnd <- te_tilt(tau, sigma_max = bound)
+  tibble::tibble(tau = tau,
+                 vol_budget_only  = p_vol(w_free), vol_with_bound = p_vol(w_bnd),
+                 risk_bound_binds = p_vol(w_free) > bound + 1e-6,
+                 te_with_bound    = p_te(w_bnd),
+                 gap_budget_only  = frontier_ret_at(p_vol(w_free)) - p_ret(w_free),
+                 gap_with_bound   = frontier_ret_at(p_vol(w_bnd)) - p_ret(w_bnd),
+                 IR_with_bound    = p_ar(w_bnd) / p_te(w_bnd),
+                 sharpe_with_bound = p_ret(w_bnd) / p_vol(w_bnd))
+}))
+# the budget below which the unbounded tilt already respects the bound
+tau_cross <- stats::uniroot(function(tau) p_vol(te_tilt(tau)) - bound,
+                            c(0.001, 0.02), tol = 1e-5)$root
+stopifnot(all(ex2$risk_bound_binds),                   # at all three budgets
+          abs(ex2$gap_with_bound[ex2$tau == 0.06]) < 1e-4,   # on the frontier at six
+          ex2$te_with_bound[ex2$tau == 0.06] < 0.06 - 1e-4,  # with the budget slack
+          all(diff(ex2$sharpe_with_bound) > 0), all(diff(ex2$IR_with_bound) < 0))
+ex2 |>
+  dplyr::transmute(budget = sprintf("%.0f%%", 100 * tau),
+                   `vol, budget only` = sprintf("%.2f%%", 100 * vol_budget_only),
+                   `vol, with bound`  = sprintf("%.2f%%", 100 * vol_with_bound),
+                   binds = risk_bound_binds,
+                   `TE used` = sprintf("%.2f%%", 100 * te_with_bound),
+                   `gap, budget only` = sprintf("%.2f%%", 100 * gap_budget_only),
+                   `gap, with bound`  = sprintf("%.2f%%", 100 * dplyr::if_else(
+                     abs(gap_with_bound) < 1e-6, 0, gap_with_bound)),   # zero at solver tolerance
+                   IR = sprintf("%.3f", IR_with_bound),
+                   Sharpe = sprintf("%.3f", sharpe_with_bound)) |>
+  kable(align = "rrrlrrrrr")
+c(bound = bound, budget_where_bound_starts_binding = tau_cross)
+```
+
+The bound is `r sprintf("%.2f%%", 100 * bound)` of annual volatility, and it
+binds at all three budgets: the unbounded tilt already reaches
+`r sprintf("%.2f%%", 100 * ex2$vol_budget_only[ex2$tau == 0.02])` at a two
+percent budget, and it stops binding only below a budget of
+`r sprintf("%.2f%%", 100 * tau_cross)`, where the direction of
+@eq-24-roll-solution has not yet added a tenth to the benchmark's volatility.
+Relative to the frontier the bound does more work the larger the budget. The
+gap of the budget-only portfolio is
+`r sprintf("%.2f", 100 * ex2$gap_budget_only[ex2$tau == 0.02])`,
+`r sprintf("%.2f", 100 * ex2$gap_budget_only[ex2$tau == 0.04])` and
+`r sprintf("%.2f", 100 * ex2$gap_budget_only[ex2$tau == 0.06])` percentage
+points at two, four and six percent; with the bound it is
+`r sprintf("%.2f", 100 * ex2$gap_with_bound[ex2$tau == 0.02])`,
+`r sprintf("%.2f", 100 * ex2$gap_with_bound[ex2$tau == 0.04])` and
+`r sprintf("%.2f", 100 * abs(ex2$gap_with_bound[ex2$tau == 0.06]))`. At six
+percent the constrained portfolio is the frontier portfolio at the bound's
+volatility, and the tracking-error budget is the constraint that has gone
+slack: the portfolio uses `r sprintf("%.2f%%", 100 * ex2$te_with_bound[ex2$tau == 0.06])`
+of its six. From there on a larger budget changes nothing, because the mandate
+has become the maximum-return problem at a volatility cap, and the benchmark
+no longer enters it. Along the way the Sharpe ratio rises from
+`r sprintf("%.3f", ex2$sharpe_with_bound[ex2$tau == 0.02])` to
+`r sprintf("%.3f", ex2$sharpe_with_bound[ex2$tau == 0.06])` while the
+information ratio falls from
+`r sprintf("%.3f", ex2$IR_with_bound[ex2$tau == 0.02])` to
+`r sprintf("%.3f", ex2$IR_with_bound[ex2$tau == 0.06])`, which is the
+trade-off of @tbl-24-jorion at three budgets instead of one.
+
+#### Exercise 3
+
+```{r}
+#| label: sol-24-ex3
+a_ew <- Rb_ew - Rb                              # 1/N against the policy, same months
+stopifnot(nrow(a_ew) == Tn)
+ir_m_ew <- mean(a_ew) / stats::sd(a_ew)
+se_m_ew <- sqrt((1 + ir_m_ew^2 / 2) / Tn)       # eq-24-se
+ci_ew   <- (ir_m_ew + c(-1.96, 1.96) * se_m_ew) * sqrt(12)
+
+# two ratios on the same months: Jobson-Korkie with Memmel's correction
+rho    <- stats::cor(as.numeric(a), as.numeric(a_ew))
+z_diff <- (ir_m - ir_m_ew) /
+  sqrt((2 * (1 - rho) + 0.5 * (ir_m^2 + ir_m_ew^2 - 2 * ir_m * ir_m_ew * rho^2)) / Tn)
+stopifnot(ci_ew[2] < 0, abs(z_diff) < 1.96)     # told from zero, not from the manager
+round(c(IR = ir_m_ew * sqrt(12), se = se_m_ew * sqrt(12),
+        lower = ci_ew[1], upper = ci_ew[2], t = ir_m_ew / se_m_ew,
+        IR_manager = ir_m * sqrt(12), rho = rho, z_difference = z_diff), 3)
+```
+
+Over the same `r Tn` months the equally weighted portfolio has an information
+ratio of `r sprintf("%.2f", ir_m_ew * sqrt(12))` against the policy, with a
+standard error of `r sprintf("%.2f", se_m_ew * sqrt(12))` and an interval
+from `r sprintf("%.2f", ci_ew[1])` to `r sprintf("%.2f", ci_ew[2])`. Unlike the
+manager's, it is distinguishable from zero, at a t-statistic of
+`r sprintf("%.2f", ir_m_ew / se_m_ew)`: equal weighting is a
+`r sprintf("%.0f", 100 * (sleeve_policy[["equity"]] - b_ew[["US_equity"]] * sum(sl == "equity")))`-point
+underweight in equities against this policy, held every month of a sample in
+which equities rose. It is not distinguishable from the manager's. The two
+active-return series are correlated at `r sprintf("%.2f", rho)`, because both
+portfolios are underweight the same equity sleeve against the same benchmark,
+and the test for a difference of two ratios that
+@sec-24-benchmarks-and-active-risk-application names, @jobson1981 with the
+correction of @memmel2003, gives $z = `r sprintf("%.2f", z_diff)`$ for a
+difference of `r sprintf("%.2f", (ir_m - ir_m_ew) * sqrt(12))`. Each ratio can
+be told from zero or not; neither can be told from the other.
+
+#### Exercise 4
+
+```{r}
+#| label: sol-24-ex4
+in_oos    <- zoo::index(R) > first_w
+share_oos <- share[in_oos, , drop = FALSE]
+stopifnot(nrow(share_oos) == nrow(R_oos),
+          identical(paste0(colnames(share_oos), "_equity"), eq_cls))
+
+# the policy with its equity sleeve capitalization weighted, month by month
+B_cw <- matrix(rep(b, each = nrow(R_oos)), nrow = nrow(R_oos),
+               dimnames = list(NULL, names(b)))
+B_cw[, eq_cls] <- sleeve_policy[["equity"]] * share_oos
+stopifnot(all(abs(rowSums(B_cw) - 1) < 1e-10))
+Rb_cw <- xts::xts(rowSums(B_cw * zoo::coredata(R_oos)), order.by = zoo::index(R_oos))
+colnames(Rb_cw) <- "policy_cw"
+
+te_cw <- TrackingError(Rp, Rb_cw)
+ir_cw <- InformationRatio(Rp, Rb_cw, geometric = FALSE)
+bench_gain <- mean(Rb_cw - Rb) * 12
+stopifnot(bench_gain > 0, ir_cw < ir_ar)
+round(c(TE_equal_weight_sleeve = te_pa, TE_cap_weight_sleeve = te_cw,
+        IR_equal_weight_sleeve = ir_ar, IR_cap_weight_sleeve = ir_cw,
+        benchmark_gain = bench_gain, US_share_mean = mean(share_oos[, "US"])), 4)
+```
+
+Against the capitalization-weighted policy the manager's information ratio
+worsens, from
+`r sprintf("%.2f", ir_ar)` to `r sprintf("%.2f", ir_cw)`, with the tracking
+error at `r sprintf("%.1f%%", 100 * te_cw)` against
+`r sprintf("%.1f%%", 100 * te_pa)`. The manager holds the same portfolio in
+both comparisons; what moved is the yardstick, which earned
+`r sprintf("%.2f", 100 * bench_gain)` percentage points a year more with its
+equity sleeve `r sprintf("%.0f%%", 100 * mean(share_oos[, "US"]))` in the
+United States than with the five markets weighted equally. That is the size
+bet of @tbl-24-two-benchmarks seen from the manager's side. Under the equally
+weighted policy the bet sits in the benchmark, its loss is the sponsor's, and
+the manager measured against that benchmark is credited with the shortfall
+of a decision it never took; under the capitalization-weighted policy the
+credit is gone and the same holdings look worse by the yardstick's gain. The
+bet is borne by whoever writes the benchmark, in return, and by whoever is
+measured against it, in reputation, and only the second of those is visible
+in an information ratio.

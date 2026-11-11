@@ -1,0 +1,551 @@
+---
+title: "Risk-Based Allocation"
+metadata:
+  pagetitle: "Risk-Based Allocation"
+  description-meta: "Risk contributions, equal risk contribution portfolios and inverse volatility weighting in R, and why the package's own risk-budget objective cannot solve the problem it scores correctly."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+Every portfolio so far has been described by how much money sits in each
+position. That is not the same as how much risk sits in each position, and on
+this universe the two are far apart: the minimum-variance portfolio of
+@sec-09-mean-variance-theory puts most of its capital in one series and, as this
+chapter measures, nearly all of its risk there too.
+
+Allocating risk rather than capital is an old idea with a clean definition
+[@qian2006; @maillard2010], a cheap approximation, and an implementation in
+`PortfolioAnalytics` that does not work. We set out the decomposition that makes
+the idea precise, compute the exact answer two ways, and then measure what the
+package's own risk-budget objective does with a problem whose optimum it scores
+correctly and cannot find.
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+Re <- R - sim_riskfree_monthly$return
+S  <- stats::cov(Re)
+N  <- ncol(Re)
+```
+
+## Allocating Risk Rather Than Capital {#sec-14-risk-based-allocation-theory}
+
+### The decomposition that makes this precise
+
+Portfolio volatility
+$\sigma(\boldsymbol{w}) = \sqrt{\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}}$
+is homogeneous of degree one in the weights, so by Euler's theorem it decomposes
+exactly into additive contributions,
+
+$$
+\sigma(\boldsymbol{w}) = \sum_{i=1}^{N} \mathrm{RC}_i,
+\qquad
+\mathrm{RC}_i = w_i \frac{\partial \sigma}{\partial w_i}
+= \frac{w_i\,(\boldsymbol{\Sigma}\boldsymbol{w})_i}{\sigma(\boldsymbol{w})} .
+$$ {#eq-14-euler}
+
+That exactness is what makes risk budgeting possible at all, and it is the point
+@qian2006 makes when he says risk budgets do add up: the shares in @eq-14-euler
+are not an approximation or an attribution convention, they sum to the total by
+construction. Dividing through by $\sigma$ gives shares summing to one, which is
+what the code below computes.
+
+```{r}
+#| label: risk-contribution
+risk_contribution <- function(w, S) {
+  marginal <- as.numeric(S %*% w)
+  (w * marginal) / as.numeric(t(w) %*% S %*% w)
+}
+
+w_eq <- setNames(rep(1 / N, N), colnames(Re))
+round(sort(risk_contribution(w_eq, S), decreasing = TRUE)[1:5], 4)
+```
+
+Sixteen equally weighted series, and the largest contributes
+`r sprintf("%.1f%%", 100 * max(risk_contribution(w_eq, S)))` of the risk against
+`r sprintf("%.1f%%", 100 / N)` of the capital. Equal capital is not equal risk,
+and the gap is the entire motivation for what follows.
+
+### Equal risk contribution
+
+The equal risk contribution portfolio sets every term of @eq-14-euler equal,
+
+$$
+\mathrm{RC}_i = \frac{\sigma(\boldsymbol{w})}{N}
+\quad \text{for every } i,
+\qquad \text{equivalently} \qquad
+w_i (\boldsymbol{\Sigma}\boldsymbol{w})_i = w_j (\boldsymbol{\Sigma}\boldsymbol{w})_j
+\;\; \forall\, i, j .
+$$ {#eq-14-erc}
+
+@maillard2010 give its properties: it always exists and is unique for a long-only
+portfolio, and its volatility sits between the minimum-variance portfolio's and
+the equally weighted portfolio's, in that order. It has no closed form except in
+special cases, but it is emphatically not a hard problem. @spinu2013 shows that
+@eq-14-erc is the first-order condition of the convex program
+
+$$
+\min_{\boldsymbol{w} > 0} \;
+  \tfrac{1}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}
+  - \frac{1}{N}\sum_{i=1}^{N}\ln w_i ,
+$$ {#eq-14-spinu}
+
+whose log barrier keeps every weight strictly positive and which any convex
+solver handles; @bai2016 give a least-squares formulation with the same property.
+Keep @eq-14-spinu in mind for @sec-14-risk-based-allocation-application, because
+the package solves this problem with a metaheuristic, and the problem is convex.
+
+A simple fixed-point iteration converges in milliseconds.
+
+```{r}
+#| label: erc
+erc <- function(S, tol = 1e-12, max_iter = 1e5) {
+  N <- ncol(S)
+  w <- rep(1 / N, N)
+  for (i in seq_len(max_iter)) {
+    marginal <- as.numeric(S %*% w)
+    w_new <- (1 / marginal) / sum(1 / marginal)   # down-weight what contributes most
+    if (max(abs(w_new - w)) < tol) break
+    w <- w_new
+  }
+  setNames(w, colnames(S))
+}
+
+w_erc <- erc(S)
+c(max_deviation_from_equal = max(abs(risk_contribution(w_erc, S) - 1 / N)))
+```
+
+Six lines, and the risk contributions are equal to machine precision. That number
+is worth remembering when @sec-14-risk-based-allocation-application spends twenty
+thousand function evaluations getting nowhere near it.
+
+```{r}
+#| label: erc-weights
+round(sort(w_erc, decreasing = TRUE)[1:6], 4)
+```
+
+```{r}
+#| label: erc-claims
+#| include: false
+stopifnot(names(which.max(w_erc)) == "US_government")
+```
+
+`US_government` still receives the largest allocation, at
+`r sprintf("%.1f%%", 100 * max(w_erc))`, because it is the least volatile series
+and equalizing risk means overweighting low-volatility assets. That is a long way from the `r sprintf("%.0f%%", 100 * max(extractWeights(optimize.portfolio(Re, portfolio.spec(colnames(Re)) |> add.constraint("full_investment") |> add.constraint("long_only") |> add.objective(type = "risk", name = "var"), optimize_method = "ROI"))))`
+that minimum variance gives it.
+
+### The approximation that is nearly free
+
+@maillard2010 note a special case worth exploiting. If every pairwise correlation
+equals a common $\rho$, then @eq-14-erc is solved exactly by
+
+$$
+w_i = \frac{\sigma_i^{-1}}{\sum_{j=1}^{N}\sigma_j^{-1}},
+$$ {#eq-14-inverse-vol}
+
+inverse-volatility weighting, which needs no matrix inverse and no iteration.
+Correlations here are not equal, but they are not wild either, so @eq-14-inverse-vol
+should land close.
+
+```{r}
+#| label: inverse-vol
+base <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only")
+
+# Exported, and rarely used. Note that it wants the portfolio object as well as
+# the returns, and returns a full optimize.portfolio object rather than a vector.
+w_iv <- inverse.volatility.weight(Re, base)$weights
+w_iv <- w_iv[colnames(Re)]
+
+c(l1_distance_from_erc = sum(abs(w_iv - w_erc)) / 2,
+  weight_correlation   = stats::cor(w_iv, w_erc),
+  max_rc_deviation     = max(abs(risk_contribution(w_iv, S) - 1 / N)))
+```
+
+`inverse.volatility.weight()` is exported by `PortfolioAnalytics` and is rarely
+used. It lands within `r sprintf("%.2f", sum(abs(w_iv - w_erc)) / 2)` of the exact
+answer in $L_1$ terms, with a weight correlation of
+`r sprintf("%.2f", stats::cor(w_iv, w_erc))`, for the cost of one division per
+asset. The approximation of @eq-14-inverse-vol is doing almost all the work that
+@eq-14-erc does.
+
+## Implementation {#sec-14-risk-based-allocation-implementation}
+
+The package has a purpose-built objective for this. It accepts the problem,
+scores it correctly, and cannot solve it.
+
+```{r}
+#| label: spec
+rb_spec <- base |>
+  add.objective(type = "risk_budget", name = "StdDev", min_concentration = TRUE)
+```
+
+### The objective is right
+
+Before blaming a solver it is worth checking what it was asked to minimize.
+`PortfolioAnalytics` exposes its own objective function, so we can score two
+portfolios directly.
+
+```{r}
+#| label: objective-values
+score <- function(w) {
+  constrained_objective(w = as.numeric(w), R = Re, portfolio = rb_spec,
+                        trace = TRUE, normalize = FALSE)$out
+}
+c(equal_weight = score(w_eq), true_erc = score(w_erc))
+```
+
+`r sprintf("%.3f", score(w_eq))` at equal weights and exactly
+`r sprintf("%.1f", score(w_erc))` at the solution of @eq-14-erc. The objective is
+not misspecified. It knows precisely which portfolio it wants.
+
+### The search does not find it
+
+```{r}
+#| label: searches
+set.seed(1602)
+
+attempt <- function(method, ...) {
+  o <- try(suppressWarnings(
+    optimize.portfolio(Re, rb_spec, optimize_method = method,
+                       trace = FALSE, ...)), silent = TRUE)
+  if (inherits(o, "try-error")) {
+    return(tibble::tibble(solver = method, l1_from_erc = NA_real_,
+                          max_rc_dev = NA_real_, is_equal_weight = NA))
+  }
+  w <- extractWeights(o)[colnames(Re)]
+  tibble::tibble(solver = method,
+                 l1_from_erc = sum(abs(w - w_erc)) / 2,
+                 max_rc_dev  = max(abs(risk_contribution(w, S) - 1 / N)),
+                 is_equal_weight = isTRUE(all.equal(as.numeric(w), rep(1 / N, N),
+                                                    tolerance = 1e-6)))
+}
+
+searches <- dplyr::bind_rows(
+  attempt("DEoptim", search_size = 20000,  traceDE = 0),
+  attempt("DEoptim", search_size = 200000, traceDE = 0),
+  attempt("random",  search_size = 20000),
+  attempt("pso"),
+  attempt("GenSA")
+)
+```
+
+```{r}
+#| label: tbl-14-searches
+#| tbl-cap: "Five attempts at a problem whose answer scores zero. `is_equal_weight` asks whether the solver returned the portfolio it started from."
+#| echo: false
+searches |>
+  dplyr::mutate(solver = c("DEoptim, 20k", "DEoptim, 200k", "random, 20k",
+                           "pso", "GenSA"),
+                dplyr::across(c(l1_from_erc, max_rc_dev), ~ sprintf("%.4f", .x))) |>
+  kable(align = "lrrl",
+        col.names = c("", "L1 from ERC", "max deviation of risk contributions",
+                      "returned equal weights"))
+```
+
+```{r}
+#| label: searches-claims
+#| include: false
+# What the text says about the table: most return the start, pso moves away.
+stopifnot(sum(searches$is_equal_weight) >= 3, !searches$is_equal_weight[4],
+          searches$l1_from_erc[4] > searches$l1_from_erc[1])
+```
+
+Of the five, `r sum(searches$is_equal_weight)` return the equal-weighted
+portfolio exactly, which is the point every one of them starts from. Ten times
+the evaluation budget changes nothing. `pso` does move, and moves further from
+the answer than standing still would have been.
+
+Set beside the objective values, that is the finding: the search sits at a score
+of `r sprintf("%.2f", score(w_eq))` for two hundred thousand evaluations while a
+portfolio scoring `r sprintf("%.1f", score(w_erc))` exists and is reachable by
+six lines of arithmetic.
+
+```{r}
+#| label: tbl-14-comparison
+#| tbl-cap: "The same objective, three ways of pursuing it."
+#| echo: false
+p_vol <- function(w) sqrt(as.numeric(t(w) %*% S %*% w)) * sqrt(12)
+stopifnot(sum(abs(w_iv - w_erc)) / 2 < searches$l1_from_erc[1])   # the one-liner is closer
+tibble::tibble(
+  method = c("fixed point, six lines", "inverse volatility, one line",
+             "DEoptim, 20,000 evaluations"),
+  l1  = c(0, sum(abs(w_iv - w_erc)) / 2, searches$l1_from_erc[1]),
+  rc  = c(max(abs(risk_contribution(w_erc, S) - 1 / N)),
+          max(abs(risk_contribution(w_iv, S) - 1 / N)),
+          searches$max_rc_dev[1]),
+  vol = c(p_vol(w_erc), p_vol(w_iv), p_vol(w_eq))
+) |>
+  dplyr::mutate(l1 = sprintf("%.4f", l1), rc = sprintf("%.4f", rc),
+                vol = sprintf("%.2f%%", 100 * vol)) |>
+  kable(align = "lrrr",
+        col.names = c("", "L1 from ERC", "max RC deviation", "volatility"))
+```
+
+The one-line approximation of @eq-14-inverse-vol is closer to the answer than the
+twenty-thousand-evaluation search. That is not a statement about risk parity. It
+is a statement about reaching for a heuristic on a problem that
+@sec-13-solvers-theory would classify as convex, given @eq-14-spinu, and which a
+fixed point solves to machine precision.
+
+### What the machinery does do
+
+The objective is not useless. Asked for a cap rather than an equalization, it
+delivers.
+
+```{r}
+#| label: max-prisk
+set.seed(1602)
+capped <- optimize.portfolio(
+  Re, base |> add.objective(type = "risk_budget", name = "StdDev", max_prisk = 0.15),
+  optimize_method = "DEoptim", search_size = 20000, trace = FALSE, traceDE = 0)
+
+w_cap <- extractWeights(capped)[colnames(Re)]
+c(largest_risk_contribution = max(risk_contribution(w_cap, S)), cap = 0.15)
+```
+
+A ceiling on any single risk contribution is a constraint a search can satisfy by
+rejection: it has only to recognize a violation, not to locate an optimum. The
+practical rule is to use the risk-budget objective for budgets and bounds, and to
+compute equal risk contribution directly.
+
+### Auditing concentration
+
+`HHI()` and `diversification()` are exported and take a weight vector, so any
+portfolio in this book can be audited for concentration in one line, including one
+returned by a solver that ignored its constraint
+(@sec-13-solvers-implementation).
+
+```{r}
+#| label: concentration
+effective_bets <- function(w) {
+  r <- risk_contribution(w, S); r <- r[r > 0]
+  exp(-sum(r * log(r)))                      # the entropy of the risk shares
+}
+
+w_mv <- extractWeights(optimize.portfolio(Re,
+  base |> add.objective(type = "risk", name = "var"), optimize_method = "ROI"))[colnames(Re)]
+
+conc <- tibble::tibble(
+  portfolio = c("equal weight", "inverse volatility", "equal risk contribution",
+                "minimum variance"),
+  HHI  = c(HHI(w_eq), HHI(w_iv), HHI(w_erc), HHI(w_mv)),
+  div  = c(diversification(w_eq), diversification(w_iv),
+           diversification(w_erc), diversification(w_mv)),
+  bets = c(effective_bets(w_eq), effective_bets(w_iv),
+           effective_bets(w_erc), effective_bets(w_mv)),
+  vol  = c(p_vol(w_eq), p_vol(w_iv), p_vol(w_erc), p_vol(w_mv))
+)
+```
+
+```{r}
+#| label: tbl-14-concentration
+#| tbl-cap: "Concentration four ways. `bets` is the effective number of independent risk sources — the exponential of the entropy of the risk shares — against a maximum of sixteen."
+#| echo: false
+conc |>
+  dplyr::mutate(dplyr::across(c(HHI, div), ~ sprintf("%.4f", .x)),
+                bets = sprintf("%.2f", bets),
+                vol = sprintf("%.2f%%", 100 * vol)) |>
+  kable(align = "lrrrr",
+        col.names = c("", "HHI", "diversification", "effective bets", "volatility"))
+```
+
+## What Risk Parity Buys and Costs {#sec-14-risk-based-allocation-application}
+
+### The trade, in its own units
+
+Read the last two rows of @tbl-14-concentration together. Minimum variance
+achieves `r sprintf("%.2f%%", 100 * p_vol(w_mv))` volatility with
+`r sprintf("%.1f", effective_bets(w_mv))` effective bets out of sixteen. Equal
+risk contribution achieves `r sprintf("%.2f%%", 100 * p_vol(w_erc))` with
+exactly `r sprintf("%.0f", effective_bets(w_erc))`.
+
+That is the trade in its own units: about
+`r sprintf("%.0f", 100 * (p_vol(w_erc) / p_vol(w_mv) - 1))` percent more
+volatility for `r sprintf("%.0f", effective_bets(w_erc) / effective_bets(w_mv))`
+times the number of independent bets. Whether it is worth taking depends on how
+far the covariance matrix behind the minimum-variance answer can be trusted, and
+@sec-09-mean-variance-application measured that. Resampling the same history moves
+the minimum-variance portfolio by about five percent of itself, so its
+concentration is at least stable.
+
+@asness2012 give the economic argument for taking the trade anyway: if investors
+are averse to leverage rather than merely to risk, they overpay for high-beta
+assets, and a portfolio that equalizes risk contributions and then levers up
+harvests the difference. @clarke2013 derive the analytic relationships between
+risk parity, maximum diversification and minimum variance, and show that the
+three coincide only under conditions this market does not satisfy.
+
+```{r}
+#| label: oos-line
+sweep <- utils::read.csv("output/tables/oos-sweep.csv") |>
+  dplyr::filter(universe == "classes", window == 60,
+                frequency == "months", basis == "gross")
+sr_oos <- function(s) sweep$sharpe[match(s, sweep$strategy)]
+to_oos <- function(s) sweep$ann_turnover[match(s, sweep$strategy)]
+stopifnot(all(c("inverse_vol", "min_variance", "equal_weight", "max_sharpe")
+              %in% sweep$strategy))
+# The order the text states, read from the register rather than typed.
+stopifnot(sr_oos("min_variance") > sr_oos("equal_weight"),
+          sr_oos("equal_weight") > sr_oos("inverse_vol"),
+          sr_oos("inverse_vol")  > sr_oos("max_sharpe"),
+          to_oos("inverse_vol")  < to_oos("max_sharpe") / 4)
+```
+
+Out of sample, inverse volatility earns a Sharpe ratio of
+`r sprintf("%.3f", sr_oos("inverse_vol"))` against minimum variance's
+`r sprintf("%.3f", sr_oos("min_variance"))`, equal weighting's
+`r sprintf("%.3f", sr_oos("equal_weight"))` and the tangency portfolio's
+`r sprintf("%.3f", sr_oos("max_sharpe"))` (@sec-25-backtesting-application), at
+`r sprintf("%.0f%%", 100 * to_oos("inverse_vol") / to_oos("max_sharpe"))` of
+the turnover of the mean-variance optimizer, which
+@sec-23-rebalancing-application converts into the Sharpe ratio each strategy
+surrenders to its own trading. The risk-based portfolios are not uniformly
+better: minimum variance leads all four, and inverse volatility sits between
+equal weighting and the tangency portfolio before costs. They are competitive,
+cheaper, and easier to explain to whoever has to sign for them.
+
+### The covariance is a regime variable
+
+One thing risk parity cannot escape, and it is the same thing that undermines
+everything else in this book. The number of effective bets is not a property of
+the portfolio. It is a property of $\boldsymbol{\Sigma}$, and $\boldsymbol{\Sigma}$
+moves.
+
+```{r}
+#| label: regime-spectrum
+d      <- zoo::index(Re)
+in_ep  <- vapply(sim_episodes$episode, function(e) in_episode(d, e),
+                 logical(length(d)))
+calm   <- rowSums(in_ep) == 0               # outside all four episodes
+crisis <- in_ep[, "credit_crisis"]
+
+spectrum <- function(keep) {
+  e <- pmax(eigen(stats::cov(zoo::coredata(Re[keep, ])), symmetric = TRUE,
+                  only.values = TRUE)$values, 0)
+  c(months = sum(keep), pc1_share = e[1] / sum(e), directions = sum(e)^2 / sum(e^2))
+}
+regime <- rbind(calm = spectrum(calm), crisis = spectrum(crisis))
+stopifnot(regime["crisis", "pc1_share"] > regime["calm", "pc1_share"],
+          regime["crisis", "directions"] < regime["calm", "directions"] / 2)
+round(regime, 3)
+```
+
+@sec-07-covariance-matrix-application measured it on these sixteen series, and
+the measurement repeats here: outside the four episodes of `sim_episodes` the
+first principal component carries
+`r sprintf("%.0f%%", 100 * regime["calm", "pc1_share"])` of the variance and the
+matrix behaves like `r sprintf("%.1f", regime["calm", "directions"])`
+independent directions; through the credit crisis it carries
+`r sprintf("%.0f%%", 100 * regime["crisis", "pc1_share"])` and the count falls
+to `r sprintf("%.1f", regime["crisis", "directions"])`, a figure that the
+short window exaggerates and that calm windows of the same length still do not
+reach. A portfolio constructed to hold sixteen equal risk contributions in calm
+months holds about `r sprintf("%.0f", regime["crisis", "directions"])`
+independent bets when it matters.
+
+Risk parity does not solve that. It measures risk more honestly than capital
+weighting does, and then allocates against an estimate that halves precisely when
+the allocation is tested. @roncalli2013 treats the estimation problem at length,
+and @sec-19-regimes-theory is where this book confronts it rather than noting
+it.
+
+### Budgets that are not equal
+
+Equal risk contribution is the special case of a more general idea. A risk budget
+assigns each asset a share $b_i$ with $\sum_i b_i = 1$ and asks for weights
+satisfying
+
+$$
+\mathrm{RC}_i = b_i \,\sigma(\boldsymbol{w})
+\quad \text{for every } i ,
+$$ {#eq-14-budget}
+
+which reduces to @eq-14-erc when $b_i = 1/N$. @roncalli2013 develops the general
+case, and the convex program of @eq-14-spinu generalizes directly by replacing
+the uniform coefficient on the log barrier with $b_i$. The fixed point in this
+chapter generalizes just as easily, dividing the marginal contributions by the
+budget before renormalizing.
+
+The interest of @eq-14-budget is that it is the natural language of a mandate. A
+policy statement rarely says hold twenty percent in credit; it says credit may
+consume no more than a quarter of the risk. Those are different instructions and
+only the second survives a change in volatility. This is also the form in which
+the package's own objective is usable, as the `max_prisk` result above showed:
+bounds on @eq-14-budget are checkable by rejection, and a search can satisfy them.
+
+### Hierarchical risk parity
+
+The methods in this chapter all require $\boldsymbol{\Sigma}$ and most require
+its inverse, which @sec-07-covariance-matrix-theory showed is where the estimate
+is weakest. @lopezdeprado2016 proposes an alternative that avoids inversion
+entirely. Hierarchical risk parity clusters the assets on a distance derived from
+their correlations, orders them so that similar assets are adjacent, and then
+allocates by recursive bisection: split the ordered set in two, allocate between
+the halves in inverse proportion to their variances, and recurse.
+
+Nothing in that procedure inverts a matrix, so it is defined even when
+$\boldsymbol{\Sigma}$ is singular, which by @eq-07-rank is the normal case at
+instrument level. The claim is that the resulting portfolios are more stable out
+of sample than either minimum variance or equal risk contribution, because the
+quantity being estimated, a clustering, is far coarser than a full inverse.
+
+The method belongs with the sleeve structure of
+@sec-15-hierarchical-allocation-theory rather than here, because what it is
+really doing is imposing a hierarchy on the universe and allocating down it. It
+is mentioned here because it is the obvious next question once risk
+contributions are on the table, and because it is the one widely used technique
+in this area that `PortfolioAnalytics` does not implement at all.
+
+## Key Takeaways {.unnumbered}
+
+- Portfolio volatility decomposes exactly into additive risk contributions by
+  @eq-14-euler. The shares are not an attribution convention; they sum to the
+  total by construction [@qian2006].
+- Equal capital is not equal risk. Sixteen equally weighted series here put
+  `r sprintf("%.0f%%", 100 * max(risk_contribution(w_eq, S)))` of the risk in
+  one of them, against `r sprintf("%.1f%%", 100 / N)` of the capital.
+- The equal risk contribution portfolio of @eq-14-erc always exists, is unique
+  long-only, and sits between minimum variance and equal weighting in volatility
+  [@maillard2010].
+- It is not a hard problem. @eq-14-spinu is a convex program with a log barrier,
+  and a six-line fixed point reaches machine precision. The package nonetheless
+  routes it to a metaheuristic.
+- Of five solvers, `r sum(searches$is_equal_weight)` hand back the equally
+  weighted portfolio they started from, and a tenfold budget changes nothing. The one-line inverse-volatility
+  approximation of @eq-14-inverse-vol is closer to the answer than a
+  twenty-thousand-evaluation search.
+- Use the risk-budget objective for caps and budgets, which a search can satisfy
+  by rejection, and compute equal risk contribution directly.
+- Risk parity buys about
+  `r sprintf("%.0f", effective_bets(w_erc) / effective_bets(w_mv))` times the
+  effective bets for about
+  `r sprintf("%.0f", 100 * (p_vol(w_erc) / p_vol(w_mv) - 1))` percent more
+  volatility, and out of sample inverse volatility lands between equal weighting
+  and the tangency portfolio at a fraction of the latter's turnover.
+- The effective number of bets is a property of the covariance matrix, not of the
+  portfolio, and it falls by more than half going into the credit crisis.
+
+## Exercises {.unnumbered}
+
+1. Run the fixed-point `erc()` on a covariance matrix estimated from the months
+   outside the four episodes of `sim_episodes` only, then apply the resulting
+   weights to the months of the credit crisis. How equal are the realized risk
+   contributions?
+2. `inverse.volatility.weight()` ignores correlations entirely. Construct a
+   universe where that is catastrophic — two nearly identical series and one
+   independent one — and report the risk contributions it produces.
+3. Repeat @tbl-14-searches with a `max_prisk` objective instead of
+   `min_concentration`. Do the solvers agree with each other? Does the budget
+   bind?
+4. The effective-bets measure uses entropy. Replace it with `1 / sum(rc^2)`, the
+   inverse Herfindahl of the risk shares, and recompute @tbl-14-concentration.
+   Which portfolios change rank, and which measure would you defend to a client?

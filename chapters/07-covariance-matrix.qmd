@@ -1,0 +1,765 @@
+---
+title: "The Covariance Matrix"
+metadata:
+  pagetitle: "The Covariance Matrix"
+  description-meta: "Why the sample covariance matrix fails on a realistic universe, and the four things to do about it: fewer assets, a factor structure, shrinkage, or a robust estimator."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(PortfolioAnalytics)
+library(knitr)
+```
+
+Suppose we have an equity sleeve to fill. There are one hundred and twenty-three
+names in the eligible universe, thirty-one model years of monthly returns are
+available, and we want the combination of them with the lowest risk. That is the
+most modest request anyone makes of a portfolio optimizer: no view, no forecast,
+no tilt, just the low-volatility end of the frontier of @sec-09-mean-variance-theory.
+
+We will not get it. Not because the data are poor and not because the optimizer is
+badly written, but because the object it requires cannot be estimated from the
+data available. @michaud1989 named the consequence and @chopra1993 priced it, but
+the failure here is not one of degree: on a realistic universe the sample
+covariance matrix is singular, and a singular matrix does not give a noisy answer,
+it gives a meaningless one.
+
+We first set out what the optimizer is asking for and why the request cannot be
+met, then work through the four available responses in order of what they cost,
+then ask which of them actually pays out of sample. The answer to that last
+question is less flattering than the literature on shrinkage usually suggests.
+
+```{r}
+#| label: data
+cls <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+
+ins <- as_xts_pm(sim_asset_returns_monthly, date, asset, return)
+eq  <- ins[, colnames(ins) %in% sim_assets$asset_id[sim_assets$asset_class == "equity"]]
+
+c(classes = ncol(cls), equities = ncol(eq), months = nrow(cls))
+```
+
+## What the Optimizer Requires {#sec-07-covariance-matrix-theory}
+
+A minimum-variance portfolio is the weight vector minimizing
+$\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$ subject to the constraints,
+and $\boldsymbol{\Sigma}$ is the entire input. Nothing else about the assets
+enters: not their names, not their sectors, not their expected returns. Whatever
+the matrix says about risk is risk as far as the optimizer is concerned.
+
+Being symmetric, it holds $N(N+1)/2$ distinct numbers, estimated from $T$
+observations by
+
+$$
+\hat{\boldsymbol{\Sigma}} = \frac{1}{T-1}\sum_{t=1}^{T}
+  (\boldsymbol{r}_t - \bar{\boldsymbol{r}})(\boldsymbol{r}_t - \bar{\boldsymbol{r}})' .
+$$ {#eq-07-sample}
+
+Written this way the difficulty is immediate. @eq-07-sample is a sum of $T$ outer
+products, each of rank one, so
+
+$$
+\operatorname{rank}(\hat{\boldsymbol{\Sigma}}) \leq \min(N,\, T-1).
+$$ {#eq-07-rank}
+
+Whenever $N > T-1$ the estimate is singular, whatever the data look like. This is
+arithmetic, not a property of markets: it would hold if the returns were coin
+flips.
+
+The sixteen asset classes of @sec-04-descriptive-analysis-implementation need
+`r ncol(cls) * (ncol(cls) + 1) / 2`. The
+`r ncol(eq)` equities need
+`r format(ncol(eq) * (ncol(eq) + 1) / 2, big.mark = ",")`, from
+`r nrow(eq)` months of history. That asks the data to pin down more parameters
+than it has observations, and at some point the answer stops being an estimate.
+
+### What singularity claims about portfolios
+
+@eq-07-rank is a statement about a matrix. Its consequence is a statement about
+money. If $\hat{\boldsymbol{\Sigma}}$ is singular, there exists a weight vector
+$\boldsymbol{w} \neq \boldsymbol{0}$ with
+
+$$
+\boldsymbol{w}'\hat{\boldsymbol{\Sigma}}\boldsymbol{w} = 0,
+$$ {#eq-07-riskless}
+
+a portfolio the estimate says cannot lose money, and there are as many
+independent such portfolios as the matrix is short of full rank. An optimizer
+told to minimize variance will find them, because that is exactly its job, and
+will put everything there.
+
+They are not real. They are long-short cancellations that happened to net out
+over the particular months used for estimation, and they will not net out again.
+This is the mechanism behind the familiar complaint that mean-variance
+optimization produces absurd weights. @michaud1989 called the optimizer an error
+maximizer for this reason, and the label is exact rather than rhetorical: among
+all portfolios consistent with the constraints, the procedure selects the one the
+estimate is most optimistic about, which is the one the estimate is most wrong
+about.
+
+Even short of singularity, the inverse is what the optimizer uses, and the
+quantity governing how much an error in $\hat{\boldsymbol{\Sigma}}$ is magnified
+on its way into the weights is the condition number
+
+$$
+\kappa(\hat{\boldsymbol{\Sigma}})
+= \frac{\lambda_{\max}}{\lambda_{\min}},
+$$ {#eq-07-condition}
+
+the ratio of the largest to the smallest eigenvalue. @laloux1999 showed that most
+of the small eigenvalues of a financial correlation matrix are indistinguishable
+from those of a random matrix of the same dimensions, a comparison made precise
+by the limiting spectrum of @marchenko1967. The directions the optimizer most
+wants to exploit are the ones carrying the least information.
+
+@chopra1993 measured how the cost divides. Errors in expected returns hurt an
+order of magnitude more than errors in variances, which in turn hurt more than
+errors in covariances, which is why @sec-06-expected-returns-theory is the harder
+chapter. It is also why this one is unavoidable: a singular matrix is not an
+error of degree.
+
+### Diagnosing it before the solver does
+
+Two numbers, neither of which requires inverting anything.
+
+```{r}
+#| label: diagnose
+covariance_health <- function(X) {
+  S  <- stats::cov(zoo::coredata(X))
+  ev <- eigen(S, symmetric = TRUE, only.values = TRUE)$values
+  c(assets = ncol(X), observations = nrow(X), rank = qr(S)$rank,
+    riskless_directions = sum(ev < 1e-12),
+    condition = if (min(ev) <= 0) Inf else max(ev) / min(ev))
+}
+
+h_ins <- covariance_health(ins)             # all instruments, the whole sample
+rbind(classes     = covariance_health(cls[1:60, ]),
+      equities    = covariance_health(eq[1:60, ]),
+      instruments = h_ins)
+```
+
+`rank` below `assets` means the matrix is singular, and `riskless_directions`
+counts the portfolios it believes are free. Five years of data on `r ncol(eq)`
+equities produces
+`r covariance_health(eq[1:60, ])[["riskless_directions"]]` of them.
+
+`condition` is the subtler warning. It is the ratio of the largest eigenvalue to
+the smallest, and it bounds how much the inverse magnifies an error in the
+input. A finite but very large value is more dangerous than an infinite one, because
+everything still runs: the matrix inverts, weights come back, and they are a
+magnified copy of the sampling noise. Past roughly $10^{8}$ the computation is
+reading noise with double precision arithmetic.
+
+The third row is that case. All `r ncol(ins)` instruments on the full
+`r nrow(ins)` months have $N < T - 1$, so @eq-07-rank does not bind and every
+eigenvalue is positive, yet `qr()` reports rank `r h_ins[["rank"]]` at its
+default tolerance, `r h_ins[["riskless_directions"]]` eigenvalues lie below
+$10^{-12}$ and the condition number is
+$10^{`r sprintf("%.1f", log10(h_ins[["condition"]]))`}$. No longer sample cures
+it: the cause is the bond block of @sec-02-notation-and-data-simulated-market,
+where some instruments nearly replicate others.
+
+```{r}
+#| label: diagnose-claims
+#| include: false
+stopifnot(h_ins[["assets"]] < h_ins[["observations"]] - 1,
+          is.finite(h_ins[["condition"]]), h_ins[["condition"]] > 1e8,
+          h_ins[["rank"]] < h_ins[["assets"]], h_ins[["riskless_directions"]] > 0)
+```
+
+```{r}
+#| label: rank-by-level
+rank_report <- function(X, label) {
+  vapply(c(60L, 120L, 180L), function(W) {
+    S  <- stats::cov(zoo::coredata(X[seq_len(W), ]))
+    ev <- eigen(S, symmetric = TRUE, only.values = TRUE)$values
+    c(T = W, N = ncol(X), rank = qr(S)$rank, min_eigen = min(ev),
+      condition = if (min(ev) <= 0) Inf else max(ev) / min(ev))
+  }, numeric(5)) |> t() |> as.data.frame() |> dplyr::mutate(universe = label)
+}
+
+dplyr::bind_rows(rank_report(cls, "16 classes"),
+                 rank_report(eq,  "123 equities")) |>
+  dplyr::select(universe, T, N, rank, min_eigen, condition)
+```
+
+Look at `min_eigen` on the two singular rows. It is **negative**. A covariance
+matrix cannot have a negative eigenvalue; that is floating-point noise around an
+eigenvalue which is exactly zero. The matrix is not imprecise. It describes a
+world in which some portfolio has negative variance.
+
+### Why this book has not needed the chapter until now
+
+Every allocation up to here happened across asset classes, and at that level the
+problem does not arise.
+
+```{r}
+#| label: windows-invertible
+bad <- sum(vapply(seq.int(61L, nrow(cls)), function(i) {
+  qr(stats::cov(zoo::coredata(cls[(i - 60L):(i - 1L), ])))$rank < ncol(cls)
+}, logical(1)))
+
+c(rolling_windows = nrow(cls) - 60L, rank_deficient = bad)
+```
+
+Not one sixty-month window in the sample is rank deficient at class level.
+The moment @sec-21-equity-sleeve-theory descends into individual securities it
+becomes the only question that matters, and nothing about the data has changed.
+What changed is how many things the portfolio was asked to hold.
+
+## Four Routes {#sec-07-covariance-matrix-implementation}
+
+There are four routes. Two change what may be owned, two change how it is
+estimated. We take them in order of what they cost.
+
+### Route one: hold fewer things
+
+The cheapest fix is not to have the problem. Allocating across sixteen classes
+rather than `r ncol(eq)` securities, or across sector sleeves rather than names,
+leaves a matrix comfortably estimable on five years.
+
+This is not a dodge. Most institutional mandates are set at exactly this level
+for exactly this reason, and @sec-15-hierarchical-allocation-theory treats the sleeve structure
+as a decision rather than a convenience. It does not help when the mandate names `r ncol(eq)` securities, which is what a
+stock selection process hands its allocator.
+
+### Route two: impose a structure
+
+If `r format(ncol(eq) * (ncol(eq) + 1) / 2, big.mark = ",")` free parameters
+cannot be estimated, the answer is to stop trying to. Assert instead that returns
+are driven by $k$ common factors plus asset-specific noise, so that
+
+$$
+\boldsymbol{r}_t = \boldsymbol{B}\boldsymbol{f}_t + \boldsymbol{\varepsilon}_t,
+\qquad
+\boldsymbol{\Sigma} = \boldsymbol{B}\boldsymbol{\Omega}\boldsymbol{B}' + \boldsymbol{D},
+$$ {#eq-07-factor}
+
+with $\boldsymbol{B}$ the $N \times k$ loadings, $\boldsymbol{\Omega}$ the
+covariance of the factors and $\boldsymbol{D}$ a diagonal matrix of residual
+variances. That is $Nk + N$ numbers rather than $N(N+1)/2$: for three factors on
+`r ncol(eq)` assets, `r ncol(eq) * 3 + ncol(eq)` rather than several thousand.
+Because $\boldsymbol{D}$ is positive by construction, @eq-07-factor cannot be
+singular whatever $T$ is. @fan2008 give the conditions under which it converges
+where @eq-07-sample does not, and @bai2002 and @connor1993 the machinery for
+choosing $k$ rather than asserting it.
+
+The factors can be economic, as in @sec-05-factor-models-implementation, or
+purely statistical, the principal components of the returns themselves. The
+second is six lines.
+
+```{r}
+#| label: factor-covariance
+factor_covariance <- function(X, k = 3L) {
+  x  <- zoo::coredata(X)
+  pc <- prcomp(x)
+  B  <- pc$rotation[, seq_len(k), drop = FALSE]      # loadings, N x k
+  f  <- x %*% B                                      # factor realizations
+  e  <- x - f %*% t(B)                               # residuals
+  e  <- sweep(e, 2, colMeans(e))
+  B %*% stats::cov(f) %*% t(B) + diag(colSums(e^2) / (nrow(x) - k - 1L))
+}
+
+S_fac <- factor_covariance(eq[1:120, ], k = 3L)
+e_fac <- eigen(S_fac, symmetric = TRUE, only.values = TRUE)$values
+c(rank = qr(S_fac)$rank, min_eigen = min(e_fac),
+  condition = max(e_fac) / min(e_fac))
+```
+
+Full rank on a window where the sample matrix has
+`r covariance_health(eq[1:120, ])[["riskless_directions"]]` riskless directions,
+and a condition number of `r sprintf("%.0f", max(e_fac) / min(e_fac))` where the
+sample matrix's is infinite. The structure does the work: because every asset's risk runs through three
+shared factors, no combination can cancel to zero unless the residuals do, and
+those are positive by construction.
+
+`PortfolioAnalytics` ships this as `statistical.factor.model()`, with one
+constraint worth knowing about in the released version.
+
+```{r}
+#| label: factor-model-package
+sapply(c(60L, 120L, 180L), function(W) {
+  tryCatch({ statistical.factor.model(eq[seq_len(W), ], k = 3L); "accepted" },
+           error = function(e) conditionMessage(e))
+})
+```
+
+It requires at least as many observations as assets, which is precisely the
+condition under which it is not needed. The body of the function does not:
+principal components need enough components, not enough columns, which is why the
+six lines above run on the same window. @sec-93-package-notes records the patch that relaxes the check and
+where it stands.
+
+### Route three: shrink the matrix
+
+Keep every asset and keep the sample estimate, but pull it part of the way
+towards a target that is well conditioned by construction:
+
+$$
+\hat{\boldsymbol{\Sigma}}_{\text{shrunk}}
+= (1-\lambda)\,\hat{\boldsymbol{\Sigma}} + \lambda\,\boldsymbol{F},
+\qquad \lambda \in [0, 1],
+$$ {#eq-07-shrinkage}
+
+with $\boldsymbol{F}$ commonly a scaled identity and sometimes a
+constant-correlation or factor matrix. The construction descends from @stein1956,
+who showed that shrinking a multivariate estimate towards a fixed point can
+dominate the sample estimate in mean squared error despite being biased.
+@ledoit2003 and @ledoit2004 derive the $\lambda$ minimizing expected loss and
+show that it can be estimated from the data, so it is not a tuning parameter
+anyone has to guess; @schafer2005 give the analytic form `corpcor` implements,
+and @ledoit2017 extend it to shrink each eigenvalue by a different amount.
+
+This is the workhorse. It needs no assumption about what drives returns, it
+cannot fail, and @eq-07-shrinkage is invertible whenever $\boldsymbol{F}$ is and
+$\lambda > 0$.
+
+```{r}
+#| label: shrunk
+S_shr <- corpcor::cov.shrink(zoo::coredata(eq[1:120, ]), verbose = FALSE)
+c(lambda = attr(S_shr, "lambda"),
+  rank = qr(S_shr)$rank,
+  min_eigen = min(eigen(as.matrix(S_shr), symmetric = TRUE,
+                        only.values = TRUE)$values))
+```
+
+`lambda` is the weight on the target rather than on the data,
+`r sprintf("%.0f%%", 100 * attr(S_shr, "lambda"))` of the way towards
+independence here.
+
+### Route four: estimate robustly
+
+The three routes above address a matrix badly conditioned because the sample is
+short. A robust estimator addresses one badly centered because a few observations
+dominate it. That is a different problem, and it is taken up below.
+
+### Getting any of this into the optimizer
+
+`PortfolioAnalytics` routes every moment estimate through one function, and the
+released version of that function does not offer shrinkage.
+
+```{r}
+#| label: moment-methods
+eval(formals(set.portfolio.moments)$method)
+```
+
+`sample` is the sample matrix, `boudt` a factor-based cleaning of the higher
+moments, `black_litterman` and `meucci` view-blending machinery belonging in
+@sec-17-expressing-views-theory. None of them is route three.
+
+This is the point at which many users give up and compute weights outside the
+package, discarding every constraint and diagnostic it provides. That is
+unnecessary. `optimize.portfolio()` takes a `momentFUN` argument, and it accepts
+a function object rather than merely the name of one.
+
+```{r}
+#| label: momentfun-takes-a-function
+shrinkage_moments <- function(R, portfolio) {
+  X <- zoo::coredata(R)
+  S <- corpcor::cov.shrink(X, verbose = FALSE)
+  S <- matrix(as.numeric(S), ncol(X), ncol(X),
+              dimnames = list(colnames(X), colnames(X)))
+  list(mu = colMeans(X), sigma = S, m3 = NULL, m4 = NULL,
+       mean = colMeans(X), var = S)
+}
+
+spec <- portfolio.spec(colnames(eq)) |>
+  add.constraint("full_investment") |> add.constraint("long_only") |>
+  add.objective(type = "risk", name = "var")
+
+opt <- optimize.portfolio(eq[1:120, ], spec, optimize_method = "ROI",
+                          momentFUN = shrinkage_moments)
+w <- extractWeights(opt)
+c(holdings = sum(w > 1e-6), sum = sum(w), max_weight = max(w))
+```
+
+Because it is a function rather than a name, it can be built on the fly with its
+settings baked in: one per shrinkage intensity to be compared, or one closing over
+a factor model fitted elsewhere. Nothing has to live in the global environment.
+
+::: {.callout-important}
+## A moment function must set both pairs of names
+
+The returned list carries `mu` and `sigma`, and also `mean` and `var`. Different
+code paths inside the package read different names, so a moment function that
+sets only one pair works until the objective changes and then fails in a way that
+points nowhere near the cause. The matrix must also be a plain `matrix` carrying
+dimnames, because `cov.shrink()` returns attributes that some downstream code
+does not expect.
+:::
+
+### When the package function is the thing in the way
+
+There is a third option beyond using a function and working around it, and on an
+open source package it is usually the right one: fix it and send the fix back.
+The constraint in `statistical.factor.model()` is one line, the reason it is
+wrong is demonstrable in a paragraph, and a patch with a test is less work than
+the workaround it replaces. @sec-93-package-notes lists the patches this book
+contributed and their state, which is also the only honest way to tell a reader
+which behavior to expect.
+
+### Route four in full: robust estimation
+
+`PortfolioAnalytics` ships a family of robust covariance estimators that almost
+nobody uses and that no textbook of this generation covers.
+
+```{r}
+#| label: robust-family
+grep("covRob", ls("package:PortfolioAnalytics"), value = TRUE)
+```
+
+These answer route four. Shrinkage repairs a matrix badly conditioned because the
+sample is short; a robust estimator repairs one badly centered because a few
+months dominate it, whether a flash crash, a redenomination or a bad print in a
+vendor file. The minimum covariance determinant estimator behind
+`custom.covRob.Mcd()` searches for the subset of $h$ observations whose sample
+covariance has the smallest determinant and estimates from that subset alone,
+discarding the rest [@rousseeuw1984; @rousseeuw1999].
+
+They plug in exactly where route three did.
+
+```{r}
+#| label: robust-demo
+robust_moments <- function(R, portfolio) {
+  m <- custom.covRob.Mcd(zoo::coredata(R))
+  list(mu = m$mu, sigma = m$sigma, m3 = NULL, m4 = NULL,
+       mean = m$mu, var = m$sigma)
+}
+
+rb <- robust_moments(cls[1:120, ])
+sb <- stats::cov(zoo::coredata(cls[1:120, ]))
+c(robust_mean_vol = mean(sqrt(diag(rb$sigma))) * sqrt(12),
+  sample_mean_vol = mean(sqrt(diag(sb))) * sqrt(12))
+```
+
+The robust estimate of volatility is lower, because it has judged part of what
+the sample matrix calls risk to be a few unusual months rather than the process.
+Whether that is an improvement is a judgment about the world rather than about
+the estimator: right if those months were contamination, wrong if they were the
+tail an investor is paid to bear. @sec-04-descriptive-analysis-application found
+that this market's extreme months arrive together across series, which argues for
+the second reading. @sec-28-robustness-theory makes the
+case properly, and @sec-10-risk-measures-theory is where discarding the tail
+stops being defensible.
+
+## What the Routes Do to the Matrix {#sec-07-covariance-matrix-application}
+
+### Scoring the routes out of sample
+
+This is not a question the matrix can answer. Every estimator reports a
+flattering number about itself in sample. The only honest test is to estimate on
+one window, hold the resulting portfolio for a month, and score what happened.
+
+`R/ch05-estimator-race.R` does that for four estimators and three window lengths,
+long only and fully invested, rebalanced monthly. All three windows are scored on
+the same months, so a longer window earns no credit for starting later.
+
+```{r}
+#| label: equal-weight-control
+FIRST_OOS <- 181L
+oos    <- seq.int(FIRST_OOS, nrow(eq))
+stopifnot(all(sim_riskfree_monthly$date == zoo::index(eq)))   # the bill lines up
+ew_ret <- rowMeans(zoo::coredata(eq[oos, ]))
+ew_ex  <- ew_ret - sim_riskfree_monthly$return[oos]
+
+ew <- c(ann_vol = stats::sd(ew_ret) * sqrt(12),
+        ann_ret = mean(ew_ret) * 12,
+        sharpe  = mean(ew_ex) / stats::sd(ew_ex) * sqrt(12))
+round(ew, 4)
+```
+
+```{r}
+#| label: tbl-07-race
+#| tbl-cap: "Minimum variance on 123 equities, scored out of sample on identical months. `failed` counts the rebalancing dates that produced no portfolio at all."
+#| echo: false
+race <- readRDS("output/tables/ch05-estimator-race.rds")
+race |>
+  dplyr::transmute(window, estimator,
+                   failed = sprintf("%d of %d", failed, periods),
+                   ann_vol, sharpe, eff_bets, lambda) |>
+  knitr::kable(digits = c(0, 0, 0, 4, 3, 1, 3))
+```
+
+```{r}
+#| label: race-claims
+#| include: false
+# Every order and sign the reading of the race states.
+at   <- function(est, W, col) race[[col]][race$estimator == est & race$window == W]
+r180 <- race[race$window == 180, ]
+dies <- race$estimator %in% c("sample", "factor3") & race$window < 180
+stopifnot(
+  all(race$failed[dies] == race$periods[1]), all(race$failed[!dies] == 0),
+  at("shrunk", 60, "ann_vol") < at("diagonal", 60, "ann_vol"),
+  at("shrunk", 120, "ann_vol") < at("diagonal", 120, "ann_vol"),
+  at("diagonal", 120, "ann_vol") < ew[["ann_vol"]],
+  abs(at("shrunk", 180, "ann_vol") - at("sample", 180, "ann_vol")) < 0.001,
+  at("factor3", 180, "ann_vol") > max(r180$ann_vol[r180$estimator %in% c("sample", "shrunk")]),
+  at("factor3", 180, "sharpe") < min(r180$sharpe[r180$estimator %in% c("sample", "shrunk")]),
+  diff(race$lambda[race$estimator == "shrunk"]) < 0,
+  which.min(r180$ann_vol) != which.max(r180$sharpe),
+  at("shrunk", 120, "sharpe") > ew[["sharpe"]], at("shrunk", 120, "ann_ret") < ew[["ann_ret"]]
+)
+```
+
+Read `failed` first. At sixty and at one hundred and twenty months, two of the
+four estimators produce nothing at all, not a poor portfolio but no portfolio, on
+every one of the `r race$periods[1]` rebalancing dates. That is @eq-07-rank
+arriving as an empty result. Route three and the diagonal target reach a weight
+vector; the sample matrix and the released factor model do not.
+
+Where the sample matrix fails, shrinkage gives the lower volatility of the two
+estimators that run:
+`r sprintf("%.1f%%", 100 * race$ann_vol[race$estimator == "shrunk" & race$window == 120])`
+at a hundred and twenty months against
+`r sprintf("%.1f%%", 100 * race$ann_vol[race$estimator == "diagonal" & race$window == 120])`
+for the diagonal and
+`r sprintf("%.1f%%", 100 * ew[["ann_vol"]])` for holding everything equally.
+
+Then the row that keeps this from being an advertisement.
+
+```{r}
+#| label: the-tie
+#| echo: false
+race |>
+  dplyr::filter(window == 180) |>
+  dplyr::select(estimator, ann_vol, sharpe, lambda) |>
+  knitr::kable(digits = c(0, 4, 3, 3))
+```
+
+At a hundred and eighty months the sample matrix is finally estimable and
+shrinkage stops buying anything:
+`r sprintf("%.4f", race$ann_vol[race$estimator == "shrunk" & race$window == 180])`
+against
+`r sprintf("%.4f", race$ann_vol[race$estimator == "sample" & race$window == 180])`
+is a dead heat, and the factor model is marginally behind both on volatility
+and further behind on Sharpe ratio. Shrinkage is
+not a better estimator in general. It is the estimator that exists when the
+others do not, which is a different and more useful property.
+
+The `lambda` column says so from the inside: it falls from
+`r sprintf("%.3f", race$lambda[race$estimator == "shrunk" & race$window == 60])`
+to
+`r sprintf("%.3f", race$lambda[race$estimator == "shrunk" & race$window == 180])`
+as the window lengthens. The procedure asks for less help as it needs less, which
+is the practical content of the Ledoit-Wolf result.
+
+### Lower volatility is not a better portfolio
+
+`sharpe` is not `ann_vol`, and the ordering is not the same. At a hundred and
+eighty months the sample matrix has the lowest volatility and shrinkage the
+highest Sharpe ratio, and the factor model, within a tenth of a point of both on
+volatility, trails them by
+`r sprintf("%.2f", min(r180$sharpe[r180$estimator %in% c("sample", "shrunk")]) - at("factor3", 180, "sharpe"))`
+on Sharpe ratio. Volatility was the objective, and it does not rank the results.
+
+Minimum variance did what it was asked. It cut annualized volatility from
+`r sprintf("%.1f%%", 100 * ew[["ann_vol"]])` to
+`r sprintf("%.1f%%", 100 * at("shrunk", 120, "ann_vol"))`,
+about a third, and gave up
+`r sprintf("%.1f", 100 * (ew[["ann_ret"]] - at("shrunk", 120, "ann_ret")))`
+percentage points of annual return for it, so on this market it finished ahead
+of equal weighting on Sharpe ratio as well,
+`r sprintf("%.3f", at("shrunk", 120, "sharpe"))` against
+`r sprintf("%.3f", ew[["sharpe"]])`. That is not the general finding:
+@demiguel2009 report that across their universes no optimized rule, minimum
+variance included, is reliably ahead of equal weighting, and whether the
+advantage here belongs to the method or to this sample is the subject of
+@sec-08-estimation-error-theory.
+
+Every route is one operation on the eigenvalues of @eq-07-sample, and it is
+easier to see than to derive.
+
+```{r}
+#| label: spectrum
+X   <- zoo::coredata(eq[1:120, ])
+ev  <- function(S) pmax(eigen(as.matrix(S), symmetric = TRUE, only.values = TRUE)$values, 0)
+e_s <- ev(stats::cov(X))
+e_h <- ev(corpcor::cov.shrink(X, verbose = FALSE))
+
+tibble::tibble(
+  matrix      = c("sample", "shrunk"),
+  largest     = c(e_s[1], e_h[1]),
+  smallest    = c(min(e_s), min(e_h)),
+  zero_eigens = c(sum(e_s < 1e-12), sum(e_h < 1e-12)),
+  condition   = c(e_s[1] / max(min(e_s), .Machine$double.eps), e_h[1] / min(e_h)))
+```
+
+`r sum(e_s < 1e-12)` eigenvalues of the sample matrix are zero. Those are the
+riskless portfolios of @eq-07-riskless seen from the other side, and they are not
+a property of these particular equities. They would be there if the returns were
+coin flips, because `r nrow(X)` observations cannot pin down `r ncol(X)`
+directions, by @eq-07-rank.
+
+```{r}
+#| label: fig-07-spectrum
+#| fig-cap: "The eigenvalue spectrum before and after shrinkage, on a log scale. The sample matrix runs off the bottom of the plot: several of its eigenvalues are exactly zero. Shrinkage compresses the range from fifteen orders of magnitude to two."
+#| echo: false
+spec_df <- rbind(
+  data.frame(i = seq_along(e_s), value = pmax(e_s, 1e-20), matrix = "sample"),
+  data.frame(i = seq_along(e_h), value = e_h,              matrix = "shrunk"))
+
+ggplot2::ggplot(spec_df, ggplot2::aes(i, value, colour = matrix)) +
+  ggplot2::geom_line(linewidth = 0.9) +
+  ggplot2::scale_y_log10() +
+  ggplot2::scale_colour_manual(values = unname(tidyaa_colors[c("ink", "caution")]),
+                               name = NULL) +
+  ggplot2::coord_cartesian(ylim = c(1e-8, NA)) +
+  ggplot2::theme(legend.position = "top") +
+  ggplot2::labs(x = "eigenvalue, largest to smallest", y = "value (log scale)")
+```
+
+The largest falls by `r sprintf("%.1f%%", 100 * (1 - e_h[1] / e_s[1]))` and the
+smallest non-zero one rises by a factor of
+`r sprintf("%.0f", min(e_h) / min(e_s[e_s > 1e-12]))`, which is @eq-07-condition
+brought back into a range where the inverse means something. That is what a
+shrinkage target is: not a better guess at any individual covariance, but a
+statement that the extremes of a sample spectrum are mostly sampling error and
+belong nearer the middle, which is the reading @laloux1999 gave them. A factor
+model reaches the same place by another road, building @eq-07-factor from a few
+directions plus a positive residual for every asset, so that small eigenvalues
+cannot be zero to begin with.
+
+### Shrink towards what, when the target moves?
+
+The usual $\boldsymbol{F}$ in @eq-07-shrinkage is a scaled identity: equal
+variances, no correlations. It is chosen for being maximally unlike the noisy
+thing it corrects, not for being true. How untrue it is depends on when the
+question is asked.
+
+```{r}
+#| label: regimes
+d      <- zoo::index(cls)
+in_ep  <- vapply(sim_episodes$episode, function(e) in_episode(d, e),
+                 logical(length(d)))
+crisis <- in_ep[, "credit_crisis"]
+calm   <- rowSums(in_ep) == 0               # outside all four episodes
+
+regime_shape <- function(keep) {
+  e <- ev(stats::cov(zoo::coredata(cls[keep, ])))
+  C <- stats::cor(cls[keep, ])
+  data.frame(months = sum(keep), pc1_share = e[1] / sum(e),
+             directions = sum(e)^2 / sum(e^2),
+             mean_correlation = mean(C[upper.tri(C)]))
+}
+
+# A short sample concentrates its spectrum whatever the market does, so score
+# every run of calm months of the crisis's length as well.
+n_c   <- sum(crisis)
+runs  <- which(vapply(seq_len(length(d) - n_c + 1L),
+                      function(i) all(calm[i + seq_len(n_c) - 1L]), logical(1)))
+short <- do.call(rbind, lapply(runs, function(i) {
+  regime_shape(seq_along(d) %in% (i + seq_len(n_c) - 1L))
+}))
+
+shape <- rbind(calm       = regime_shape(calm),
+               calm_short = as.data.frame(lapply(short, stats::median)),
+               crisis     = regime_shape(crisis))
+shape$regime <- rownames(shape)
+shape[, c("regime", "months", "pc1_share", "directions", "mean_correlation")]
+```
+
+```{r}
+#| label: regimes-claims
+#| include: false
+# The signs the reading rests on, and how far the crisis lies outside the calm
+# windows of its own length.
+beyond <- c(pc1 = mean(short$pc1_share < shape["crisis", "pc1_share"]),
+            cor = mean(short$mean_correlation < shape["crisis", "mean_correlation"]))
+stopifnot(
+  n_c < ncol(cls), nrow(short) > 100, beyond > 0.9,
+  diff(shape$pc1_share) > 0, diff(shape$directions) < 0,
+  shape["crisis", "mean_correlation"] > shape["calm", "mean_correlation"],
+  abs(diff(shape$mean_correlation[1:2])) < 0.05
+)
+```
+
+The calm sample is the `r shape["calm", "months"]` months outside the four
+episodes of `sim_episodes`, the crisis the `r n_c` months of the credit crisis.
+In calm months the first principal component carries
+`r sprintf("%.0f%%", 100 * shape["calm", "pc1_share"])` of the variance and the
+matrix behaves like roughly `r sprintf("%.1f", shape["calm", "directions"])`
+independent directions; through the credit crisis the same sixteen series carry
+`r sprintf("%.0f%%", 100 * shape["crisis", "pc1_share"])` and collapse to
+`r sprintf("%.1f", shape["crisis", "directions"])`. Part of that is arithmetic,
+since by @eq-07-rank a `r n_c`-month matrix has at most `r n_c - 1` non-zero
+eigenvalues and the median calm window of that length already shows
+`r sprintf("%.0f%%", 100 * shape["calm_short", "pc1_share"])` and
+`r sprintf("%.1f", shape["calm_short", "directions"])`, but the crisis lies
+beyond `r sprintf("%.0f%%", 100 * beyond[["pc1"]])` of those windows, and
+average pairwise correlation, which no rank bound touches, rises from
+`r sprintf("%.2f", shape["calm", "mean_correlation"])` to
+`r sprintf("%.2f", shape["crisis", "mean_correlation"])`, above
+`r sprintf("%.0f%%", 100 * beyond[["cor"]])` of them.
+
+A diagonal target asserts that the assets are unrelated. In calm months that is
+wrong by some margin; in the credit crisis it is wrong by far more, and precisely
+when the portfolio depends on it. Shrinking towards independence is least defensible
+exactly when it does the most work, which is the honest reason to prefer a factor
+target where one is available. @sec-19-regimes-theory is where this choice stops
+being a footnote.
+
+### The shrinkage already in place
+
+One last connection, because it reframes much of this book. Every optimization so
+far has been long only. @jagannathan2003 showed that a non-negativity constraint
+is not merely a restriction: it acts on the solution the way @eq-07-shrinkage acts
+on the matrix, because it forbids exactly the large offsetting long-short
+positions that @eq-07-riskless invites. Their finding is that imposing the
+constraint improves out-of-sample risk even when it is known to be false, which is
+why a constrained optimization on a sample matrix behaves far better than the
+unconstrained arithmetic suggests. @frost1988 reach the same conclusion from the
+Bayesian side.
+
+That is worth holding next to @tbl-07-race. Route three took about a third off
+the volatility of an equal-weighted sleeve. The long-only constraint, imposed for
+reasons of mandate rather than of statistics, had already done a comparable amount
+of work for nothing.
+
+## Key Takeaways {.unnumbered}
+
+- By @eq-07-rank the sample covariance matrix is singular whenever there are more
+  assets than observations, regardless of the data. On 123 equities and five
+  years of monthly returns it is short of full rank by more than sixty.
+- A singular estimate does not merely give a noisy answer. By @eq-07-riskless it
+  asserts that some portfolio has zero variance, and a minimizer will find it and
+  hold it.
+- Even without singularity, the condition number of @eq-07-condition measures how
+  much an input error is magnified in the weights, and the smallest eigenvalues
+  of a financial covariance matrix are largely indistinguishable from noise
+  [@laloux1999; @marchenko1967].
+- There are four responses: hold fewer assets, impose the factor structure of
+  @eq-07-factor, shrink towards a well-conditioned target as in
+  @eq-07-shrinkage, or estimate robustly. The first three address conditioning;
+  the fourth addresses contamination, which is a different complaint.
+- Shrinkage is not a better estimator in general. Scored out of sample it wins
+  where the sample matrix cannot be computed at all, and ties with it once the
+  window is long enough. Its own $\lambda$ falls as the window grows, which is
+  the procedure reporting that it is needed less.
+- Minimum variance did what it was asked and cut volatility by about a third,
+  and on this market it finished ahead of equal weighting on Sharpe ratio as
+  well. Whether that survives on other universes is
+  @sec-08-estimation-error-theory's subject.
+- The long-only constraint is itself a form of shrinkage and was already doing
+  comparable work before any estimator was changed [@jagannathan2003].
+
+## Exercises {.unnumbered}
+
+1. Apply `covariance_health()` to the government and credit instruments of
+   `sim_assets` alone, on the full sample. There are far more observations than
+   assets, so @eq-07-rank does not bind, and the matrix is nearly singular all
+   the same. Identify the reason from the eigenvectors of the smallest
+   eigenvalues rather than from the asset names.
+2. `corpcor::cov.shrink()` chooses `lambda` analytically. Fix it instead at
+   0, 0.1, 0.25, 0.5 and 1 and plot realized out-of-sample volatility against it.
+   Where is the minimum, and is the analytic choice near it?
+3. Replace `shrinkage_moments()` with one built on `factor_covariance()` and
+   compare them on the same rolling windows. At which window length does the
+   factor structure stop helping, and does that coincide with the point where the
+   sample matrix becomes estimable?
+4. Repeat the unconstrained minimum-variance optimization of
+   @sec-09-mean-variance-theory on the `r ncol(eq)` equities with the shrunk
+   matrix, once long only and once with weights free to go negative. Quantify the
+   @jagannathan2003 effect on this data.

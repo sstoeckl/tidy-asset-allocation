@@ -1,0 +1,140 @@
+### Chapter 26: The Cost of Forecast Error {.unnumbered}
+
+```{r}
+#| label: sol-26-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+N  <- ncol(Re); Tn <- nrow(Re); dates <- zoo::index(R)
+mu <- colMeans(Re); S <- stats::cov(Re); X <- zoo::coredata(Re)
+theta2 <- as.numeric(t(mu) %*% solve(S, mu))
+
+# The chapter's helpers, repeated so that this fragment runs on its own.
+gmv_qp <- function(S) {
+  n <- ncol(S)
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(rep(1, n), diag(n)), bvec = c(1, rep(0, n)), meq = 1)
+  w <- pmax(sol$solution, 0)
+  setNames(w / sum(w), colnames(S))
+}
+sharpe_of <- function(w, mu, S) as.numeric(sum(w * mu) / sqrt(t(w) %*% S %*% w)) * sqrt(12)
+rafe <- function(mu_hat, mu, Sigma) { e <- mu_hat - mu; sqrt(as.numeric(t(e) %*% solve(Sigma, e))) }
+rmse <- function(mu_hat, mu) sqrt(mean((mu_hat - mu)^2))
+msqrt <- function(A) { e <- eigen(A, symmetric = TRUE); e$vectors %*% diag(sqrt(e$values)) %*% t(e$vectors) }
+
+win <- 60L; test <- 60L
+starts <- seq_len(Tn - win - test + 1L)
+roll <- lapply(starts, function(s) {
+  tr <- s:(s + win - 1L); te <- (s + win):(s + win + test - 1L)
+  m_tr <- colMeans(X[tr, ]); V_tr <- stats::cov(X[tr, ])
+  m_te <- colMeans(X[te, ]); V_te <- stats::cov(X[te, ])
+  e <- m_tr - m_te; Vh <- msqrt(V_te)
+  tibble::tibble(
+    rmse      = rmse(m_tr, m_te),
+    rafe      = rafe(m_tr, m_te, V_te),
+    rafe_cc0  = sqrt(sum(e^2 / diag(V_te))),                           # correlations ignored
+    rafe_cv   = sqrt(sum(e^2) / mean(diag(V_te))),                     # one volatility for all
+    crafe     = max(abs(eigen(Vh %*% solve(V_tr) %*% Vh - diag(N), symmetric = TRUE)$values)),   # @eq-26-crafe
+    short_u   = sqrt(12 * as.numeric(t(m_te) %*% solve(V_te, m_te))) - sharpe_of(solve(V_tr, m_tr), m_te, V_te),
+    short_gmv = sharpe_of(gmv_qp(V_te), m_te, V_te) - sharpe_of(gmv_qp(V_tr), m_te, V_te))
+}) |> dplyr::bind_rows()
+```
+
+#### Exercise 1
+
+The minimum-variance portfolio uses no forecast, so the RAFE has nothing to
+explain and the C-RAFE of @eq-26-crafe, the spectral norm of the estimated
+precision matrix in realized risk units minus the identity, is the measure
+that applies.
+
+```{r}
+#| label: sol-26-ex1
+ex1 <- c(rafe = stats::cor(roll$rafe, roll$short_gmv), crafe = stats::cor(roll$crafe, roll$short_gmv))
+stopifnot(ex1[["crafe"]] > ex1[["rafe"]])
+round(ex1, 3)
+```
+
+On the `r length(starts)` windows the RAFE of the sample mean correlates
+`r sprintf("%.2f", ex1[["rafe"]])` with the long-only minimum-variance
+portfolio's shortfall and the C-RAFE `r sprintf("%.2f", ex1[["crafe"]])`.
+Neither explains much: on sixteen well-estimated series the rule's shortfall
+is small and mostly sampling noise in the test window. The C-RAFE is the
+higher of the two, by `r sprintf("%.2f", ex1[["crafe"]] - ex1[["rafe"]])`,
+which is the direction @salcher2026 report for their diversification rules,
+where the covariance term is what explains them, and not much more than the
+direction.
+
+#### Exercise 2
+
+```{r}
+#| label: sol-26-ex2
+ex2 <- vapply(c("rmse", "rafe_cv", "rafe_cc0", "rafe"), function(m) stats::cor(roll[[m]], roll$short_u), numeric(1))
+round(ex2, 3)
+```
+
+For the unconstrained rule and the sample mean the sequence of @eq-26-nested
+reads, from the RMSE through RAFE-CV and RAFE-CC$_0$ to the RAFE,
+`r paste(sprintf("%.2f", ex2), collapse = ", ")`. The two intermediate
+measures do not sit between the endpoints: both are
+`r if (ex2[["rafe_cc0"]] < ex2[["rmse"]] && ex2[["rafe_cv"]] < ex2[["rmse"]]) "below" else "beside"`
+the RMSE, so allowing each asset its own volatility changes the correlation
+by `r sprintf("%+.2f", ex2[["rafe_cc0"]] - ex2[["rafe_cv"]])`, and the whole
+of the explanatory power arrives with the correlations,
+`r sprintf("%+.2f", ex2[["rafe"]] - ex2[["rafe_cc0"]])` from RAFE-CC$_0$ to
+the RAFE. On this market, where government bonds and credit of the same
+region move together, the correlations are the simplification that costs
+the explanatory power.
+
+#### Exercise 3
+
+```{r}
+#| label: sol-26-ex3
+alpha_n <- function(Tw, n) (Tw - 1) / (Tw - n - 2)
+beta_n  <- function(Tw, n) (Tw - 1)^2 * (Tw - 2) / ((Tw - n - 1) * (Tw - n - 2) * (Tw - n - 4))
+split_kz <- function(Tw, n) {
+  c(mean = n / Tw, inversion = (1 - 2 * alpha_n(Tw, n) + beta_n(Tw, n)) * theta2, amplified = (beta_n(Tw, n) - 1) * n / Tw)
+}
+thresholds <- function(n) {
+  Tg <- seq.int(n + 6L, 5000L)
+  parts <- t(vapply(Tg, split_kz, numeric(3), n = n))
+  c(cov_below_half = min(Tg[(parts[, "inversion"] + parts[, "amplified"]) < parts[, "mean"]]),
+    amp_below_inv  = min(Tg[parts[, "amplified"] < parts[, "inversion"]]))
+}
+ex3 <- rbind(`N = 16` = thresholds(16L), `N = 50` = thresholds(50L))
+ex3
+```
+
+With $\theta^2$ fixed at this market's value the covariance channel falls
+below half of the loss at `r ex3["N = 16", "cov_below_half"]` months for
+$N = 16$ and `r ex3["N = 50", "cov_below_half"]` for $N = 50$, roughly in
+proportion to $N$, because every term of @eq-26-kz-split beyond the first is
+a function of $N/T$. The amplification term falls below the inversion error
+only at `r ex3["N = 16", "amp_below_inv"]` and
+`r ex3["N = 50", "amp_below_inv"]` months: on the windows the register uses,
+most of the covariance channel is the mean's noise amplified, not the
+inversion of the signal.
+
+#### Exercise 4
+
+```{r}
+#| label: sol-26-ex4
+oos  <- seq.int(121L, Tn)
+y_p  <- rowMeans(X[oos, ]); s0 <- mean(y_p) / stats::sd(y_p)
+gain <- function(r2) (sqrt((s0^2 + r2) / (1 - r2)) - s0) * sqrt(12)
+se   <- sqrt((1 + (s0^2) / 2) / length(oos)) * sqrt(12)                # @eq-25-se, annualized
+ex4  <- c(r2_1pct = gain(0.01), r2_5pct = gain(0.05), se = se)
+round(ex4, 3)
+```
+
+An $R^2$ of one percent allows at most `r sprintf("%.2f", ex4[["r2_1pct"]])`
+of annualized Sharpe ratio on top of the policy's and five percent
+`r sprintf("%.2f", ex4[["r2_5pct"]])`, against a standard error of
+`r sprintf("%.2f", ex4[["se"]])` on `r length(oos)` months. The first is
+`r sprintf("%.1f", ex4[["r2_1pct"]] / ex4[["se"]])` standard errors, the
+second `r sprintf("%.1f", ex4[["r2_5pct"]] / ex4[["se"]])`: even five percent
+of out-of-sample $R^2$, far more than the term spread of chapter 16 delivers,
+would not clear two standard errors on this sample, which is the gap between
+economic and statistical significance that @campbell2008 describe.

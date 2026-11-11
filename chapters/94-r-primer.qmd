@@ -1,0 +1,184 @@
+---
+metadata:
+  pagetitle: "A Short R Refresher"
+  description-meta: "The base R a reader needs for this book: vectors, indexing by name, matrices, functions, and the apply family."
+---
+
+# A Short R Refresher {#sec-94-r-primer}
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+```
+
+For readers who have not written R recently. This is not an introduction to
+the language — @wickham2023 is — but the base R that the chapters lean on
+without comment: vectors and names, matrices, functions, the `apply()` family,
+and the one habit the book insists on, indexing by name. Everything
+tidyverse-specific is in @sec-01-setting-up-theory; everything about the
+time-series matrix the optimizer wants is in @sec-01-setting-up-implementation.
+
+## Vectors, and their names {.unnumbered}
+
+A vector is the basic object, and a named vector is the object the book uses
+for weights. Names are what make a weight vector safe to combine with a return
+matrix: the pairing is by name, never by position.
+
+```{r}
+#| label: vectors
+w <- c(US_equity = 0.4, US_government = 0.5, GLOBAL_commodity = 0.1)
+w
+sum(w)
+w["US_government"]                 # by name
+w[c("GLOBAL_commodity", "US_equity")]   # in any order, still right
+w * 2                              # arithmetic is elementwise
+```
+
+Reordering a vector by name is the idiom that appears in almost every chapter:
+`w <- w[colnames(R)]` puts a weight vector into the column order of a return
+matrix, and `stopifnot(identical(names(w), colnames(R)))` fails loudly if a
+name is missing rather than silently pairing the wrong two things.
+
+```{r}
+#| label: by-name
+cols <- c("GLOBAL_commodity", "US_equity", "US_government")
+w2 <- w[cols]
+stopifnot(identical(names(w2), cols))
+w2
+```
+
+Logical vectors select; `which()` turns them into positions; `%in%` tests
+membership.
+
+```{r}
+#| label: logical
+w > 0.2
+w[w > 0.2]
+names(w)[w > 0.2]
+c("US_equity", "JP_equity") %in% names(w)
+```
+
+## Matrices {.unnumbered}
+
+A return matrix has one row per date and one column per asset. `%*%` is matrix
+multiplication, `t()` the transpose, `solve()` the inverse (or, better, the
+solution of a linear system), and `diag()` both extracts and builds a diagonal.
+The portfolio variance $\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$ of
+@sec-02-notation-and-data-notation is three characters of R.
+
+```{r}
+#| label: matrices
+set.seed(1)
+R <- matrix(rnorm(12, sd = 0.03), nrow = 4,
+            dimnames = list(NULL, c("A", "B", "C")))
+R
+S <- cov(R)
+w <- c(A = 0.5, B = 0.3, C = 0.2)
+as.numeric(t(w) %*% S %*% w)        # portfolio variance
+solve(S) %*% rep(1, 3)              # Sigma^-1 iota, the numerator of the GMV weights
+diag(S)                             # the variances
+```
+
+Column and row operations use `colMeans()`, `rowSums()` and `apply()`; the
+second argument of `apply()` is 1 for rows and 2 for columns.
+
+```{r}
+#| label: apply
+colMeans(R)
+apply(R, 2, sd)
+apply(R, 1, function(r) sum(w * r))   # a portfolio return per period
+```
+
+## Functions {.unnumbered}
+
+A function bundles a calculation so it can be applied to many series. Default
+arguments make an assumption visible and changeable rather than buried.
+
+```{r}
+#| label: functions
+ann_vol <- function(x, periods = 12) stats::sd(x) * sqrt(periods)
+ann_vol(R[, "A"])
+ann_vol(R[, "A"], periods = 52)
+```
+
+`sapply()` and `vapply()` apply a function over a vector or list; `vapply()`
+declares the type of result it expects and is the one to use in code that must
+not fail quietly. `lapply()` returns a list; `Map()` walks several arguments in
+parallel.
+
+```{r}
+#| label: vapply
+vapply(colnames(R), function(s) ann_vol(R[, s]), numeric(1))
+Map(function(name, weight) paste(name, weight), names(w), w)
+```
+
+## Data frames and tibbles {.unnumbered}
+
+A data frame holds columns of different types; a tibble is a data frame with
+better printing. The book builds every figure from one of these, with one row
+per plotted thing, and filters it by a `kind` column.
+
+```{r}
+#| label: frames
+pts <- tibble::tibble(
+  label = c("A", "B", "C", "portfolio"),
+  vol   = c(apply(R, 2, sd), sqrt(as.numeric(t(w) %*% S %*% w))),
+  ret   = c(colMeans(R), sum(w * colMeans(R))),
+  kind  = c("asset", "asset", "asset", "portfolio")
+)
+pts
+pts[pts$kind == "portfolio", ]
+```
+
+## Control flow, and where it is avoided {.unnumbered}
+
+`for` loops are fine and the rolling windows of the book are written as loops.
+The idiom to remember is to preallocate the result and to fill it by index, and
+to fail rather than skip when a step goes wrong.
+
+```{r}
+#| label: loop
+win <- 2L
+out <- rep(NA_real_, nrow(R))
+for (t in (win + 1):nrow(R)) {
+  est <- R[(t - win):(t - 1), , drop = FALSE]
+  out[t] <- sum(w * colMeans(est))
+}
+out
+```
+
+`tryCatch()` captures an error so that a loop can record a failure instead of
+dying, which is how @sec-25-backtesting-theory counts the periods in which a
+solver did not converge.
+
+```{r}
+#| label: trycatch
+res <- tryCatch(solve(matrix(0, 2, 2)), error = function(e) conditionMessage(e))
+res
+```
+
+## Plotting {.unnumbered}
+
+The book plots with `ggplot2`, always from one data frame, and with the theme
+set in `R/_common.R`. The grammar is a data frame, an aesthetic mapping, and
+layers.
+
+```{r}
+#| label: fig-94-plot
+#| fig-cap: "A first ggplot: the assets and the portfolio of this appendix in the volatility-return plane, from the one data frame built above."
+#| fig-asp: 0.6
+ggplot2::ggplot(pts, ggplot2::aes(vol, ret, colour = kind)) +
+  ggplot2::geom_point(size = 3) +
+  ggplot2::geom_text(ggplot2::aes(label = label), vjust = -1, size = 3) +
+  scale_colour_tidyaa() +
+  ggplot2::labs(x = "volatility", y = "mean return")
+```
+
+## Getting help {.unnumbered}
+
+`?name` opens the help page of a function, `?package::name` when two packages
+export the same name, and `args(name)` prints its signature. For the packages
+this book is built on, `vignette(package = "PortfolioAnalytics")` lists the
+worked examples that ship with the package, and @sec-93-package-notes says
+which package the book reaches for in which situation.

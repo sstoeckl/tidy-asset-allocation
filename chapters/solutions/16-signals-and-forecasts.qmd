@@ -1,0 +1,253 @@
+### Chapter 16: Signals and Return Forecasts {.unnumbered}
+
+```{r}
+#| label: sol-16-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+N  <- ncol(Re); dates <- zoo::index(R)
+
+# The chapter's signals, rebuilt so that this fragment runs on its own. The
+# curve block is built for every region here, because exercise 1 needs it.
+P   <- cumprod(1 + R)
+mom <- xts::lag.xts(P, 1) / xts::lag.xts(P, 12) - 1
+cv  <- sim_curve_weekly |>
+  tidyr::pivot_wider(names_from = series, values_from = value) |>
+  dplyr::arrange(date)
+i_last  <- findInterval(dates, cv$date)
+stopifnot(all(cv$date[i_last] <= dates), all(dates - cv$date[i_last] < 8))  # weeks are 6 to 8 days apart
+regions <- c("CH", "EU", "JP", "UK", "US")
+term_m  <- -as.matrix(cv[i_last, paste0(regions, "_Slope")])
+ig_m    <- 100 * as.matrix(cv[i_last, paste0(regions, "_IG_Spread")])
+colnames(term_m) <- paste0("term_", regions); colnames(ig_m) <- paste0("ig_", regions)
+curve_all <- xts::xts(cbind(term_m, ig_m), order.by = dates)
+turb <- uncertaintymeasures::OSturbulence(R, rolling = TRUE, roll.obs = 60)$turb
+colnames(turb) <- "turb"
+common_lag <- xts::lag.xts(merge(curve_all, turb), 1)
+mom_lag    <- xts::lag.xts(mom, 1)
+
+region_of <- function(s) { r <- sub("_.*", "", s); if (r == "GLOBAL") "US" else r }
+pairs_of <- function(s, local = FALSE) {
+  r <- if (local) region_of(s) else "US"
+  data.frame(date = dates, y = as.numeric(Re[, s]), mom = as.numeric(mom_lag[, s]),
+             term = as.numeric(common_lag[, paste0("term_", r)]),
+             ig   = as.numeric(common_lag[, paste0("ig_", r)]),
+             turb = as.numeric(common_lag[, "turb"]))
+}
+
+sig4 <- c("mom", "term", "ig", "turb")
+burn <- 120L; oos <- seq.int(burn + 1L, nrow(Re))
+nw_t <- function(m, j = 2L) {
+  nw <- sandwich::NeweyWest(m, lag = 6, prewhite = FALSE)
+  unname(stats::coef(m)[j] / sqrt(nw[j, j]))
+}
+ols_fc <- function(d, v, m) {
+  tr <- which(!is.na(d[[v]]) & seq_len(nrow(d)) < m)
+  b  <- stats::lm.fit(cbind(1, d[[v]][tr]), d$y[tr])$coefficients
+  unname(b[1] + b[2] * d[[v]][m])
+}
+r2_os <- function(y, f, f0) 1 - sum((y - f)^2) / sum((y - f0)^2)
+cw_t  <- function(y, f, f0) nw_t(stats::lm(I((y - f0)^2 - (y - f)^2 + (f0 - f)^2) ~ 1), 1L)
+
+forecasts_of <- function(local = FALSE) {
+  lapply(colnames(Re), function(s) {
+    d <- pairs_of(s, local)
+    out <- data.frame(date = dates[oos], series = s, y = d$y[oos],
+                      mean = vapply(oos, function(m) mean(d$y[seq_len(m - 1L)]), numeric(1)))
+    for (v in sig4) out[[v]] <- vapply(oos, function(m) ols_fc(d, v, m), numeric(1))
+    out
+  }) |> dplyr::bind_rows()
+}
+fc <- forecasts_of()
+oos_of <- function(fc, model) {
+  fc |>
+    dplyr::group_by(series) |>
+    dplyr::summarise(r2os = r2_os(y, .data[[model]], mean),
+                     cw   = cw_t(y, .data[[model]], mean), .groups = "drop")
+}
+
+# The tilt and its accounting, as in the chapter, with kappa exposed.
+vol60 <- zoo::rollapply(Re, 60, stats::sd, align = "right", fill = NA)
+band  <- 0.5 / N
+kappa0 <- band / (0.5 / sqrt(12))
+w_policy <- setNames(rep(1 / N, N), colnames(Re))
+tilt_weights <- function(fc, model, kappa = kappa0) {
+  F  <- fc |> dplyr::select(date, series, f = dplyr::all_of(model)) |>
+    tidyr::pivot_wider(names_from = series, values_from = f)
+  Fm <- as.matrix(F[, colnames(Re)])
+  W  <- t(vapply(seq_len(nrow(Fm)), function(i) {
+    s  <- Fm[i, ] / as.numeric(vol60[oos[i] - 1L, ]); s <- s - mean(s)
+    tl <- pmin(pmax(kappa * s, -band), band)
+    w  <- pmax(w_policy + tl - mean(tl), 0); w / sum(w)
+  }, numeric(N)))
+  dimnames(W) <- list(as.character(dates[oos]), colnames(Re)); W
+}
+cost_rate <- pm_costs_default()[sub(".*_", "", colnames(Re))]
+names(cost_rate) <- colnames(Re)
+run_path <- function(W) {
+  Rm <- zoo::coredata(R)[oos, colnames(Re), drop = FALSE]
+  r  <- rowSums(W * Rm)
+  drifted <- W * (1 + Rm) / (1 + r)
+  trade   <- abs(W[-1, , drop = FALSE] - drifted[-nrow(W), , drop = FALSE])
+  tibble::tibble(gross = r, turnover = c(rowSums(trade) / 2, 0),
+                 cost = c(as.numeric(trade %*% cost_rate), 0)) |>
+    dplyr::mutate(net = gross - cost)
+}
+gamma <- 5
+ce_of <- function(e) 12 * mean(e) - gamma / 2 * 12 * stats::var(e)
+W_policy  <- matrix(1 / N, length(oos), N, dimnames = list(as.character(dates[oos]), colnames(Re)))
+ce_policy <- ce_of(run_path(W_policy)$net - rf[oos])
+```
+
+#### Exercise 1
+
+Each non-US series gets the term spread of its own region; the US series and
+the commodity keep the US curve, so their rows cannot change.
+
+```{r}
+#| label: sol-16-ex1
+fc_local <- forecasts_of(local = TRUE)
+ex1 <- dplyr::inner_join(oos_of(fc, "term")       |> dplyr::select(series, us = r2os),
+                         oos_of(fc_local, "term") |> dplyr::select(series, local = r2os),
+                         by = "series") |>
+  dplyr::mutate(difference = local - us) |>
+  dplyr::arrange(dplyr::desc(difference))
+stopifnot(sum(ex1$difference < 0) > sum(ex1$difference > 0))   # the US curve wins more often
+ex1 |> dplyr::mutate(dplyr::across(-series, ~ sprintf("%+.2f%%", 100 * .x)))
+c(local_better = sum(ex1$difference > 0), unchanged = sum(ex1$difference == 0),
+  us_better = sum(ex1$difference < 0))
+```
+
+The local curve is the better forecaster on `r sum(ex1$difference > 0)` of
+the `r sum(ex1$difference != 0)` series whose signal changed, and the US curve
+on `r sum(ex1$difference < 0)`. The largest gain is `r ex1$series[1]`, whose
+$R^2_{\text{OS}}$ moves from `r sprintf("%+.2f%%", 100 * ex1$us[1])` to
+`r sprintf("%+.2f%%", 100 * ex1$local[1])`; the largest loss is
+`r ex1$series[nrow(ex1)]`. A local bond was simulated from its local curve,
+so the local slope is closer to the state that generated it, and it still
+loses on most series. What @eq-16-r2os rewards is not closeness to the
+mechanism but a slope that stays stable across the expanding window, and on
+this sample the shared US spread has that property more often than the local
+one. The economically obvious signal is not automatically the statistically
+better one.
+
+#### Exercise 2
+
+The restriction replaces a negative forecast of an equity premium by zero, on
+the argument that a risk premium cannot be negative.
+
+```{r}
+#| label: sol-16-ex2
+eq  <- grep("_equity$", colnames(Re), value = TRUE)
+ex2 <- fc |>
+  dplyr::filter(series %in% eq) |>
+  dplyr::mutate(term_ct = pmax(term, 0)) |>
+  dplyr::group_by(series) |>
+  dplyr::summarise(r2os = r2_os(y, term, mean), r2os_ct = r2_os(y, term_ct, mean),
+                   cw = cw_t(y, term, mean), cw_ct = cw_t(y, term_ct, mean),
+                   share_truncated = mean(term < 0), .groups = "drop")
+# The full-sample slope of the term spread on each equity series, for the reading below.
+eq_slope <- vapply(eq, function(s) {
+  d <- pairs_of(s); ok <- !is.na(d$term)
+  unname(stats::coef(stats::lm(d$y[ok] ~ d$term[ok]))[2])
+}, numeric(1))
+stopifnot(sum(eq_slope < 0) > length(eq) / 2)
+ex2 |> dplyr::mutate(dplyr::across(c(r2os, r2os_ct), ~ sprintf("%+.2f%%", 100 * .x)),
+                     dplyr::across(c(cw, cw_ct), ~ sprintf("%.2f", .x)),
+                     share_truncated = sprintf("%.0f%%", 100 * share_truncated))
+```
+
+The restriction helps on `r sum(ex2$r2os_ct > ex2$r2os)` of the five equity
+series and binds on between
+`r sprintf("%.0f%%", 100 * min(ex2$share_truncated))` and
+`r sprintf("%.0f%%", 100 * max(ex2$share_truncated))` of the forecast months.
+Where it helps, the unrestricted regression was producing negative forecasts
+in months when the realized premium was positive, which happens when the
+estimated slope has the wrong sign: @tbl-16-insample shows the term spread's
+slope on `r sum(eq_slope < 0)` of the five equity series to be negative, so a steep curve pushed the
+forecast below zero exactly when @fama1989 would expect the premium to be
+high. Truncation cannot repair a wrong slope, but it stops the forecast from
+acting on it, which is why @campbell2008 found it to be the difference between
+a negative and a positive $R^2_{\text{OS}}$.
+
+#### Exercise 3
+
+Doubling $\kappa$ doubles every tilt until the band binds; halving it halves
+them. The certainty-equivalent gain is not linear in $\kappa$, because the
+variance term of @eq-16-cer is quadratic in the position.
+
+```{r}
+#| label: sol-16-ex3
+ex3 <- tidyr::expand_grid(model = c("term", "mom"), mult = c(0.5, 1, 2)) |>
+  dplyr::mutate(res = purrr::map2(model, mult, function(k, mlt) {
+    p <- run_path(tilt_weights(fc, k, kappa = mlt * kappa0))
+    tibble::tibble(turnover = 12 * mean(p$turnover), ce_gain = ce_of(p$net - rf[oos]) - ce_policy)
+  })) |>
+  tidyr::unnest(res)
+ex3 |> dplyr::mutate(turnover = sprintf("%.0f%%", 100 * turnover),
+                     ce_gain = sprintf("%+.0f bp", 1e4 * ce_gain))
+```
+
+```{r}
+#| label: sol-16-ex3-facts
+#| include: false
+g3 <- function(k, mlt) ex3$ce_gain[ex3$model == k & ex3$mult == mlt]
+stopifnot(all(ex3$ce_gain[ex3$model == "term"] > 0),          # gains at every scale
+          all(ex3$ce_gain[ex3$model == "mom"] < 0),            # loses at every scale
+          g3("term", 1) > g3("term", 0.5),                     # the term gain rises to the chapter's scale
+          abs(g3("term", 2) - g3("term", 1)) < 1e-4,           # and moves by less than a basis point beyond it
+          g3("mom", 1) < g3("mom", 0.5), g3("mom", 2) < g3("mom", 1),
+          g3("mom", 1) - g3("mom", 2) < g3("mom", 0.5) - g3("mom", 1))   # the momentum loss grows more slowly
+```
+
+For the term spread the gain goes from
+`r sprintf("%+.0f", 1e4 * g3("term", 0.5))` basis points at half the scale to
+`r sprintf("%+.0f", 1e4 * g3("term", 1))` at the chapter's and
+`r sprintf("%+.0f", 1e4 * g3("term", 2))` at double; for momentum from
+`r sprintf("%+.0f", 1e4 * g3("mom", 0.5))` to `r sprintf("%+.0f", 1e4 * g3("mom", 1))`
+to `r sprintf("%+.0f", 1e4 * g3("mom", 2))`. Neither is linear in $\kappa$.
+The term-spread gain rises from half scale to the chapter's scale and then
+stops, moving by less than a basis point to double, because the extra variance
+and turnover absorb the extra return; the momentum loss grows from half to
+full scale and again to double, but more slowly, because at double scale the
+band clips more of the tilts and a clipped tilt no longer grows with $\kappa$.
+The sign is first order and the size is second order: a signal with evidence
+gains at every scale tried, one without loses at every scale, and the scale
+should be set by the evidence rather than by the appetite.
+
+#### Exercise 4
+
+The timing rule holds $\hat{r}^e_{t+1}/(\gamma\hat{\sigma}^2_t)$ in
+`US_equity` and the balance in the bill, with the weight confined to
+$[0, 1.5]$; the comparison is a constant weight of one.
+
+```{r}
+#| label: sol-16-ex4
+us <- fc[fc$series == "US_equity", ]
+s2 <- as.numeric(vol60[oos - 1L, "US_equity"])^2
+w  <- pmin(pmax(us$term / (gamma * s2), 0), 1.5)
+r2_us <- r2_os(us$y, us$term, us$mean)
+gain4 <- ce_of(w * us$y) - ce_of(us$y)
+stopifnot(sign(gain4) == sign(r2_us), abs(gain4) > abs(12 * r2_us / gamma))   # same sign, realized larger
+c(ce_timing = ce_of(w * us$y), ce_hold = ce_of(us$y),
+  gain = ce_of(w * us$y) - ce_of(us$y),
+  predicted_by_eq_ct = 12 * r2_us / gamma,
+  r2os = r2_us, mean_weight = mean(w), share_at_zero = mean(w == 0))
+```
+
+The term-spread forecast of `US_equity` has an $R^2_{\text{OS}}$ of
+`r sprintf("%+.2f%%", 100 * r2_us)`, so @eq-16-ct predicts a change in
+expected excess return of
+`r sprintf("%+.0f", 1e4 * 12 * r2_us / gamma)` basis points a year, and the
+realized certainty-equivalent gain is
+`r sprintf("%+.0f", 1e4 * (ce_of(w * us$y) - ce_of(us$y)))` basis points. The
+two agree in sign and the realized figure is the larger in magnitude, because
+@eq-16-ct is a first-order approximation for an unconstrained position while
+this rule is clipped at zero and at one and a half, spends
+`r sprintf("%.0f%%", 100 * mean(w == 0))` of its months in the bill, and holds
+an average weight of `r sprintf("%.2f", mean(w))` rather than one. An absolute
+view on a series whose forecast loses to its own mean is a bet against the
+mean, and it costs what @eq-16-ct says it should.

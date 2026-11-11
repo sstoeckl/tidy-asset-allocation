@@ -1,0 +1,44 @@
+---
+metadata:
+  pagetitle: "Acknowledgements"
+  description-meta: "The people and projects this book owes its material and its machinery to."
+---
+
+# Acknowledgements {#sec-98-acknowledgements}
+
+This book has a long prehistory. Earlier versions were written between 2018
+and 2024 under the title *Tidy Portfoliomanagement in R*, and substantial
+parts of the present material began there, in a different voice and a
+different structure. The people who wrote with me then are the reason the
+present text could be built as fast as it was.
+
+**Elizabet Sanyal** wrote the first working versions of the covariance,
+expected-return and fully flexible views material, and her critique of the
+backtesting chapter shaped how this edition separates demonstration from
+diagnosis. **Dominik Brändle** contributed the original backtesting and
+optimization code. **Lukas Salcher** and **Merlin Bartel** contributed to the
+earlier chapters, and their research with me on estimation error, on the
+economic value of forecast accuracy and on diversifying estimation errors
+underlies Parts III and VIII.
+
+The developers of `PortfolioAnalytics` and `PerformanceAnalytics`, in
+particular Brian G. Peterson and Peter Carl, have maintained the machinery this
+book is about for the better part of two decades. Where a chapter records a
+default that fails or a constraint that is dropped, it does so with respect for
+a package whose ambition is the reason such things can be found at all, and
+every finding of that kind has been reported upstream. Ross Bennett's work on
+the package's second-generation interface is what the chapters call.
+
+Christoph Scheuch, Stefan Voigt and Patrick Weiss, and Guillaume Coqueret and
+Tony Guida, wrote the two books beside which this one is meant to sit. Their
+example settled most of the questions about how a book of this kind should be
+built, and the reader who wants the data acquisition or the machine learning
+that this book cites rather than reproduces will find it in theirs.
+
+The students of the portfolio management courses at the University of
+Liechtenstein have worked through earlier versions of most exercises, and
+their questions are the reason several of the callouts exist. The simulated
+market was built for their course; the caveats in @sec-90-data-description are
+the ones they found.
+
+Finally, to my family, for the evenings.

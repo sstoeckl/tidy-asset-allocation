@@ -1,0 +1,346 @@
+### Chapter 15: Hierarchical and Sleeve-Based Allocation {.unnumbered}
+
+```{r}
+#| label: sol-15-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+stopifnot(ncol(Re) == 16L, !anyNA(Re))
+N  <- ncol(Re)
+
+# The chapter's sleeves, moments and helpers, repeated so that this fragment
+# runs on its own.
+sleeve_of <- function(a) dplyr::case_when(
+  grepl("_equity$", a)     ~ "equity",
+  grepl("_government$", a) ~ "government",
+  grepl("_credit$", a)     ~ "credit",
+  TRUE                     ~ "commodity")
+sleeves <- split(colnames(Re), sleeve_of(colnames(Re)))
+stopifnot(setequal(unlist(sleeves), colnames(Re)))
+
+S    <- stats::cov(Re)
+same <- outer(sleeve_of(colnames(S)), sleeve_of(colnames(S)), "==")
+stopifnot(all(dim(same) == dim(S)), isSymmetric(same))
+S_block <- S; S_block[!same] <- 0
+
+gmv_qp <- function(S) {
+  n   <- ncol(S)
+  sol <- quadprog::solve.QP(Dmat = 2 * S, dvec = rep(0, n),
+                            Amat = cbind(rep(1, n), diag(n)),
+                            bvec = c(1, rep(0, n)), meq = 1)
+  w <- pmax(sol$solution, 0)
+  setNames(w / sum(w), colnames(S))
+}
+mu    <- colMeans(Re)
+p_vol <- function(w) sqrt(as.numeric(t(w) %*% S %*% w)) * sqrt(12)
+p_ret <- function(w) sum(mu * w) * 12
+p_sr  <- function(w) p_ret(w) / p_vol(w)
+eff_bets <- function(w) 1 / sum(w^2)
+
+within_gmv <- function(S, sleeves) lapply(sleeves, function(a)
+  if (length(a) == 1L) setNames(1, a) else gmv_qp(S[a, a]))
+unroll <- function(b, v) {
+  stopifnot(identical(names(b), names(v)))
+  w <- unlist(lapply(names(v), function(k) b[[k]] * v[[k]]))
+  w[colnames(Re)]
+}
+
+# Hierarchical risk parity, single linkage, as in the chapter's box.
+D  <- sqrt(0.5 * (1 - stats::cor(Re)))
+hc <- hclust(stats::as.dist(D), method = "single")
+ord <- colnames(Re)[hc$order]
+hrp <- function(S, ord) {
+  iv_var <- function(items) {
+    s <- S[items, items, drop = FALSE]; iv <- 1 / diag(s); iv <- iv / sum(iv)
+    as.numeric(t(iv) %*% s %*% iv)
+  }
+  w <- setNames(rep(1, length(ord)), ord)
+  clusters <- list(ord)
+  while (length(clusters)) {
+    nxt <- list()
+    for (cl in clusters) {
+      if (length(cl) < 2L) next
+      h <- floor(length(cl) / 2); a <- cl[1:h]; b <- cl[(h + 1):length(cl)]
+      alpha <- 1 - iv_var(a) / (iv_var(a) + iv_var(b))
+      w[a] <- w[a] * alpha; w[b] <- w[b] * (1 - alpha)
+      nxt <- c(nxt, list(a), list(b))
+    }
+    clusters <- nxt
+  }
+  w[colnames(S)]
+}
+w_hrp <- hrp(S, ord)
+
+# The by-hand proxy of the chapter, with the training period as an argument.
+three <- sleeves[c("equity", "government", "credit")]
+proxy_by_hand <- function(a, W = 60L) {
+  X <- zoo::coredata(Re[, a, drop = FALSE]); n <- nrow(X); out <- numeric(n)
+  w <- rep(1 / length(a), length(a))                  # the back-fill: equal, then drifting
+  for (t in seq_len(W)) {
+    out[t] <- sum(w * X[t, ]); w <- w * (1 + X[t, ]) / (1 + out[t])
+  }
+  for (t in (W + 1):n)                                # then rolling minimum variance
+    out[t] <- sum(gmv_qp(stats::cov(X[(t - W):(t - 1), ])) * X[t, ])
+  out
+}
+by_hand <- sapply(three, proxy_by_hand)
+b_hand  <- gmv_qp(stats::cov(by_hand))
+
+# The out-of-sample race of the chapter.
+FIRST_OOS <- 121L                                # the register's first out-of-sample month
+stopifnot(FIRST_OOS == which(model_year(zoo::index(Re)) == 11L)[1])   # first month of model year 11
+oos    <- FIRST_OOS:nrow(Re)
+rf_oos <- rf[oos]
+Xm <- zoo::coredata(Re); Rm <- zoo::coredata(R)
+
+race <- function(W) {
+  paths <- lapply(oos, function(t) {
+    X  <- Xm[(t - W):(t - 1), ]                    # the W months before t, nothing after
+    Sw <- stats::cov(X)
+    v  <- within_gmv(Sw, sleeves)
+    sr <- sapply(names(v), function(k) X[, sleeves[[k]], drop = FALSE] %*% v[[k]])
+    Sb <- Sw; Sb[!same] <- 0
+    rbind(flat           = gmv_qp(Sw),
+          nested         = unroll(gmv_qp(stats::cov(sr)), v),
+          `block-diagonal` = gmv_qp(Sb),
+          `equal weight` = rep(1 / N, N))
+  })
+  strategies <- rownames(paths[[1]])
+  ret  <- sapply(strategies, function(s) vapply(seq_along(oos), function(i)
+    sum(paths[[i]][s, ] * Rm[oos[i], ]), numeric(1)))
+  turn <- sapply(strategies, function(s) {
+    eop <- rep(0, N); out <- numeric(length(oos))
+    for (i in seq_along(oos)) {
+      w <- paths[[i]][s, ]; r <- Rm[oos[i], ]
+      out[i] <- 0.5 * sum(abs(w - eop)); eop <- w * (1 + r) / (1 + sum(w * r))
+    }
+    mean(out) * 12
+  })
+  list(ret = ret, turnover = turn,
+       sleeve_budget = sapply(seq_along(oos), function(i)
+         tapply(paths[[i]]["nested", ], sleeve_of(colnames(Re)), sum)))
+}
+oos_stats <- function(r) {
+  n  <- length(r)
+  ar <- prod(1 + r)^(12 / n) - 1
+  af <- prod(1 + rf_oos)^(12 / n) - 1
+  v  <- stats::sd(r) * sqrt(12)
+  c(ann_return = ar, ann_vol = v, sharpe = (ar - af) / v)
+}
+race60  <- race(60L)
+stats60 <- t(apply(race60$ret, 2, oos_stats))
+```
+
+#### Exercise 1
+
+`race()` reads the partition from `sleeves` and `same`, so the currency
+hierarchy is a matter of replacing those two objects, running the race, and
+putting the class partition back.
+
+```{r}
+#| label: sol-15-ex1
+currency_of <- function(a) sub("_.*$", "", a)              # US, UK, EU, CH, JP, GLOBAL
+class_partition <- list(sleeves = sleeves, same = same)
+sleeves <- split(colnames(Re), currency_of(colnames(Re)))
+same    <- outer(currency_of(colnames(Re)), currency_of(colnames(Re)), "==")
+stopifnot(setequal(unlist(sleeves), colnames(Re)), length(sleeves) == 6L)
+race60_ccy  <- race(60L)
+stats60_ccy <- t(apply(race60_ccy$ret, 2, oos_stats))
+sleeves <- class_partition$sleeves; same <- class_partition$same
+stopifnot(identical(names(sleeves), c("commodity", "credit", "equity", "government")),
+          identical(race60_ccy$ret[, "flat"], race60$ret[, "flat"]))  # flat ignores the partition
+
+ex1 <- rbind(flat                       = stats60["flat", ],
+             `nested, class sleeves`    = stats60["nested", ],
+             `nested, currency sleeves` = stats60_ccy["nested", ],
+             `block-diagonal, class`    = stats60["block-diagonal", ],
+             `block-diagonal, currency` = stats60_ccy["block-diagonal", ],
+             `equal weight`             = stats60["equal weight", ])
+# What the prose states: the currency hierarchy has the higher Sharpe ratio and
+# return but not the lower volatility, so it does not dominate; flat dominates both.
+stopifnot(stats60_ccy["nested", "sharpe"]     > stats60["nested", "sharpe"],
+          stats60_ccy["nested", "ann_return"] > stats60["nested", "ann_return"],
+          stats60_ccy["nested", "ann_vol"]    > stats60["nested", "ann_vol"],
+          all(stats60["flat", "ann_return"] > ex1[c(2, 3), "ann_return"]),
+          all(stats60["flat", "ann_vol"]    < ex1[c(2, 3), "ann_vol"]))
+round(ex1, 4)
+```
+
+The currency hierarchy is the more efficient of the two without dominating
+the class hierarchy: a Sharpe ratio of
+`r sprintf("%.3f", stats60_ccy["nested", "sharpe"])` against
+`r sprintf("%.3f", stats60["nested", "sharpe"])`, earned on the higher return
+(`r sprintf("%.2f%%", 100 * stats60_ccy["nested", "ann_return"])` against
+`r sprintf("%.2f%%", 100 * stats60["nested", "ann_return"])`) at a slightly
+higher volatility (`r sprintf("%.2f%%", 100 * stats60_ccy["nested", "ann_vol"])`
+against `r sprintf("%.2f%%", 100 * stats60["nested", "ann_vol"])`). Neither
+dominates the flat construction, which has both the higher return,
+`r sprintf("%.2f%%", 100 * stats60["flat", "ann_return"])`, and the lower
+volatility, `r sprintf("%.2f%%", 100 * stats60["flat", "ann_vol"])`. The reason
+the currency partition does better is the one
+@sec-15-hierarchical-allocation-application gave for the class partition doing
+badly: stage 1 of a currency sleeve sees its own country's equity against its
+own country's government bond, which is exactly the entry the class partition
+discards. What the currency partition discards
+instead, the cross-country entries, is recovered in coarse form by a six-by-six
+$\boldsymbol{\Omega}$, and the gap to the flat line is what that compression
+costs. The partition the tree of the hierarchical-risk-parity box found in the
+data is more efficient than the one the mandate asserted, and the flat problem
+dominates both, which is the chapter's verdict again: on sixteen classes and sixty months the
+cross-block covariances are information. The government sleeve still receives
+`r sprintf("%.0f%%", 100 * colMeans(t(race60_ccy$sleeve_budget))[["government"]])`
+of the currency-nested portfolio on average, so the hierarchy changed what
+stage 1 could see, not what a minimum-variance top level buys.
+
+#### Exercise 2
+
+With inverse-variance budgets at the top, @eq-15-identity says the nested
+portfolio *is* the flat portfolio on $\boldsymbol{\Sigma}_{\text{B}}$, so the
+check needs only the two lines that are supposed to coincide.
+
+```{r}
+#| label: sol-15-ex2
+iv_line <- function(W) {                 # race() with the top-level step replaced
+  paths <- lapply(oos, function(t) {
+    X  <- Xm[(t - W):(t - 1), ]; Sw <- stats::cov(X)
+    v  <- within_gmv(Sw, sleeves)
+    s2 <- vapply(names(v), function(k)
+      as.numeric(t(v[[k]]) %*% Sw[sleeves[[k]], sleeves[[k]]] %*% v[[k]]), numeric(1))
+    Sb <- Sw; Sb[!same] <- 0
+    list(iv = unroll((1 / s2) / sum(1 / s2), v), bd = gmv_qp(Sb))
+  })
+  list(max_gap = max(vapply(paths, function(p) max(abs(p$iv - p$bd)), numeric(1))),
+       ret = vapply(seq_along(oos), function(i) sum(paths[[i]]$iv * Rm[oos[i], ]), numeric(1)))
+}
+windows <- c(36L, 60L, 120L)
+iv <- lapply(windows, iv_line); names(iv) <- windows
+gaps <- vapply(iv, `[[`, numeric(1), "max_gap")
+stopifnot(all(gaps < 1e-10),
+          max(abs(iv[["60"]]$ret - race60$ret[, "block-diagonal"])) < 1e-10)
+signif(gaps, 2)
+c(inverse_variance = oos_stats(iv[["60"]]$ret)[["sharpe"]],
+  block_diagonal   = stats60["block-diagonal", "sharpe"])
+```
+
+The largest discrepancy in any rolling window, at any of the three estimation
+windows, is `r sprintf("%.1e", max(gaps))`, and the return line at sixty months
+is the block-diagonal line of @tbl-15-oos to the same precision. The
+difference between the nested and block-diagonal rows of that table, which is
+`r sprintf("%.3f", stats60["nested", "sharpe"] - stats60["block-diagonal", "sharpe"])`
+of Sharpe ratio at sixty months, therefore measures exactly one thing: the
+out-of-sample value of the $K(K-1)/2 = `r choose(length(sleeves), 2)`$
+cross-sleeve covariances that stage 2 carries in $\boldsymbol{\Omega}$, because
+the two constructions share stage 1, share the sleeve variances, and differ in
+nothing else.
+
+#### Exercise 3
+
+```{r}
+#| label: sol-15-ex3
+hc_c <- hclust(stats::as.dist(D), method = "complete")
+cl4  <- cutree(hc_c, k = 4)
+stopifnot(identical(names(cl4), colnames(Re)))
+xt <- table(cluster = cl4, sleeve = sleeve_of(names(cl4)))
+xt
+
+pure <- sum(apply(xt, 1, function(r) sum(r > 0) == 1L))
+equity_alone <- length(unique(cl4[sleeves$equity])) == 1L &&
+  sum(cl4 == cl4[["US_equity"]]) == length(sleeves$equity)
+stopifnot(identical(cl4[["JP_government"]], cl4[["JP_credit"]]),
+          identical(cl4[["US_government"]], cl4[["US_credit"]]),
+          cl4[["JP_government"]] != cl4[["US_government"]],
+          length(unique(cl4[c(paste0(c("CH", "EU", "UK"), "_government"),
+                              paste0(c("CH", "EU", "UK"), "_credit"),
+                              "GLOBAL_commodity")])) == 1L)
+w_hrp_c <- hrp(S, colnames(Re)[hc_c$order])
+sizes_single   <- sort(as.integer(table(cutree(hc, k = 4))), decreasing = TRUE)
+sizes_complete <- sort(as.integer(rowSums(xt)), decreasing = TRUE)
+stopifnot(sizes_single[1] > sizes_complete[1],          # single linkage chains
+          eff_bets(w_hrp_c) > eff_bets(w_hrp))
+c(pure_clusters = pure, equity_sleeve_recovered = equity_alone,
+  largest_cluster_single_linkage = sizes_single[1],
+  top_weight_single = max(w_hrp), top_weight_complete = max(w_hrp_c),
+  bets_single = eff_bets(w_hrp), bets_complete = eff_bets(w_hrp_c))
+```
+
+No. Of the four clusters `r c("none", "one", "two", "three", "four")[pure + 1L]`
+is pure: the five equity series form a cluster of their own, and that is the
+only sleeve the tree recovers. The
+fixed-income half is cut by currency, as the single-linkage order in
+@sec-15-hierarchical-allocation-theory already suggested: the two Japanese
+bond series are a cluster of `r sum(cl4 == cl4[["JP_government"]])`, the two
+United States bond series another, and the
+`r sum(cl4 == cl4[["UK_government"]]) - 1L` remaining bond series of Switzerland,
+the euro area and the United Kingdom share the fourth cluster with the
+commodity. Complete linkage does change the picture in one respect: single
+linkage cut at four clusters gives one cluster of
+`r sizes_single[1]` series and leaves `r sum(sizes_single[-1])` for the other
+three (of `r paste(sizes_single[-1], collapse = ", ")`), the chaining
+single linkage is prone to and the reason @raffinot2018 compares linkages at
+all, whereas complete linkage produces groups of
+`r paste(sizes_complete, collapse = ", ")`. The allocation it produces is more spread, with
+`r sprintf("%.1f", eff_bets(w_hrp_c))` effective positions against
+`r sprintf("%.1f", eff_bets(w_hrp))`, but still puts
+`r sprintf("%.0f%%", 100 * max(w_hrp_c))` in `r names(which.max(w_hrp_c))`,
+because the linkage changes the order of the list and not the inverse-variance
+rule that bisects it.
+
+#### Exercise 4
+
+```{r}
+#| label: sol-15-ex4
+backfill <- function(W) {
+  bh      <- sapply(three, proxy_by_hand, W = W)
+  kept    <- gmv_qp(stats::cov(bh))                  # the package's top level
+  dropped <- gmv_qp(stats::cov(bh[-(1:W), ]))        # without the back-filled months
+  tibble::tibble(window = W, backfilled_share = W / nrow(bh),
+                 max_move = max(abs(kept - dropped)),
+                 government_kept = kept[["government"]],
+                 government_dropped = dropped[["government"]],
+                 vol_backfilled = stats::sd(bh[1:W, "government"]) * sqrt(12),
+                 vol_rolling    = stats::sd(bh[-(1:W), "government"]) * sqrt(12))
+}
+bf <- dplyr::bind_rows(lapply(c(36L, 60L, 120L), backfill))
+stopifnot(abs(bf$government_kept[bf$window == 60L] - b_hand[["government"]]) < 1e-12,
+          all(diff(bf$max_move) > 0),                         # the longer the window, the larger the move
+          all(bf$government_kept < bf$government_dropped),    # back-fill moves budget away from government
+          all(bf$vol_backfilled > bf$vol_rolling))
+bf |>
+  dplyr::transmute(window,
+                   `back-filled share`   = sprintf("%.0f%%", 100 * backfilled_share),
+                   `largest move`        = sprintf("%.2f pp", 100 * max_move),
+                   `government, kept`    = sprintf("%.1f%%", 100 * government_kept),
+                   `government, dropped` = sprintf("%.1f%%", 100 * government_dropped),
+                   `sleeve vol, back-filled` = sprintf("%.1f%%", 100 * vol_backfilled),
+                   `sleeve vol, rolling`     = sprintf("%.1f%%", 100 * vol_rolling)) |>
+  kable(align = "rrrrrrr")
+```
+
+The back-fill matters most at one hundred and twenty months, where dropping it
+moves a top-level weight by up to
+`r sprintf("%.1f", 100 * bf$max_move[bf$window == 120L])` percentage points,
+against `r sprintf("%.1f", 100 * bf$max_move[bf$window == 60L])` at sixty and
+`r sprintf("%.1f", 100 * bf$max_move[bf$window == 36L])` at thirty-six. The
+move is proportional to the share of the history that is back-filled,
+`r sprintf("%.0f%%", 100 * bf$backfilled_share[bf$window == 36L])`,
+`r sprintf("%.0f%%", 100 * bf$backfilled_share[bf$window == 60L])` and
+`r sprintf("%.0f%%", 100 * bf$backfilled_share[bf$window == 120L])` of the
+sample: the ratio of the one to the other is between
+`r sprintf("%.2f", min(bf$max_move / bf$backfilled_share))` and
+`r sprintf("%.2f", max(bf$max_move / bf$backfilled_share))` at every window.
+The direction is the same each time, budget moving from the government sleeve
+to equity when the back-fill is kept, and the reason is what the back-filled
+months contain. They are an equally weighted, buy-and-hold basket of five
+unhedged government series, whose volatility is
+`r sprintf("%.1f%%", 100 * bf$vol_backfilled[bf$window == 120L])` a year
+against `r sprintf("%.1f%%", 100 * bf$vol_rolling[bf$window == 120L])` for the
+months the rolling minimum-variance sleeve actually ran, so every back-filled
+month reports a more volatile government sleeve than the one the manager holds,
+and the top level believes it in proportion to how many such months it is
+shown. The longer the training period the package is given, the more of the
+history it estimates the policy on is a portfolio nobody chose.

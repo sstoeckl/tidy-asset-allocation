@@ -1,0 +1,260 @@
+### Chapter 27: Decision-Aware Forecasting {.unnumbered}
+
+```{r}
+#| label: sol-27-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+N <- ncol(Re); Tn <- nrow(Re); dates <- zoo::index(R)
+rf_by_month <- setNames(rf, as.character(dates))
+mu <- colMeans(Re); S <- stats::cov(Re)
+gamma <- 5
+oos <- seq.int(121L, Tn)
+
+# The chapter's helpers, repeated so that this fragment runs on its own.
+correct_mean <- function(R, target = c("grand", "zero"), c = NULL) {
+  target <- match.arg(target)
+  X <- zoo::coredata(R); T <- nrow(X); N <- ncol(X)
+  mu <- colMeans(X); S <- stats::cov(X)
+  r   <- if (target == "grand") 1L else 0L
+  Pmu <- if (target == "grand") rep(mean(mu), N) else rep(0, N)
+  d   <- mu - Pmu
+  q   <- as.numeric(t(d) %*% solve(S, d))
+  if (is.null(c)) c <- (N - r - 2) * (T - 1) / (T - N + 2)
+  h   <- max(1 - c / (T * q), 0)
+  list(mu = setNames(Pmu + h * d, colnames(X)), factor = h, c = c, q = q, N = N, T = T)
+}
+gmv_qp <- function(S) {
+  n <- ncol(S)
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(rep(1, n), diag(n)), bvec = c(1, rep(0, n)), meq = 1)
+  w <- pmax(sol$solution, 0)
+  setNames(w / sum(w), colnames(S))
+}
+tan_qp <- function(mu, S) {
+  n <- length(mu)
+  if (max(mu) <= 0) return(structure(gmv_qp(S), fallback = TRUE))
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(mu * 1e2, diag(n)), bvec = c(1, rep(0, n)), meq = 1)
+  y <- pmax(sol$solution, 0)
+  structure(setNames(y / sum(y), names(mu)), fallback = FALSE)
+}
+sharpe_realized <- function(r, rf) {
+  n <- length(r)
+  (prod(1 + r)^(12 / n) - prod(1 + rf)^(12 / n)) / (stats::sd(r) * sqrt(12))
+}
+ce_annual <- function(e) 12 * mean(e) - gamma / 2 * 12 * stats::var(e)
+
+# A rolling sixty-month tangency backtest on a supplied estimator of the mean.
+roll_tangency <- function(mean_fun, win = 60L) {
+  out <- t(vapply(oos, function(m) {
+    X <- Re[(m - win):(m - 1L), ]; V <- stats::cov(zoo::coredata(X))
+    est <- mean_fun(X)
+    w <- tan_qp(est$mu, V); stopifnot(identical(names(w), colnames(Re)))
+    c(total = sum(w * zoo::coredata(R)[m, ]), factor = est$factor)
+  }, numeric(2)))
+  list(sharpe = sharpe_realized(out[, "total"], rf_by_month[as.character(dates[oos])]),
+       factor = out[, "factor"])
+}
+```
+
+#### Exercise 1
+
+With the zero target the corrected mean is a positive multiple of the sample
+mean whenever the factor is positive, and the long-only tangency problem is
+invariant to a positive rescaling of the mean, so the weights, and hence the
+realized returns, coincide month by month. On windows where the factor is
+zero the corrected mean is the zero vector, `tan_qp()` falls back to minimum
+variance, and the two rules part company.
+
+```{r}
+#| label: sol-27-ex1
+sample_rule <- roll_tangency(function(X) list(mu = colMeans(zoo::coredata(X)), factor = 1))
+zero_rule   <- roll_tangency(function(X) correct_mean(X, "zero"))
+same_month  <- zero_rule$factor > 0
+# Where the factor is positive the two rules hold the same portfolio; recompute
+# the sample rule on those months only and compare.
+sub_sharpe <- function(fun) {
+  r <- vapply(oos[same_month], function(m) {
+    X <- Re[(m - 60L):(m - 1L), ]; V <- stats::cov(zoo::coredata(X))
+    sum(tan_qp(fun(X)$mu, V) * zoo::coredata(R)[m, ])
+  }, numeric(1))
+  sharpe_realized(r, rf_by_month[as.character(dates[oos[same_month]])])
+}
+stopifnot(all.equal(sub_sharpe(function(X) list(mu = colMeans(zoo::coredata(X)))),
+                    sub_sharpe(function(X) correct_mean(X, "zero"))))
+c(months_factor_zero = sum(!same_month), share = mean(!same_month),
+  sharpe_sample = sample_rule$sharpe, sharpe_zero_target = zero_rule$sharpe)
+```
+
+On the `r sum(same_month)` months with a positive factor the two rules earn
+identical returns, which the assertion confirms. On the remaining
+`r sum(!same_month)` months the zero-target rule holds minimum variance, and
+over the full period its Sharpe ratio is
+`r sprintf("%.3f", zero_rule$sharpe)` against
+`r sprintf("%.3f", sample_rule$sharpe)` for the sample mean: the entire
+difference comes from the months on which the correction gave up on the mean
+altogether.
+
+```{r}
+#| label: sol-27-ex1b
+unc <- t(vapply(oos, function(m) {
+  X <- Re[(m - 60L):(m - 1L), ]; Xm <- zoo::coredata(X); V <- stats::cov(Xm)
+  ms <- list(sample = colMeans(Xm), zero = correct_mean(X, "zero")$mu, grand = correct_mean(X, "grand")$mu)
+  vapply(ms, function(mu_) sum(solve(V, mu_) / gamma * zoo::coredata(Re)[m, ]), numeric(1))
+}, numeric(3)))
+lev <- mean(vapply(oos, function(m) {
+  Xm <- zoo::coredata(Re[(m - 60L):(m - 1L), ]); sum(solve(stats::cov(Xm), colMeans(Xm))) / gamma
+}, numeric(1)))
+ce_unc <- apply(unc, 2, ce_annual)
+stopifnot(all(ce_unc < 0), ce_unc[["zero"]] > ce_unc[["sample"]], ce_unc[["grand"]] > ce_unc[["sample"]])
+round(c(leverage_sample = lev, ce_unc), 3)
+```
+
+The unconstrained plug-in position on the sample mean levers the sixteen
+classes `r sprintf("%.1f", lev)` times on average and earns a certainty
+equivalent of `r sprintf("%.0f%%", 100 * ce_unc[["sample"]])` a year, worse
+than the bill by a wide margin, as @eq-08-kz predicts for $T = 60$ and
+$N = 16$. Both corrections cut the loss, to
+`r sprintf("%.0f%%", 100 * ce_unc[["zero"]])` with the zero target and
+`r sprintf("%.0f%%", 100 * ce_unc[["grand"]])` with the grand mean, and
+neither reaches zero: the correction lowers the certainty-equivalent loss, as
+@eq-27-risk says, and leaves the covariance channel of @eq-08-kz, the Wishart
+factors that make the position so long, untouched.
+
+#### Exercise 2
+
+```{r}
+#| label: sol-27-ex2
+set.seed(1602)
+L <- chol(S); Tm <- 60L
+c_f <- (N - 3) * (Tm - 1) / (Tm - N + 2)
+cs  <- c(half = c_f / 2, c_f = c_f, one_and_half = 1.5 * c_f, two_and_half = 2.5 * c_f)
+rafe2 <- function(m_hat) as.numeric(t(m_hat - mu) %*% solve(S, m_hat - mu))
+mc <- vapply(seq_len(2000L), function(b) {
+  X <- xts::xts(matrix(rnorm(Tm * N), Tm) %*% L + matrix(mu, Tm, N, byrow = TRUE),
+                order.by = dates[seq_len(Tm)])
+  colnames(X) <- colnames(Re)
+  vapply(cs, function(cc) rafe2(correct_mean(X, c = cc)$mu), numeric(1))
+}, numeric(4))
+risk <- rowMeans(mc)
+stopifnot(risk[["c_f"]] < N / Tm, risk[["half"]] < N / Tm, risk[["one_and_half"]] < N / Tm)
+round(c(N_over_T = N / Tm, risk), 4)
+
+backtest <- vapply(cs, function(cc) roll_tangency(function(X) correct_mean(X, c = cc))$sharpe, numeric(1))
+round(backtest, 3)
+```
+
+The interval of @eq-27-constant is $(0, 2c_f)$, so the first three constants
+lie inside it and the fourth outside. In the simulation the three inside beat
+$N/T = `r sprintf("%.3f", N / Tm)`$ and the one at $2.5\,c_f$ gives
+`r sprintf("%.3f", risk[["two_and_half"]])`,
+`r if (risk[["two_and_half"]] > N / Tm) "above" else "still below"` the sample
+mean's risk; the positive part is why a constant outside the interval
+`r if (risk[["two_and_half"]] > N / Tm) "still does not do much worse than the theorem's unclamped version would" else "does not do the damage the unclamped formula predicts"`,
+because once $c/(T\hat{q})$ exceeds one the factor is held at zero rather
+than turning negative. In the backtest the Sharpe ratio of the tangency rule
+`r if (all(diff(backtest) >= 0)) "rises monotonically" else "does not move monotonically"`
+with $c$, from `r sprintf("%.3f", backtest[["half"]])` to
+`r sprintf("%.3f", backtest[["two_and_half"]])`: a larger constant shrinks
+harder, more windows collapse onto minimum variance, and on this market
+minimum variance is the better rule, so the Sharpe ratio rewards shrinkage
+beyond the risk-minimizing constant. The two criteria disagree because the
+theorem minimizes the risk of the mean while the backtest scores a long-only
+rule against a rival that uses no mean.
+
+#### Exercise 3
+
+```{r}
+#| label: sol-27-ex3
+cv <- sim_curve_weekly |>
+  dplyr::filter(series == "US_Slope") |> dplyr::arrange(date)
+i_last <- findInterval(dates, cv$date)
+term_lag <- xts::lag.xts(xts::xts(-cv$value[i_last], order.by = dates), 1)
+F_term <- vapply(colnames(Re), function(s) {
+  y <- as.numeric(Re[, s]); x <- as.numeric(term_lag)
+  vapply(oos, function(m) {
+    tr <- which(!is.na(x) & seq_len(Tn) < m)
+    b <- stats::lm.fit(cbind(1, x[tr]), y[tr])$coefficients
+    unname(b[1] + b[2] * x[m])
+  }, numeric(1))
+}, numeric(length(oos)))
+dimnames(F_term) <- list(as.character(dates[oos]), colnames(Re))
+vol60 <- zoo::rollapply(Re, 60, stats::sd, align = "right", fill = NA)
+cost_rate <- pm_costs_default()[sub(".*_", "", colnames(Re))]; names(cost_rate) <- colnames(Re)
+w_policy <- setNames(rep(1 / N, N), colnames(Re))
+
+run_cells <- function(band) {
+  kappa <- band / (0.5 / sqrt(12))
+  tilt_from <- function(reduce) {
+    W <- t(vapply(seq_along(oos), function(i) {
+      m <- oos[i]; s <- F_term[i, ] / as.numeric(vol60[m - 1L, ]); s <- reduce(s - mean(s))
+      tl <- pmin(pmax(kappa * s, -band), band)
+      w <- w_policy + tl - mean(tl); w <- pmax(w, 0); w / sum(w)
+    }, numeric(N)))
+    dimnames(W) <- list(as.character(dates[oos]), colnames(Re)); W
+  }
+  steps3 <- function(s) stats::ave(s, ceiling(rank(s, ties.method = "first") * 3 / N))
+  sign_only <- function(s) { g <- ceiling(rank(s, ties.method = "first") * 3 / N)
+    (band / kappa) * (as.numeric(g == 3L) - as.numeric(g == 1L)) }
+  cells <- list(every_magnitude = tilt_from(identity), three_groups = tilt_from(steps3),
+                sign_only = tilt_from(sign_only), equal_weight = tilt_from(function(s) s * 0))
+  t(vapply(cells, function(W) {
+    Rm <- zoo::coredata(R)[oos, ]; Em <- zoo::coredata(Re)[oos, ]
+    r <- rowSums(W * Rm); e <- rowSums(W * Em)
+    drifted <- W * (1 + Rm) / (1 + r)
+    trade <- abs(W[-1, ] - drifted[-nrow(W), ]); cost <- c(as.numeric(trade %*% cost_rate), 0)
+    c(sharpe = sharpe_realized(r, rf_by_month[as.character(dates[oos])]),
+      ce_net = ce_annual(e - cost), turnover = 12 * mean(c(rowSums(trade) / 2, 0)))
+  }, numeric(3)))
+}
+narrow <- run_cells(0.5 / N); wide <- run_cells(1 / N)
+spread <- function(x) diff(range(x[c("every_magnitude", "three_groups", "sign_only"), "sharpe"]))
+round(cbind(narrow, wide), 4)
+c(spread_narrow = spread(narrow), spread_wide = spread(wide))
+```
+
+Doubling the band roughly doubles every tilt, and the gain over equal
+weighting grows with it, but the spread across the three forecast cells goes
+from `r sprintf("%.3f", spread(narrow))` to
+`r sprintf("%.3f", spread(wide))` in Sharpe ratio, which
+`r if (spread(wide) > 2 * spread(narrow)) "is a visible widening" else "is still inside the noise of a single Sharpe ratio"`.
+The sign cell `r if (wide["sign_only", "ce_net"] >= wide["every_magnitude", "ce_net"] - 5e-4) "still matches" else "now falls short of"`
+the full vector after costs at the wider band, with turnover of
+`r sprintf("%.0f%%", 100 * wide["sign_only", "turnover"])` against
+`r sprintf("%.0f%%", 100 * wide["every_magnitude", "turnover"])`. What the
+exercise shows is that the value of the term spread on these sixteen series
+is set by how far the forecast is allowed to move the weights, the length of
+the position in the language of @sec-27-decision-aware-forecasting-theory,
+far more than by how finely its cross-section is resolved.
+
+#### Exercise 4
+
+```{r}
+#| label: sol-27-ex4
+V60 <- zoo::coredata(vol60)[oos - 1L, ]; Y <- zoo::coredata(Re)[oos, ]
+ic_month <- vapply(seq_along(oos), function(i)
+  stats::cor(F_term[i, ] / V60[i, ], Y[i, ] / V60[i, ], method = "spearman"), numeric(1))
+# From the second out-of-sample year on, the trailing mean of the realized
+# monthly coefficients over the months already forecast.
+ic_trail <- c(rep(NA_real_, 12L), vapply(13:length(oos), function(i) mean(ic_month[seq_len(i - 1L)]), numeric(1)))
+G_trail  <- (2 * N * (seq_along(oos) - 1L) * pmax(ic_trail, 0)^2 / (1 - pmax(ic_trail, 0)^2))^(1 / 3)
+G_trail  <- pmax(1L, pmin(N %/% 2L, as.integer(round(G_trail))))
+table(G_trail[-(1:12)])
+c(share_one_group = mean(G_trail[-(1:12)] == 1L), mean_trailing_ic = mean(ic_trail, na.rm = TRUE))
+```
+
+Measured on the forecasts actually made, the trailing information coefficient
+averages `r sprintf("%.3f", mean(ic_trail, na.rm = TRUE))`, and the rule
+holds $1/N$, one group, in
+`r sprintf("%.0f%%", 100 * mean(G_trail[-(1:12)] == 1L))` of the months from
+the second out-of-sample year on, with the rest at
+`r paste(sort(unique(G_trail[-(1:12)][G_trail[-(1:12)] > 1L])), collapse = " or ")`
+groups. The number read from fitted values in the chapter never fell below
+three. A rule that chooses its granularity from the data is only as good as
+the number it reads, and an in-sample fit overstates ranking ability for the
+same reason an in-sample $R^2$ overstates predictability in
+@sec-16-signals-and-forecasts-theory.

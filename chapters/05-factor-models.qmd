@@ -1,0 +1,743 @@
+---
+title: "Factor Models and Beta Estimation"
+metadata:
+  pagetitle: "Factor Models and Beta Estimation"
+  description-meta: "Estimating alphas, betas and factor loadings in R, and measuring how much of the resulting explanation survives inference."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+
+ann_ret <- function(x, p = 12) prod(1 + x)^(p / length(x)) - 1
+ann_vol <- function(x, p = 12) stats::sd(x) * sqrt(p)
+```
+
+@sec-04-descriptive-analysis-application described the market one series at a
+time. This chapter asks what the series have in common. That question has a
+canonical answer, the single-factor model of @sharpe1964, @lintner1965 and
+@black1972, in which an asset's expected excess return is proportional to its
+covariance with the market. The regression form of it, due to @jensen1968, is
+what every risk report still prints: a beta that is the input to a hedge, and an
+alpha that is the claim an active manager makes.
+
+We first set out the model and what its components mean, then estimate it on
+this market, and then examine how much of the resulting explanation survives
+being measured properly. The finding worth stating in advance is that most of it
+does not. Outside equity the typical beta changes sign in about a third of all
+estimation windows, an apparent asymmetry between rising and falling markets
+survives inference in two cases out of sixteen, and a factor that appears to
+add explanatory power turns out to be sorting on something other than its name.
+
+## The Single-Factor Model {#sec-05-factor-models-theory}
+
+Write $r_{it}$ for the return on asset $i$ in period $t$, $r_{ft}$ for the
+risk-free rate, and $r_{mt}$ for the return on the market. Returns enter in
+excess of the bill throughout, for the reasons set out in
+@sec-03-return-risk-and-the-investor-theory. The regression is
+
+$$
+r_{it} - r_{ft} = \alpha_i + \beta_i\left(r_{mt} - r_{ft}\right) + \varepsilon_{it},
+\qquad
+\mathbb{E}[\varepsilon_{it}] = 0,
+\quad
+\operatorname{Cov}(\varepsilon_{it}, r_{mt}) = 0,
+$$ {#eq-05-capm}
+
+with the population slope
+
+$$
+\beta_i = \frac{\operatorname{Cov}(r_i, r_m)}{\operatorname{Var}(r_m)} .
+$$ {#eq-05-beta}
+
+Under the asset pricing theory, $\alpha_i = 0$ for every asset. Under the
+regression read as a statistical description, $\alpha_i$ is whatever the market
+does not account for, and @eq-05-capm splits the variance of each asset into a
+part the market explains and a part it does not:
+
+$$
+\underbrace{\operatorname{Var}(r_i)}_{\text{total}}
+= \underbrace{\beta_i^2 \operatorname{Var}(r_m)}_{\text{systematic}}
++ \underbrace{\operatorname{Var}(\varepsilon_i)}_{\text{idiosyncratic}},
+\qquad
+R^2_i = \frac{\beta_i^2\operatorname{Var}(r_m)}{\operatorname{Var}(r_i)} .
+$$ {#eq-05-variance-split}
+
+The $R^2$ is therefore not a goodness-of-fit statistic in the usual decorative
+sense. It is the share of an asset's risk that the model claims to describe, and
+an asset with a low $R^2$ is one the model has nothing to say about.
+
+Two extensions matter here. The first allows the slope to differ in rising and
+falling markets, in the spirit of the lower partial moment framework of
+@bawa1977 and the downside betas of @ang2006:
+
+$$
+r_{it} - r_{ft} = \alpha_i + \beta_i\,\tilde{r}_{mt}
+  + \gamma_i\,\tilde{r}_{mt}\mathbf{1}\{\tilde{r}_{mt} < 0\} + \varepsilon_{it},
+$$ {#eq-05-asymmetric}
+
+where $\tilde{r}_{mt} = r_{mt} - r_{ft}$, so that $\beta_i$ is the beta in up
+markets and $\beta_i + \gamma_i$ the beta in down markets. The second allows the
+slope to move over time, which is the conditional CAPM of @ferson1991 and
+@jagannathan1996 and which we approach here descriptively, through rolling
+windows.
+
+### Inference is where these models are usually lost
+
+Monthly returns are serially dependent and heteroskedastic, so the textbook
+standard error of an ordinary least squares slope is wrong. Throughout this
+chapter we use the heteroskedasticity and autocorrelation consistent estimator
+of @newey1987, which replaces $\sigma^2(X'X)^{-1}$ with
+
+$$
+(X'X)^{-1}\left(\sum_{j=-L}^{L} w_j \hat{\Gamma}_j\right)(X'X)^{-1},
+\qquad
+w_j = 1 - \frac{|j|}{L+1},
+$$ {#eq-05-neweywest}
+
+where $\hat{\Gamma}_j$ is the sample autocovariance of the score at lag $j$ and
+$L$ the bandwidth, six lags here.
+
+The reason to insist on this is that @eq-05-asymmetric is estimated sixteen
+times, once per series, and any procedure repeated sixteen times will produce
+significant-looking differences whether or not any exist. @harvey2016 make the
+case at scale for the cross-section of expected returns; the same arithmetic
+applies to a table of sixteen betas.
+
+## Implementation {#sec-05-factor-models-implementation}
+
+A factor model needs a factor. The obvious one here is the market, and it has to
+be built rather than assumed. We build it from the instrument universe described
+in @sec-02-notation-and-data-simulated-market, not from the class series, because
+a capitalization weight only exists at instrument level.
+
+```{r}
+#| label: proxy
+returns <- sim_class_returns_monthly
+R  <- as_xts_pm(returns, date, class, return)
+rf <- sim_riskfree_monthly$return
+risky <- colnames(R)
+stopifnot(length(risky) == 16L)
+
+# Capitalization-weighted global equity, from all 123 equity instruments. The
+# weight in month t is the last capitalization observed on or before the end of
+# t-1: a weight an investor could actually have held.
+eq  <- sim_assets$asset_id[sim_assets$asset_class == "equity"]
+Ra  <- as_xts_pm(sim_asset_returns_monthly[sim_asset_returns_monthly$asset %in% eq, ],
+                 date, asset, return)
+cap <- sim_marketcap_weekly[sim_marketcap_weekly$asset %in% eq, ]
+d   <- zoo::index(Ra)
+stopifnot(ncol(Ra) == 123L, identical(d, zoo::index(R)))
+
+W <- t(vapply(seq_along(d), function(i) {
+  cutoff <- if (i == 1) d[1] - 40 else d[i - 1]
+  cc   <- cap[cap$date <= cutoff, ]
+  last <- cc[!duplicated(cc$asset, fromLast = TRUE), ]
+  w <- last$market_cap[match(colnames(Ra), last$asset)]
+  w[is.na(w)] <- 0
+  if (sum(w) == 0) rep(1 / ncol(Ra), ncol(Ra)) else w / sum(w)
+}, numeric(ncol(Ra))))
+
+MKT   <- rowSums(W * zoo::coredata(Ra))
+mkt_e <- MKT - rf
+```
+
+The weights are lagged by one period deliberately. A capitalization weight
+observed at the end of month $t$ is not available for investing during month $t$,
+and using it would give the proxy a return no investor could have earned.
+
+```{r}
+#| label: proxy-composition
+c(annualized = ann_ret(MKT), volatility = ann_vol(MKT))
+
+# Which region is this "global" market, really?
+usm <- sim_assets$region[match(colnames(Ra), sim_assets$asset_id)] == "US"
+us_share <- rowSums(W[, usm])
+c(first = us_share[1], mean = mean(us_share), last = us_share[length(us_share)])
+```
+
+The second line deserves attention before any beta in this chapter is used. The
+proxy is on average `r sprintf("%.0f%%", 100 * mean(us_share))` United States by
+weight and ends the sample at
+`r sprintf("%.0f%%", 100 * us_share[length(us_share)])`. It is global in
+construction and American in effect. Every beta below is largely a beta on the
+United States market, and @roll1977 is the standing reminder that a test of
+@eq-05-capm is a joint test of the model and of whatever proxy stands in for the
+market.
+
+### One factor, sixteen series
+
+```{r}
+#| label: single-factor
+fit1 <- lapply(colnames(R), function(s) {
+  y <- as.numeric(R[, s]) - rf
+  m <- stats::lm(y ~ mkt_e)
+  nw <- sandwich::NeweyWest(m, lag = 6, prewhite = FALSE)
+  tibble::tibble(series = s,
+                 alpha_ann = 12 * stats::coef(m)[1],
+                 alpha_t   = stats::coef(m)[1] / sqrt(nw[1, 1]),
+                 beta      = stats::coef(m)[2],
+                 r2        = summary(m)$r.squared)
+}) |> dplyr::bind_rows()
+```
+
+```{r}
+#| label: tbl-05-single-factor
+#| tbl-cap: "One factor. Alphas are annualized; t-statistics use Newey-West standard errors at six lags."
+#| echo: false
+fit1 |>
+  dplyr::arrange(dplyr::desc(r2)) |>
+  dplyr::mutate(alpha_ann = sprintf("%+.2f%%", 100 * alpha_ann),
+                dplyr::across(c(alpha_t, beta, r2), ~ sprintf("%.3f", .x))) |>
+  knitr::kable(align = "lrrrr",
+               col.names = c("", "alpha", "t(alpha)", "beta", "R²"))
+```
+
+Read @tbl-05-single-factor through @eq-05-variance-split. The model explains
+`r sum(fit1$r2 > 0.5)` series and fails on the rest. Above an $R^2$ of one half
+sit `r paste0("\x60", sort(fit1$series[fit1$r2 > 0.5]), "\x60", collapse = ", ")`.
+`JP_equity` reaches `r sprintf("%.3f", fit1$r2[fit1$series == "JP_equity"])`,
+`r sum(fit1$r2 < 0.10)` of the `r nrow(fit1)` fall below
+`r sprintf("%.2f", 0.10)`, and the extreme is
+`r paste0("\x60", fit1$series[which.min(fit1$r2)], "\x60")` at
+`r sprintf("%.6f", min(fit1$r2))`, a
+regression that accounts for nothing whatsoever.
+
+The median $R^2$ across all `r nrow(fit1)` is
+`r sprintf("%.3f", median(fit1$r2))`. A single-factor model is a model of
+equities that happens to be applied to everything else.
+
+```{r}
+#| label: fig-05-model-fit
+#| fig-cap: "How much of each series the market explains. The four bars above one half are equity blocks; everything else is a regression that has not been told what drives it."
+#| echo: false
+#| fig-asp: 0.55
+stopifnot(sum(fit1$r2 > 0.5) == 4L,                       # the caption says four
+          all(grepl("_equity$", fit1$series[fit1$r2 > 0.5])))
+fit1 |>
+  dplyr::mutate(kind = dplyr::case_when(
+    grepl("_equity$", series)     ~ "equity",
+    grepl("_credit$", series)     ~ "credit",
+    grepl("_government$", series) ~ "government",
+    TRUE                          ~ "commodity")) |>
+  ggplot2::ggplot(ggplot2::aes(stats::reorder(series, r2), r2, fill = kind)) +
+  ggplot2::geom_col(width = 0.72) +
+  ggplot2::geom_hline(yintercept = 0.5, linetype = "22", linewidth = 0.35,
+                      colour = tidyaa_colors[["ink_soft"]]) +
+  ggplot2::coord_flip() +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  ggplot2::scale_fill_manual(values = c(
+    equity = tidyaa_colors[["broken"]], credit = tidyaa_colors[["caution"]],
+    government = tidyaa_colors[["blue"]],
+    commodity = tidyaa_colors[["good"]])) +
+  ggplot2::labs(x = NULL, y = "R² on the market factor", fill = NULL)
+```
+
+```{r}
+#| label: alpha-claims
+#| include: false
+# Which alphas clear a t-statistic of two, and which comes next.
+by_t      <- fit1[order(-abs(fit1$alpha_t)), ]
+sig_alpha <- by_t$series[abs(by_t$alpha_t) > 2]
+stopifnot(identical(sig_alpha, "US_government"), by_t$series[2] == "US_credit")
+```
+
+Of the `r nrow(fit1)` alphas only one clears a t-statistic of two, that of
+`US_government` at
+`r sprintf("%+.2f%%", 100 * fit1$alpha_ann[fit1$series == "US_government"])` a
+year with t = `r sprintf("%.2f", fit1$alpha_t[fit1$series == "US_government"])`.
+`US_credit` comes next, at
+`r sprintf("%+.2f%%", 100 * fit1$alpha_ann[fit1$series == "US_credit"])` with
+t = `r sprintf("%.2f", fit1$alpha_t[fit1$series == "US_credit"])`, and both
+return later. A government bond carrying significant alpha against an equity
+market is not a mispricing. It is the model reporting that it has the wrong
+factors, exactly as @fama1993 argued when adding a term structure and a default
+factor for precisely these assets.
+
+### Splitting the beta, and then testing the split
+
+A single beta assumes @eq-05-beta is the same on the way up and on the way down.
+`PerformanceAnalytics` estimates the two halves of @eq-05-asymmetric in one call.
+
+```{r}
+#| label: conditional-betas
+Rm <- xts::xts(MKT, order.by = d)
+rfx <- xts::xts(rf, order.by = d)
+
+cond <- lapply(colnames(R), function(s) {
+  tibble::tibble(
+    series = s,
+    beta   = PerformanceAnalytics::CAPM.beta(R[, s], Rm, rfx),
+    bull   = PerformanceAnalytics::CAPM.beta.bull(R[, s], Rm, rfx),
+    bear   = PerformanceAnalytics::CAPM.beta.bear(R[, s], Rm, rfx)
+  )
+}) |> dplyr::bind_rows() |>
+  dplyr::mutate(gap = bear - bull)
+
+cond |> dplyr::arrange(gap) |> head(4)
+```
+
+```{r}
+#| label: conditional-claims
+#| include: false
+# The next paragraph reads two opposite signs off this row.
+jp <- cond[cond$series == "JP_government", ]
+stopifnot(jp$bull > 0, jp$bear < 0)
+```
+
+`JP_government` has an unconditional beta of
+`r sprintf("%.4f", jp$beta)`, indistinguishable from zero and the sort of
+number that files a series under uncorrelated and forgets it. It is not
+uncorrelated. It rises with the market when the market rises, at
+`r sprintf("%+.3f", jp$bull)`, and rises against it when the market falls, at
+`r sprintf("%+.3f", jp$bear)`. The single
+number is the average of two opposite behaviors and destroys the only
+interesting property of the series.
+
+Now the step that is usually skipped. An apparent asymmetry has to survive a
+test, because splitting a sample in two and comparing the halves is a machine for
+producing differences.
+
+```{r}
+#| label: asymmetry-test
+asym <- lapply(colnames(R), function(s) {
+  y  <- as.numeric(R[, s]) - rf
+  dn <- as.numeric(mkt_e < 0)
+  m  <- stats::lm(y ~ mkt_e + I(mkt_e * dn))
+  nw <- sandwich::NeweyWest(m, lag = 6, prewhite = FALSE)
+  tibble::tibble(series = s,
+                 gap = stats::coef(m)[3],
+                 t   = stats::coef(m)[3] / sqrt(nw[3, 3]),
+                 p   = 2 * stats::pnorm(-abs(stats::coef(m)[3] / sqrt(nw[3, 3]))))
+}) |> dplyr::bind_rows()
+
+asym |> dplyr::filter(p < 0.05) |> dplyr::arrange(p)
+```
+
+```{r}
+#| label: asymmetry-claims
+#| include: false
+# The opening of the chapter states the count; the text here names who survives.
+survive <- asym$series[asym$p < 0.05]
+stopifnot(length(survive) == 2L, all(grepl("_government$", survive)),
+          "JP_government" %in% survive, !"US_credit" %in% survive)
+```
+
+This is @eq-05-asymmetric with the standard errors of @eq-05-neweywest, and
+`r length(survive)` of `r nrow(asym)` survive, both of them government bonds.
+The Japanese bond asymmetry is
+real, at t = `r sprintf("%.2f", asym$t[asym$series == "JP_government"])`. The
+credit asymmetry, which is the one an allocator would most like to believe in, is
+not: `US_credit` has a gap of
+`r sprintf("%+.3f", asym$gap[asym$series == "US_credit"])` with
+t = `r sprintf("%.2f", asym$t[asym$series == "US_credit"])` and
+p = `r sprintf("%.2f", asym$p[asym$series == "US_credit"])`.
+
+There are `r sum(mkt_e < 0)` down months in this sample. Estimating a separate
+beta on them, for sixteen series, will produce differences whether or not any
+exist. Report the split as a diagnostic; do not build a hedge on it without the
+test.
+
+```{r}
+#| label: fig-05-asymmetric
+#| fig-cap: "Beta when the market rises against beta when it falls. Points below the diagonal fall less than they rise; points above it fall more. Only the filled points survive a Newey-West test of the difference; the rest of the spread is what splitting 372 months into two piles will produce on its own."
+#| echo: false
+#| fig-asp: 0.62
+cond |>
+  dplyr::left_join(dplyr::select(asym, series, p), by = "series") |>
+  dplyr::mutate(sig = p < 0.05) |>
+  ggplot2::ggplot(ggplot2::aes(bull, bear)) +
+  ggplot2::geom_abline(slope = 1, intercept = 0, linetype = "22",
+                       colour = tidyaa_colors[["ink_soft"]], linewidth = 0.35) +
+  ggplot2::geom_hline(yintercept = 0, linewidth = 0.25,
+                      colour = tidyaa_colors[["rule"]]) +
+  ggplot2::geom_point(ggplot2::aes(fill = sig), shape = 21, size = 2.8,
+                      colour = tidyaa_colors[["ink"]], stroke = 0.6) +
+  ggplot2::geom_text(ggplot2::aes(label = series), size = 2.4, hjust = -0.12,
+                     colour = tidyaa_colors[["ink_soft"]]) +
+  ggplot2::scale_fill_manual(values = c(`TRUE` = tidyaa_colors[["broken"]],
+                                        `FALSE` = "white"), guide = "none") +
+  ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0.06, 0.28))) +
+  ggplot2::labs(x = "beta when the market is up", y = "beta when the market is down")
+```
+
+### What a factor is actually sorting on
+
+Size is the second factor everyone reaches for, following @fama1992 and
+@fama1993, and here it is a trap worth walking into deliberately.
+
+```{r}
+#| label: smb
+capW <- W
+reg  <- sim_assets$region[match(colnames(Ra), sim_assets$asset_id)]
+
+# Global sort: bottom half by capitalization minus top half.
+smb_global <- vapply(seq_len(nrow(Ra)), function(i) {
+  w <- capW[i, ]; ok <- w > 0; med <- median(w[ok])
+  mean(zoo::coredata(Ra)[i, ok & w <= med]) - mean(zoo::coredata(Ra)[i, ok & w > med])
+}, numeric(1))
+
+# Region-neutral: rank within each region, then average the five spreads.
+smb_neutral <- vapply(seq_len(nrow(Ra)), function(i) {
+  w <- capW[i, ]
+  mean(vapply(unique(reg), function(g) {
+    j <- reg == g & w > 0; med <- median(w[j])
+    mean(zoo::coredata(Ra)[i, j & w <= med]) - mean(zoo::coredata(Ra)[i, j & w > med])
+  }, numeric(1)))
+}, numeric(1))
+```
+
+Before using either, look at what the global sort placed in each leg.
+
+```{r}
+#| label: smb-legs
+legs <- vapply(seq_len(nrow(Ra)), function(i) {
+  w <- capW[i, ]; ok <- w > 0; med <- median(w[ok])
+  c(big_us   = sum(w[ok & w > med & reg[ok] == "US"]) / sum(w[ok & w > med]),
+    small_us = sum(w[ok & w <= med & reg[ok] == "US"]) / sum(w[ok & w <= med]))
+}, numeric(2))
+round(rowMeans(legs), 3)
+```
+
+The big leg is `r sprintf("%.0f%%", 100 * mean(legs["big_us", ]))` United States.
+The small leg is `r sprintf("%.0f%%", 100 * mean(legs["small_us", ]))`. A global
+capitalization sort in a five-region universe does not sort on size. It sorts on
+region, and since region carries a currency, it sorts on currency too.
+
+The consequence is measurable.
+
+```{r}
+#| label: smb-r2
+med_r2 <- function(f = NULL) {
+  median(vapply(risky, function(s) {
+    y <- as.numeric(R[, s]) - rf
+    summary(if (is.null(f)) stats::lm(y ~ mkt_e) else stats::lm(y ~ mkt_e + f))$r.squared
+  }, numeric(1)))
+}
+c(market_only  = med_r2(),
+  plus_global  = med_r2(smb_global),
+  plus_neutral = med_r2(smb_neutral))
+
+# The premium of each construction, with its Newey-West t-statistic.
+nw_t <- function(x) {
+  m <- stats::lm(x ~ 1)
+  unname(stats::coef(m)[1] / sqrt(sandwich::NeweyWest(m, lag = 6, prewhite = FALSE)[1, 1]))
+}
+c(global_premium  = ann_ret(smb_global),  global_t  = nw_t(smb_global),
+  neutral_premium = ann_ret(smb_neutral), neutral_t = nw_t(smb_neutral),
+  correlation     = cor(smb_global, smb_neutral))
+```
+
+```{r}
+#| label: smb-claims
+#| include: false
+# The two orders the next paragraphs state.
+stopifnot(med_r2(smb_global) > med_r2(smb_neutral), med_r2(smb_neutral) > med_r2(),
+          nw_t(smb_neutral) > 2, nw_t(smb_neutral) > nw_t(smb_global))
+```
+
+Adding the global size factor lifts the median $R^2$ from
+`r sprintf("%.3f", med_r2())` to `r sprintf("%.3f", med_r2(smb_global))`.
+Constructing the same factor region-neutrally lifts it only to
+`r sprintf("%.3f", med_r2(smb_neutral))`, an improvement of
+`r sprintf("%.3f", med_r2(smb_neutral) - med_r2())`. The explanatory power was
+not size. It was the regional composition of the legs.
+
+The premium runs the other way. The region-neutral factor earns
+`r sprintf("%.1f%%", 100 * ann_ret(smb_neutral))` a year with a t-statistic of
+`r sprintf("%.2f", nw_t(smb_neutral))`, the global sort
+`r sprintf("%.1f%%", 100 * ann_ret(smb_global))` with
+`r sprintf("%.2f", nw_t(smb_global))`: the construction that explains less
+variance carries the more reliable premium. The lesson is not
+that size does not exist. It is that a factor is defined by its construction, and
+a sort nobody has inspected is a bet nobody has chosen. @griffin2002 makes the
+empirical case that the size and value factors are country-specific rather than
+global, and @hou2011 reach a similar conclusion on a wider cross-section. A
+practitioner building a global factor without neutralizing the country dimension
+is, on this evidence, building a country factor.
+
+::: {.callout-note}
+## `table.CAPM()` computes most of this chapter in one call
+
+`PerformanceAnalytics::table.CAPM()` returns alpha and beta with their p-values,
+the bull and bear betas, $R^2$, tracking error, the information ratio, Treynor's
+ratio and the appraisal ratio, for as many series as it is handed. Most readers
+compute these one function at a time, and several never learn that the
+conditional betas are in there.
+:::
+
+```{r}
+#| label: table-capm
+PerformanceAnalytics::table.CAPM(R[, c("US_credit", "JP_government", "US_equity")],
+                                 Rm, Rf = rfx)
+```
+
+Use it for the survey and the individual functions for the argument. The table
+reports no standard error on the bull-minus-bear gap, which is the number that
+decides whether the split means anything.
+
+## How Much of This Survives {#sec-05-factor-models-application}
+
+### A beta is a time series
+
+@eq-05-beta is written as though $\beta_i$ were a constant. The conditional asset
+pricing literature starting with @ferson1991 and @jagannathan1996 assumes it is
+not, and a rolling window shows directly how much it moves.
+
+```{r}
+#| label: rolling-betas
+win <- 60L
+roll_beta <- function(s) {
+  y <- as.numeric(R[, s]) - rf
+  zoo::rollapply(cbind(y, mkt_e), win,
+                 function(z) stats::cov(z[, 1], z[, 2]) / stats::var(z[, 2]),
+                 by.column = FALSE, align = "right")
+}
+
+travel <- lapply(risky, function(s) {
+  b <- roll_beta(s)
+  tibble::tibble(series = s,
+                 full = stats::cov(as.numeric(R[, s]) - rf, mkt_e) / stats::var(mkt_e),
+                 min = min(b), max = max(b), travel = diff(range(b)),
+                 sign_flips = mean(sign(b) != sign(stats::cov(as.numeric(R[, s]) - rf, mkt_e))))
+}) |> dplyr::bind_rows() |> dplyr::arrange(dplyr::desc(travel))
+```
+
+```{r}
+#| label: tbl-05-rolling
+#| tbl-cap: "Sixty-month rolling betas against the same proxy. `travel` is the distance from the lowest window to the highest; `sign_flips` is the share of windows whose beta disagrees in sign with the full-sample estimate."
+#| echo: false
+travel |>
+  dplyr::mutate(dplyr::across(c(full, min, max, travel), ~ sprintf("%+.3f", .x)),
+                sign_flips = sprintf("%.0f%%", 100 * sign_flips)) |>
+  knitr::kable(align = "lrrrrr",
+               col.names = c("", "full sample", "lowest", "highest", "travel", "sign flips"))
+```
+
+```{r}
+#| label: rolling-claims
+#| include: false
+# The orders and signs the next two paragraphs, and the opening, state.
+flips  <- stats::setNames(travel$sign_flips, travel$series)
+is_eq  <- grepl("_equity$", names(flips))
+flip_p <- function(x) sprintf("%.0f%%", 100 * x)
+stopifnot(
+  !is_eq[1], abs(travel$full[1]) < 0.5,            # the furthest traveler is a small beta
+  all(flips[is_eq] == 0), all(flips[!is_eq] > 0),  # equity never flips, the rest all do
+  names(which.max(flips)) == "JP_government",
+  travel$series[which.min(abs(travel$full))] == "JP_government",
+  names(which.min(flips[!is_eq])) == "US_government", travel$full[travel$series == "US_government"] < 0,
+  abs(median(flips[!is_eq]) - 1 / 3) < 0.05        # "about a third", in the opening
+)
+```
+
+Two patterns emerge, and the second is the one to carry forward.
+
+The betas that travel furthest are not the largest.
+`r paste0("\x60", travel$series[1], "\x60")` moves
+`r sprintf("%.2f", travel$travel[1])` across the sample, from
+`r sprintf("%+.2f", travel$min[1])` to `r sprintf("%+.2f", travel$max[1])`, while
+`US_equity`, with a beta near one, travels only
+`r sprintf("%.2f", travel$travel[travel$series == "US_equity"])` and never
+changes sign. @blume1971 documented the same regularity in individual stocks:
+extreme betas are the unreliable ones, and they revert.
+
+The largest full-sample beta outside equity is
+`r sprintf("%.2f", max(abs(travel$full[!is_eq])))` in absolute value, and every
+one of the `r sum(!is_eq)` changes sign, the median in
+`r flip_p(median(flips[!is_eq]))` of all windows. `JP_government`, whose beta is
+closest to zero, does so in `r flip_p(flips[["JP_government"]])` and `US_credit`
+in `r flip_p(flips[["US_credit"]])`; `US_government`, at
+`r flip_p(flips[["US_government"]])`, is the one small beta that is reliably
+negative. The five equity series flip in none.
+
+```{r}
+#| label: fig-05-rolling-betas
+#| fig-cap: "Sixty-month rolling betas for six series. The dashed line is the full-sample estimate. An equity beta moves without changing sign; a beta near zero crosses it repeatedly, which means the sign of the hedge it implies is not known."
+#| echo: false
+#| fig-asp: 0.5
+show <- c("US_equity", "EU_equity", "US_credit",
+          "US_government", "JP_government", "GLOBAL_commodity")
+lapply(show, function(s) {
+  b <- roll_beta(s)
+  tibble::tibble(series = s,
+                 date = zoo::index(R)[win:nrow(R)],
+                 beta = as.numeric(b))
+}) |>
+  dplyr::bind_rows() |>
+  dplyr::mutate(series = factor(series, levels = show)) |>
+  ggplot2::ggplot(ggplot2::aes(date, beta)) +
+  ggplot2::geom_hline(yintercept = 0, linewidth = 0.25,
+                      colour = tidyaa_colors[["rule"]]) +
+  ggplot2::geom_hline(data = travel |> dplyr::filter(series %in% show) |>
+                        dplyr::mutate(series = factor(series, levels = show)),
+                      ggplot2::aes(yintercept = full), linetype = "22",
+                      linewidth = 0.35, colour = tidyaa_colors[["broken"]]) +
+  ggplot2::geom_line(colour = tidyaa_colors[["blue"]], linewidth = 0.5) +
+  ggplot2::facet_wrap(~ series, nrow = 2, scales = "free_y") +
+  scale_x_model(by = 10) +
+  ggplot2::labs(y = NULL)
+```
+
+A small beta is not a stable beta. It is a beta whose sign is unknown. That is
+why @sec-08-estimation-error-theory exists, and why a hedge ratio needs an error
+bar before it needs a decimal place.
+
+### Measuring the instability itself
+
+If the moments move, the movement is itself a quantity. A turbulence index
+measures it as the Mahalanobis distance of a period's returns from their recent
+mean, scaled by the covariance structure,
+
+$$
+d_t = \left(\boldsymbol{r}_t - \boldsymbol{\mu}\right)'
+      \boldsymbol{\Sigma}^{-1}
+      \left(\boldsymbol{r}_t - \boldsymbol{\mu}\right),
+$$ {#eq-05-turbulence}
+
+so that an unusual *pattern* of returns counts as turbulent even when no single
+series is extreme. @chow1999 introduced the construction for portfolio work and
+@kritzman2010 developed it as a risk-management signal. The implementation used
+here is @stoeckl-uncertaintymeasures, which is not on CRAN; see
+@sec-93-package-notes.
+
+```{r}
+#| label: turbulence
+library(uncertaintymeasures)
+
+R_risky <- R[, risky]
+turb <- OSturbulence(R_risky, rolling = TRUE, roll.obs = 60)
+```
+
+`OSturbulence()` estimates $\boldsymbol{\mu}$ and $\boldsymbol{\Sigma}$ from data
+strictly before each observation, so the index never sees the month it is
+scoring. An in-sample variant exists, and the gap between them is a clean picture
+of what look-ahead buys.
+
+```{r}
+#| label: turbulence-peaks
+tb  <- as.numeric(turb$turb)
+top <- order(tb, decreasing = TRUE, na.last = NA)[1:5]
+
+# Which of the named episodes, if any, each month belongs to.
+episode_of <- rep("none", length(d))
+for (i in seq_len(nrow(sim_episodes))) {
+  episode_of[in_episode(d, sim_episodes$episode[i])] <- sim_episodes$label[i]
+}
+
+data.frame(month = fmt_model(d[top]), turbulence = round(tb[top], 2),
+           episode = episode_of[top])
+```
+
+```{r}
+#| label: turbulence-claims
+#| include: false
+# The peak lies in the credit crisis, and it is the month chapter 4 found by
+# counting exceedances beyond 2.5 standard deviations.
+peak <- which.max(tb)
+stopifnot(identical(zoo::index(R_risky), d), peak == top[1],
+          in_episode(d[peak], "credit_crisis"),
+          peak == which.max(rowSums(abs(scale(R_risky)) > 2.5)))
+```
+
+The highest reading in the sample is `r fmt_model(d[peak])`, in the
+`r episode_of[peak]`, at `r sprintf("%.2f", tb[peak])`,
+`r sprintf("%.2f", tb[top[1]] / tb[top[2]])` times the next one, and
+`r sum(episode_of[top] == episode_of[peak])` of the `r length(top)` highest
+readings fall in that episode. The peak is the same month
+@sec-04-descriptive-analysis-application identified by counting
+exceedances, arrived at independently, expressed as one number rather than a
+count, and available on the day rather than in hindsight.
+
+The component that makes @eq-05-turbulence more than a volatility measure is the
+ratio of the full distance to the one computed from variances alone.
+
+```{r}
+#| label: correlation-turbulence
+ct <- as.numeric(turb$cturb)
+c(median     = median(ct, na.rm = TRUE),
+  peak_month = ct[peak],
+  max        = max(ct, na.rm = TRUE))
+```
+
+```{r}
+#| label: correlation-turbulence-claims
+#| include: false
+# "Ordinary" below means inside the interquartile range of the ratio.
+stopifnot(ct[peak] > stats::quantile(ct, 0.25, na.rm = TRUE),
+          ct[peak] < stats::quantile(ct, 0.75, na.rm = TRUE))
+```
+
+This isolates how much of a turbulent month is correlations breaking rather than
+volatilities rising, which is the distinction @forbes2002 showed is easy to
+confuse. In the peak month the ratio is `r sprintf("%.2f", ct[peak])` against a
+median of `r sprintf("%.2f", median(ct, na.rm = TRUE))`: the most turbulent
+month of the sample was a month of extreme moves in an ordinary correlation
+structure. @sec-04-descriptive-analysis-application found average pairwise
+correlation higher in the credit crisis than in calm months, but only by
+choosing the windows by hand and knowing the answer first. This is the same
+question asked continuously and without hindsight, and it is what a
+regime-aware allocation in @sec-19-regimes-theory would have to react to.
+
+```{r}
+#| label: fig-05-turbulence
+#| fig-cap: "Out-of-sample turbulence, estimated from a sixty-month trailing window. The first five model years are consumed by the window and are not shown."
+#| echo: false
+#| fig-asp: 0.42
+tibble::tibble(date = zoo::index(R_risky), turbulence = tb) |>
+  dplyr::filter(!is.na(turbulence)) |>
+  ggplot2::ggplot(ggplot2::aes(date, turbulence)) +
+  ggplot2::geom_line(colour = tidyaa_colors[["blue"]], linewidth = 0.5) +
+  scale_x_model() +
+  ggplot2::labs(y = NULL)
+```
+
+## Key Takeaways {.unnumbered}
+
+- The $R^2$ of @eq-05-capm is not decoration. By @eq-05-variance-split it is the
+  share of an asset's risk the model claims to describe, and the median across
+  these sixteen series is `r sprintf("%.2f", median(fit1$r2))`. A one-factor
+  model is an equity model applied to everything else.
+- A market proxy has a composition, and this one is on average
+  `r sprintf("%.0f%%", 100 * mean(us_share))` United States and
+  `r sprintf("%.0f%%", 100 * us_share[length(us_share)])` at the end of the
+  sample. Every beta computed against it is largely a United States beta
+  [@roll1977].
+- Conditional betas are worth computing and are rarely worth believing. Of
+  sixteen asymmetries estimated with @eq-05-asymmetric, `r length(survive)`
+  survive Newey-West inference, and the one an allocator would most want is not
+  among them.
+- A factor is defined by its construction. A global size sort in a multi-region
+  universe puts `r sprintf("%.0f%%", 100 * mean(legs["big_us", ]))` United
+  States in one leg and `r sprintf("%.0f%%", 100 * mean(legs["small_us", ]))` in
+  the other, so it is a region bet wearing a size label [@griffin2002; @hou2011].
+- Betas move. Equity betas do so without changing sign; outside equity the
+  median beta has the wrong sign in `r flip_p(median(flips[!is_eq]))` of all
+  sixty-month windows and the one closest to zero in
+  `r flip_p(flips[["JP_government"]])` [@blume1971].
+- The instability is itself measurable without hindsight. The Mahalanobis
+  turbulence of @eq-05-turbulence picks out `r fmt_model(d[peak])`, in the
+  `r episode_of[peak]`, from a trailing window, and its correlation component
+  separates dependence breaking down from volatility merely rising [@chow1999;
+  @kritzman2010].
+
+## Exercises {.unnumbered}
+
+1. Rebuild the market proxy with equal rather than capitalization weights. Which
+   betas move most, and does the ranking in @tbl-05-rolling survive? Explain what
+   that says about the phrase "the market".
+2. The asymmetry test uses a single interaction term. Replace it with separate
+   regressions on the up and down months, and confirm that the point estimates
+   agree while the standard errors do not. Which is the honest one, and why?
+3. Take the two series with the highest `sign_flips` in @tbl-05-rolling and plot
+   their rolling betas against the turbulence index. Does the beta move because
+   the market is turbulent, or independently of it?
+4. `OSturbulence()` has an `s.k` argument controlling the length of the short
+   window whose mean is compared with the long-run mean. Vary it from 1 to 12 and
+   describe what the index measures at each end.
+5. @harvey2016 argue that a t-statistic of two is too low a bar once many
+   hypotheses have been tested. Sixteen asymmetries were tested here. Apply a
+   Bonferroni correction and a Benjamini-Hochberg correction to the p-values in
+   `asym`, and report how many survive each.

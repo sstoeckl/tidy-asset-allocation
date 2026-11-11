@@ -1,0 +1,71 @@
+# --- R ------------------------------------------------------------------------
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+.Renviron
+
+# --- renv ---------------------------------------------------------------------
+# The lockfile IS tracked; the library and cache are not.
+renv/library/
+renv/local/
+renv/cellar/
+renv/lock/
+renv/python/
+renv/sandbox/
+renv/staging/
+
+# --- quarto -------------------------------------------------------------------
+/_book/
+/.quarto/
+
+# _freeze IS tracked, deliberately: it carries the cached chunk results, which is
+# what lets the server and a laptop render the same book without re-running the
+# expensive chapters. Only the PDF figures are excluded -- they are large,
+# binary, and regenerated on demand.
+/_freeze/**/figure-pdf/
+*_files/
+*.tex
+!assets/**/*.tex
+
+# --- data ---------------------------------------------------------------------
+# Nothing downloaded is committed. The book pins a snapshot date and refetches;
+# see chapter 2. The synthetic fallback dataset IS tracked.
+/data/cache/
+/data/raw/
+*.parquet
+!/data/fallback/*.parquet
+*.RData
+*.rds
+!/data/fallback/*.rds
+
+# --- os / editor --------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+.vscode/
+
+**/*.quarto_ipynb
+
+# Artefacts from rendering a single .qmd directly rather than the book.
+Rplots.pdf
+/chapters/*.html
+/chapters/*_files/
+/index.html
+/site_libs/
+*.rmarkdown
+
+# knitr chunk caches: per-machine, regenerated on demand, and large.
+/chapters/*_cache/
+
+# Render logs. The tables under output/ ARE tracked -- chapters read them so
+# that two chapters quoting the same number cannot drift apart.
+/output/logs/
+
+# Review documents are generated from the cached results and are not sources.
+# The README and the log in review/ ARE tracked.
+/review/*.docx
+
+# knitr caches from a stray knit at the project root
+/cache/

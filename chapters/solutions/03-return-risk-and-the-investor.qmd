@@ -1,0 +1,209 @@
+### Chapter 3: Return, Risk, and the Investor's Problem {.unnumbered}
+
+```{r}
+#| label: sol-03-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+stopifnot(all(sim_riskfree_monthly$date == zoo::index(R)))
+```
+
+#### Exercise 1
+
+The count is the same computation on a different grid. Weekly returns are the
+model's native frequency and the monthly returns are compounded from them, so
+the two panels describe the same path.
+
+```{r}
+#| label: sol-03-ex1
+Rw  <- as_xts_pm(sim_class_returns_weekly, date, class, return)
+# The weekly bill starts one week before the returns do, so it is matched by
+# date rather than subtracted by position.
+rfw <- sim_riskfree_weekly$return[match(zoo::index(Rw), sim_riskfree_weekly$date)]
+stopifnot(!anyNA(rfw), ncol(Rw) == 16L)
+Rew <- Rw - rfw
+
+dominance <- function(X, scale) {
+  m <- tibble::tibble(asset = colnames(X),
+                      mu    = as.numeric(colMeans(X)) * scale,
+                      sigma = as.numeric(apply(X, 2, stats::sd)) * sqrt(scale))
+  m$dominated_by <- vapply(seq_len(nrow(m)), function(i)
+    sum(m$mu >= m$mu[i] & m$sigma <= m$sigma[i]) - 1L, integer(1))
+  m$kind <- ifelse(m$dominated_by > 0L, "dominated", "efficient")
+  m
+}
+both <- dplyr::inner_join(dominance(Re, 12), dominance(Rew, 52),
+                          by = "asset", suffix = c("_monthly", "_weekly")) |>
+  dplyr::mutate(changed = kind_monthly != kind_weekly) |>
+  dplyr::arrange(dplyr::desc(mu_monthly))
+both |>
+  dplyr::transmute(asset,
+                   mu_monthly = round(mu_monthly, 4), mu_weekly = round(mu_weekly, 4),
+                   sigma_monthly = round(sigma_monthly, 4), sigma_weekly = round(sigma_weekly, 4),
+                   kind_monthly, kind_weekly) |>
+  as.data.frame()
+c(changed = sum(both$changed))
+```
+
+`r if (sum(both$changed) == 0L) "No series changes status" else paste(sum(both$changed), "series change status")`
+between the two grids, although every moment moves. The property at stake is
+the one @eq-03-annualize assumes: multiplying a mean by the number of periods
+and a standard deviation by its square root is exact only when returns are
+independent across periods and add rather than compound. Weekly returns
+compound into monthly ones, so the monthly arithmetic mean carries the cross
+terms of that product and the monthly variance carries the week-to-week
+autocovariances that the weekly count sets to zero. The differences reach
+`r sprintf("%.2f", 100 * max(abs(both$mu_weekly - both$mu_monthly)))`
+percentage points on the means and
+`r sprintf("%.2f", 100 * max(abs(both$sigma_weekly - both$sigma_monthly)))`
+on the volatilities, the largest of them on
+`r both$asset[which.max(abs(both$sigma_weekly - both$sigma_monthly))]`, and a
+series would have to sit within that margin of the boundary of
+@eq-03-dominance to cross it. On this sample none does.
+
+#### Exercise 2
+
+Lo's correction and the direct calculation should agree where its assumptions
+hold: returns that are stationary and aggregate by summation.
+
+```{r}
+#| label: sol-03-ex2
+lo_factor <- function(v, q) {
+  rho <- stats::acf(as.numeric(v), lag.max = q - 1, plot = FALSE)$acf[-1]
+  q / sqrt(q + 2 * sum((q - seq_len(q - 1)) * rho))
+}
+direct <- function(v, q) {
+  agg <- if (q == 3) xts::apply.quarterly(v, function(z) prod(1 + z) - 1)
+         else             xts::apply.yearly(v,    function(z) prod(1 + z) - 1)
+  mean(agg) / stats::sd(agg)
+}
+cmp <- tibble::tibble(
+  asset   = colnames(Re),
+  monthly = apply(Re, 2, function(v) mean(v) / stats::sd(v)),
+  lo_3    = monthly * apply(Re, 2, lo_factor, q = 3),
+  direct_3  = vapply(colnames(Re), function(a) direct(Re[, a], 3),  numeric(1)),
+  lo_12   = monthly * apply(Re, 2, lo_factor, q = 12),
+  direct_12 = vapply(colnames(Re), function(a) direct(Re[, a], 12), numeric(1))
+) |>
+  dplyr::mutate(gap_3 = direct_3 - lo_3, gap_12 = direct_12 - lo_12) |>
+  dplyr::arrange(dplyr::desc(abs(gap_12)))
+cmp |> dplyr::mutate(dplyr::across(-asset, ~ round(.x, 3))) |> as.data.frame()
+
+# The annual gaps are the larger ones, and they sit on the series with the largest ratios.
+gap_vs_level <- stats::cor(abs(cmp$gap_12), cmp$lo_12, method = "spearman")
+stopifnot(max(abs(cmp$gap_3)) < max(abs(cmp$gap_12)), gap_vs_level > 0.5)
+```
+
+At $q = 3$ the two agree to within
+`r sprintf("%.2f", max(abs(cmp$gap_3)))` for every series. At $q = 12$ the
+gaps reach `r sprintf("%.2f", max(abs(cmp$gap_12)))`, for two reasons that
+are not failures of the formula. @eq-03-lo aggregates by summation, while the
+direct calculation compounds, so the cross terms of @eq-03-compound enter the
+annual series and not the formula; and the annual series has only
+`r nrow(xts::apply.yearly(Re[, 1], sum))` observations, so its Sharpe ratio
+is itself estimated with a standard error of roughly
+$1/\sqrt{`r nrow(xts::apply.yearly(Re[, 1], sum))`}$. The gaps are largest
+on the series with the largest ratios,
+`r paste0("\x60", cmp$asset[1:3], "\x60", collapse = ", ")` first, with a rank
+correlation of `r sprintf("%.2f", gap_vs_level)` between the absolute gap and
+the ratio: a given relative error in the annual standard deviation moves a
+large ratio by more. Eleven estimated $\rho_k$ enter the correction as well,
+and each carries its own sampling error.
+
+#### Exercise 3
+
+The subtraction is the same; the answer is not.
+
+```{r}
+#| label: sol-03-ex3
+fx <- sim_fx_monthly
+hedge_stats <- function(series, region) {
+  f <- fx$fx_return[fx$region == region]
+  stopifnot(all(fx$date[fx$region == region] == zoo::index(R)))
+  u <- as.numeric(R[, series]); loc <- u - f
+  c(unhedged = stats::sd(u) * sqrt(12), hedged = stats::sd(loc) * sqrt(12),
+    removed = 1 - stats::sd(loc) / stats::sd(u), cov_local_fx = stats::cov(loc, f) * 12)
+}
+eq <- tibble::tibble(region = c("EU", "UK", "CH", "JP"), series = paste0(region, "_equity"))
+jp <- hedge_stats("JP_equity", "JP")
+stopifnot(jp[["hedged"]] > jp[["unhedged"]], jp[["cov_local_fx"]] < 0)   # the hedge adds volatility
+round(t(mapply(hedge_stats, eq$series, eq$region)), 4)
+```
+
+Hedging `JP_equity` raises its volatility, from
+`r sprintf("%.1f%%", 100 * hedge_stats("JP_equity", "JP")[["unhedged"]])` to
+`r sprintf("%.1f%%", 100 * hedge_stats("JP_equity", "JP")[["hedged"]])`. By
+the decomposition $\operatorname{Var}(R^{\$}) = \operatorname{Var}(R^{\text{loc}})
++ \operatorname{Var}(f) + 2\operatorname{Cov}(R^{\text{loc}}, f)$, the hedge
+removes the last two terms, and it can only add volatility when the covariance
+is negative and large enough to outweigh the currency's own variance. That is
+the case for Japan, where the covariance is
+`r sprintf("%.4f", hedge_stats("JP_equity", "JP")[["cov_local_fx"]])` on an
+annualized basis: the market rises when the yen falls, so the currency is a
+hedge that the investor already holds, and a forward contract removes it. For
+a government bond the local return is small and nearly uncorrelated with the
+currency, so the currency's variance is most of the total and the hedge
+removes most of the risk.
+
+#### Exercise 4
+
+The relaxed-budget volatility is monotone in $\gamma$, so the $\gamma$ that
+reproduces a 60/40 volatility is a root.
+
+```{r}
+#| label: sol-03-ex4
+mu <- colMeans(Re); S <- stats::cov(Re)
+p_vol <- function(w) sqrt(as.numeric(t(w) %*% S %*% w)) * sqrt(12)
+
+eq_i <- grepl("_equity$", colnames(Re)); gv_i <- grepl("_government$", colnames(Re))
+w_6040 <- setNames(rep(0, ncol(Re)), colnames(Re))
+w_6040[eq_i] <- 0.6 / sum(eq_i); w_6040[gv_i] <- 0.4 / sum(gv_i)
+stopifnot(abs(sum(w_6040) - 1) < 1e-12)
+
+relaxed_spec <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "weight_sum", min_sum = 0, max_sum = 1) |>
+  add.constraint(type = "long_only")
+w_relaxed <- function(gamma) {
+  spec <- relaxed_spec |>
+    add.objective(type = "return", name = "mean") |>
+    add.objective(type = "risk",   name = "var", risk_aversion = gamma / 2)
+  extractWeights(optimize.portfolio(Re, spec, optimize_method = "ROI"))[colnames(Re)]
+}
+target  <- p_vol(w_6040)
+gamma_x <- exp(stats::uniroot(function(lg) p_vol(w_relaxed(exp(lg))) - target,
+                              lower = log(1), upper = log(1000), tol = 1e-6)$root)
+w_x <- w_relaxed(gamma_x)
+stopifnot(gamma_x > 5, gamma_x < 8, sum(w_x) > 0.999)   # between two rows of the table; the cap binds
+p_ret <- function(w) sum(mu * w) * 12
+c(vol_6040 = target, gamma = gamma_x, invested = sum(w_x),
+  ret_6040 = p_ret(w_6040), ret_at_gamma = p_ret(w_x),
+  cost_of_that_vol_bp = 1e4 * gamma_x / 2 * target^2)
+```
+
+A 60/40 allocation has an annualized volatility of
+`r sprintf("%.1f%%", 100 * target)` on this sample, and the quadratic-utility
+investor who chooses that volatility with the bill available has
+$\gamma = `r sprintf("%.1f", gamma_x)`$. That is inside the range of two to
+ten the literature treats as customary, and between the rows for five and
+eight in @tbl-03-gamma: an investor who accepts
+`r sprintf("%.1f%%", 100 * sqrt(0.02 / gamma_x))` of volatility for one point
+of expected return from cash. At that $\gamma$ the
+volatility itself costs a certainty equivalent of
+`r sprintf("%.0f", 1e4 * gamma_x / 2 * target^2)` basis points a year under
+@eq-03-quadratic-utility. The invested fraction is
+`r sprintf("%.0f%%", 100 * sum(w_x))`, because
+$\gamma = `r sprintf("%.1f", gamma_x)`$ is below the level at which the cap
+of one stops binding in @sec-03-return-risk-and-the-investor-application: this
+investor would borrow to hold more of the maximum-Sharpe portfolio if the
+budget allowed it, and, since it does not, holds the fully invested frontier
+portfolio at that volatility instead. Two cautions belong with the number.
+The investor holds a different risky portfolio from 60/40, one with the same
+volatility and an expected excess return of
+`r sprintf("%.1f%%", 100 * p_ret(w_x))` against
+`r sprintf("%.1f%%", 100 * p_ret(w_6040))`, so this is the $\gamma$ of an
+investor who accepts 60/40's risk, not one who holds its weights; and it is a
+full-sample figure, so it inherits every estimation error in
+$\boldsymbol{\mu}$ that @sec-09-mean-variance-application measures.

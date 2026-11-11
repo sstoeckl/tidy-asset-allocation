@@ -1,0 +1,259 @@
+# Solver and Constraint Support {#sec-92-solver-matrix}
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+Which solver honors which constraint, measured rather than transcribed. Read
+alongside @sec-13-solvers-implementation, which explains why the distinction between
+*accepts* and *honors* is the one that matters.
+
+Two tables follow. The first is what the package documents: which combinations
+are supported. The second is what the package does: whether the returned
+portfolio actually satisfies what was asked. They do not agree, and the
+disagreement is silent in every case.
+
+```{r}
+#| label: universe
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+Re <- R - sim_riskfree_monthly$return
+N  <- ncol(Re); S <- stats::cov(Re); mu <- colMeans(Re)
+
+sol <- quadprog::solve.QP(2 * S, rep(0, N), cbind(mu, diag(N)),
+                          c(1, rep(0, N)), meq = 1)
+w_true <- pmax(sol$solution, 0); w_true <- setNames(w_true / sum(w_true), colnames(Re))
+sharpe <- function(w) sum(mu * w) / sqrt(as.numeric(t(w) %*% S %*% w))
+```
+
+The benchmark is the long-only tangency portfolio on the sixteen risky class
+series, solved directly with `quadprog` and therefore free of anything
+`PortfolioAnalytics` might get wrong. Its monthly Sharpe ratio is
+`r sprintf("%.4f", sharpe(w_true))`, held in `r sum(w_true > 1e-6)` positions.
+
+## What the package documents
+
+```{r}
+#| label: tbl-90-support
+#| tbl-cap: "Support as described by the package. `optimize_method` values across the top; a tick means the combination is accepted."
+#| echo: false
+tibble::tribble(
+  ~Feature,                    ~ROI, ~CVXR, ~random, ~DEoptim, ~pso, ~GenSA,
+  "minimum variance",          "yes", "yes", "yes", "yes", "yes", "yes",
+  "quadratic utility",         "yes", "yes", "yes", "yes", "yes", "yes",
+  "maximum Sharpe (maxSR)",    "yes", "yes", "yes", "yes", "yes", "yes",
+  "minimum ES / CVaR",         "yes", "yes", "yes", "yes", "yes", "yes",
+  "target return",             "yes", "yes", "yes", "yes", "yes", "yes",
+  "box constraints",           "yes", "yes", "yes", "yes", "yes", "yes",
+  "group constraints",         "yes", "yes", "yes", "yes", "yes", "yes",
+  "turnover constraint",       "yes", "penalty", "yes", "yes", "yes", "yes",
+  "proportional costs",        "yes", "no",  "yes", "yes", "yes", "yes",
+  "position limit",            "max return, min ES only", "no", "yes", "yes", "yes", "yes",
+  "leverage exposure",         "MILP only", "no", "yes", "yes", "yes", "yes",
+  "diversification",           "no",  "no",  "yes", "yes", "yes", "yes",
+  "risk budgeting",            "no",  "no",  "yes", "yes", "yes", "yes"
+) |>
+  kable(align = "lcccccc")
+```
+
+Three entries in that table are already misleading, and the chapters say so:
+`position limit` is available under ROI **only** on the maximum-return and
+minimum-ES mixed-integer paths, not on the mean-variance quadratic program;
+`leverage exposure` is documented for ROI's mixed-integer path alone, but the
+quadratic path accepts it and returns a long-only portfolio; and `turnover`
+under CVXR is a penalty term, not a constraint, so it bends rather than binds.
+A "no" in the table does not mean an error, either: the constraint is accepted
+and dropped, which @tbl-90-roi measures.
+
+## What the package does
+
+```{r}
+#| label: measured
+set.seed(1602)
+
+base <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only") |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "StdDev")
+
+probe <- function(spec, method, max_pos = NULL, ...) {
+  t0 <- Sys.time()
+  o <- try(suppressWarnings(
+    optimize.portfolio(Re, spec, optimize_method = method,
+                       maxSR = TRUE, trace = FALSE, ...)), silent = TRUE)
+  secs <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  lim <- if (is.null(max_pos)) NA_integer_ else as.integer(max_pos)
+  if (inherits(o, "try-error")) {
+    return(tibble::tibble(solver = method, share = NA_real_, limit = lim, holdings = NA_integer_,
+                          verdict = "errors", seconds = secs))
+  }
+  w <- extractWeights(o)
+  if (is.null(w) || anyNA(w)) {
+    return(tibble::tibble(solver = method, share = NA_real_, limit = lim, holdings = NA_integer_,
+                          verdict = "NA weights, silently", seconds = secs))
+  }
+  w <- w[colnames(Re)]; h <- sum(w > 1e-6)
+  tibble::tibble(solver = method, share = sharpe(w) / sharpe(w_true), limit = lim, holdings = h,
+                 verdict = if (is.null(max_pos)) "solved"
+                           else if (h <= max_pos) "feasible" else "VIOLATES",
+                 seconds = secs)
+}
+
+unconstrained <- dplyr::bind_rows(
+  probe(base, "ROI"), probe(base, "CVXR"), probe(base, "random"),
+  probe(base, "DEoptim", traceDE = 0), probe(base, "pso"), probe(base, "GenSA")
+)
+
+# A limit that binds: one position fewer than the unconstrained answer holds.
+k   <- sum(w_true > 1e-6) - 1L
+lim <- add.constraint(base, type = "position_limit", max_pos = k)
+limited <- dplyr::bind_rows(
+  probe(lim, "ROI", max_pos = k), probe(lim, "random", max_pos = k),
+  probe(lim, "DEoptim", max_pos = k, traceDE = 0),
+  probe(lim, "pso", max_pos = k), probe(lim, "GenSA", max_pos = k)
+)
+# what the text below says: ROI, pso and GenSA return more positions than the limit
+stopifnot(all(limited$holdings[limited$solver %in% c("ROI", "pso", "GenSA")] > k))
+```
+
+```{r}
+#| label: tbl-90-unconstrained
+#| tbl-cap: "The plain tangency problem, which is convex and has one answer. `share` is the fraction of the attainable Sharpe ratio reached."
+#| echo: false
+unconstrained |>
+  dplyr::arrange(dplyr::desc(share)) |>
+  dplyr::mutate(share = sprintf("%.1f%%", 100 * share),
+                seconds = sprintf("%.0f", seconds)) |>
+  dplyr::select(solver, share, holdings, verdict, seconds) |>
+  kable(align = "lrrlr",
+        col.names = c("", "share of the best", "positions", "verdict", "seconds"))
+```
+
+```{r}
+#| label: tbl-90-limited
+#| tbl-cap: "The same problem with a position limit one below the number of positions the unconstrained answer holds, so that it binds. Anything above the limit in the `positions` column is an infeasible portfolio returned without complaint."
+#| echo: false
+limited |>
+  dplyr::mutate(share = ifelse(is.na(share), "--", sprintf("%.1f%%", 100 * share)),
+                holdings = ifelse(is.na(holdings), "--", as.character(holdings)),
+                seconds = sprintf("%.0f", seconds)) |>
+  dplyr::select(solver, share, limit, holdings, verdict, seconds) |>
+  kable(align = "lrrrlr",
+        col.names = c("", "share", "limit", "positions", "verdict", "seconds"))
+```
+
+The third table takes ROI alone and asks it for the three constraints that
+@sec-12-constraints-implementation found it does not honor on the quadratic
+path, each with a bound that binds, and for the two linear paths on which it
+does honor a position limit.
+
+```{r}
+#| label: roi-constraints
+roi  <- function(spec) extractWeights(optimize.portfolio(Re, spec, optimize_method = "ROI"))[colnames(Re)]
+same <- function(a, b) isTRUE(all.equal(a, b))
+long <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |> add.constraint(type = "long_only")
+var_obj <- function(spec) add.objective(spec, type = "risk", name = "var")
+pos     <- function(spec, k) add.constraint(spec, type = "position_limit", max_pos = k)
+
+w_mv <- roi(var_obj(long)); k_mv <- sum(w_mv > 1e-6) - 1L
+w_es <- roi(long |> add.objective(type = "risk", name = "ES")); k_es <- sum(w_es > 1e-6) - 1L
+# maximum return needs a cap and a class limit before fewer positions are feasible at all
+grp_eq <- split(seq_len(N), ifelse(grepl("_equity$", colnames(Re)), "equity", "other"))
+stopifnot(identical(names(grp_eq), c("equity", "other")))
+ret_spec <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |> add.constraint(type = "box", min = 0, max = 0.5) |>
+  add.constraint(type = "group", groups = grp_eq, group_min = c(0, 0), group_max = c(0.6, 1)) |>
+  add.objective(type = "return", name = "mean")
+w_ret <- roi(ret_spec); k_ret <- sum(w_ret > 1e-6) - 1L
+w_pos_mv  <- roi(pos(long, k_mv) |> var_obj())
+w_pos_es  <- roi(pos(long, k_es) |> add.objective(type = "risk", name = "ES"))
+w_pos_ret <- roi(pos(ret_spec, k_ret))
+w_lev <- roi(portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |> add.constraint(type = "box", min = -0.3, max = 1) |>
+  add.constraint(type = "leverage_exposure", leverage = 1.6) |> var_obj())
+w_div <- roi(long |> add.constraint(type = "diversification", div_target = 0.7) |> var_obj())
+stopifnot(1 - sum(w_mv^2) < 0.7)                             # the target binds
+
+held    <- function(w) sum(abs(w) > 1e-6)
+verdict <- function(w, ok, w0, what = "the unconstrained weights")
+  if (same(w, w0)) paste0("dropped: ", what, ", no message") else if (ok) "honored" else "VIOLATES"
+roi_tbl <- tibble::tibble(
+  constraint = c("position limit", "position limit", "position limit", "leverage exposure", "diversification"),
+  objective  = c("minimum variance", "minimum ES", "maximum return", "minimum variance", "minimum variance"),
+  asked      = c(sprintf("at most %d positions", c(k_mv, k_es, k_ret)),
+                 "gross exposure at most 1.6, shorts to -30%", "1 - w'w at least 0.7"),
+  returned   = c(sprintf("%d positions", c(held(w_pos_mv), held(w_pos_es), held(w_pos_ret))),
+                 sprintf("gross exposure %.2f, %d short positions", sum(abs(w_lev)), sum(w_lev < -1e-6)),
+                 sprintf("1 - w'w of %.2f", 1 - sum(w_div^2))),
+  verdict    = c(verdict(w_pos_mv, held(w_pos_mv) <= k_mv, w_mv), verdict(w_pos_es, held(w_pos_es) <= k_es, w_es),
+                 verdict(w_pos_ret, held(w_pos_ret) <= k_ret, w_ret),
+                 verdict(w_lev, sum(abs(w_lev)) <= 1.6 + 1e-6, w_mv, "the long-only weights"),
+                 verdict(w_div, 1 - sum(w_div^2) >= 0.7 - 1e-6, w_mv)))
+# what the text below says, asserted
+stopifnot(same(w_pos_mv, w_mv), held(w_pos_es) <= k_es, held(w_pos_ret) <= k_ret, same(w_lev, w_mv), same(w_div, w_mv))
+```
+
+```{r}
+#| label: tbl-90-roi
+#| tbl-cap: "ROI on the build this book pins: three constraints on the quadratic path, each with a bound that binds, and the position limit on the two mixed-integer paths. No call raised an error, a warning or a message."
+#| echo: false
+kable(roi_tbl, align = "lllll", col.names = c("constraint", "objective", "asked", "returned", "verdict"))
+```
+
+## The gaps worth knowing
+
+**Position limits on the quadratic path.** No cardinality formulation exists,
+so the constraint cannot be honored. On the build this book pins, a position
+limit (`max_pos`) on ROI's quadratic path is dropped without a message: no
+error, no warning, and the unconstrained weights come back, exactly as on the
+CRAN release. ROI honors the limit only on its two mixed-integer paths, maximum
+return and minimum expected shortfall, which it hands to `Rglpk`. A patch that
+refuses the quadratic call is proposed upstream, not in the pinned build. See
+@sec-93-package-notes.
+
+**Leverage exposure on the quadratic path.** `gmv_opt_leverage()` builds its
+`ROI::OP()` without the variable bounds that `gmv_opt()` passes, so ROI's
+default of $x \ge 0$ overrules the box and the long-only minimum-variance
+portfolio comes back, with gross exposure of one. Under CVXR the constraint is
+not written at all. @sec-12-constraints-implementation solves the same problem
+by hand.
+
+**`pso` and `GenSA` under a position limit.** Both accept the constraint and
+return portfolios of `r limited$holdings[limited$solver == "pso"]` and
+`r limited$holdings[limited$solver == "GenSA"]` positions against a limit of
+`r k`, most or all of the universe. This is not a convergence failure — the
+search never encoded the restriction.
+
+**An exact `full_investment` constraint.** On the CRAN release, `min_sum ==
+max_sum` is written as two opposing inequality rows, which quadprog reports as
+infeasible; ROI then returns `NA` weights without raising. Measured with the
+CRAN release on dataset 6.2.0, as @sec-09-mean-variance-implementation does,
+30 of 312 rolling sixty-month minimum-variance windows fail this way; the
+build this book pins carries the fix (@sec-93-package-notes). The
+metaheuristics meet the same constraint differently, warning that it is
+"restrictive" and advising `min_sum = 0.99, max_sum = 1.01` — which is advice to
+leave a percent of the portfolio uninvested in order to make a solver comfortable.
+
+**Solver names under CVXR.** Dispatch happens on the *second* element of
+`optimize_method`, matched against a hard-coded list. `CLARABEL` is installed, is
+CVXR's own default, and is not on the list; asking for it returns an object with
+no weights and no error. See @sec-09-mean-variance-implementation.
+
+**Risk budgeting and diversification.** Neither has a convex formulation here.
+Under ROI a diversification target is accepted and ignored without a message,
+as @tbl-90-roi shows, so every result in @sec-14-risk-based-allocation-theory
+and every diversification floor comes from a search whose accuracy
+@tbl-90-unconstrained measures.
+
+## How to read all of this
+
+The single practical conclusion, and it is the one @sec-13-solvers-implementation ends
+on: **audit the answer.** Check that the weights sum to what you asked, that none
+is negative under a long-only constraint, and that the number of positions
+respects the limit. Four lines, run every time, and they catch every failure
+tabulated above.

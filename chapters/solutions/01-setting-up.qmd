@@ -1,0 +1,90 @@
+### Chapter 1: Setting Up Your Environment {.unnumbered}
+
+```{r}
+#| label: sol-01-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+```
+
+#### Exercise 1
+
+Both routes produce the same matrix, but only one of them needs a check
+afterwards. `merge()` aligns two `xts` objects on their indices and pads any
+date that one side lacks, so the assertion that nothing was padded is a
+separate step. Binding the long tables first and crossing once leaves nothing
+to align: a single `as_xts_pm()` call sees every date and every asset at once,
+and a missing cell would be padded and announced by the coercion itself.
+
+```{r}
+#| label: sol-01-ex1
+MM <- as_xts_pm(sim_money_market_monthly, date, class, return)
+wide_route <- merge(R, MM)
+stopifnot(ncol(wide_route) == 21L, nrow(wide_route) == 372L, !anyNA(wide_route))
+
+long_route <- dplyr::bind_rows(sim_class_returns_monthly, sim_money_market_monthly) |>
+  as_xts_pm(date, class, return)
+stopifnot(identical(colnames(wide_route), colnames(long_route)),
+          identical(zoo::coredata(wide_route), zoo::coredata(long_route)))
+c(columns = ncol(long_route), rows = nrow(long_route), missing = sum(is.na(long_route)))
+```
+
+#### Exercise 2
+
+Dropping the early `JP_equity` rows leaves one column short by the number of
+months removed. `complete.obs` discards those months for every series;
+`pairwise.complete.obs` keeps them for every pair that has them. A pairwise
+matrix is not guaranteed to be positive definite, which is why the smallest
+eigenvalue is worth reading. `PortfolioAnalytics` uses the pairwise estimate
+for a variance objective.
+
+```{r}
+#| label: sol-01-ex2
+trimmed <- sim_class_returns_monthly |>
+  dplyr::filter(!(class == "JP_equity" & tidypm::model_year(date) <= 3L))
+R_trim <- suppressWarnings(as_xts_pm(trimmed, date, class, return))
+R_trim <- R_trim[, colnames(R)]                  # restore the column order by name
+
+range(colSums(!is.na(R_trim)))
+S_complete <- stats::cov(R_trim, use = "complete.obs")
+S_pairwise <- stats::cov(R_trim, use = "pairwise.complete.obs")
+differ   <- abs(S_complete - S_pairwise) > 1e-12
+jp_cells <- outer(colnames(R) == "JP_equity", colnames(R) == "JP_equity", "|")
+min_eig  <- min(eigen(S_pairwise, symmetric = TRUE)$values)
+stopifnot(all((!differ) == jp_cells))            # the agreeing cells are exactly JP_equity's
+c(entries_differing = sum(differ), entries_total = length(differ),
+  jp_entries_differing = sum(differ & jp_cells), smallest_eigenvalue = min_eig)
+```
+
+`r sum(differ)` of the `r length(differ)` entries differ, and the
+`r sum(jp_cells)` that agree are exactly the `JP_equity` row and column:
+both estimators use the same `r min(colSums(!is.na(R_trim)))` months there,
+while for every other pair `complete.obs` discards
+`r nrow(R) - min(colSums(!is.na(R_trim)))` months that the series never lacked
+and the pairwise estimate keeps them. The pairwise matrix
+`r if (min_eig > 0) "is" else "is not"` positive definite here, with a
+smallest eigenvalue of `r sprintf("%.1e", min_eig)`; that is a property of
+this gap, not a guarantee.
+
+#### Exercise 3
+
+Strip the suffix and look the base name up in the same namespace.
+
+```{r}
+#| label: sol-01-ex3
+exports <- getNamespaceExports("PortfolioAnalytics")
+legacy  <- sort(grep("_v[12]", exports, value = TRUE))
+base    <- sub("_v1tov2$|_v[12]$", "", legacy)
+orphans <- legacy[!base %in% exports]
+tibble::tibble(shim = legacy, modern = base, exists = base %in% exports)
+```
+
+`r length(legacy) - length(orphans)` of the `r length(legacy)` shims have an
+unsuffixed counterpart; the exception is
+`r paste0("\x60", orphans, "()\x60", collapse = ", ")`, which exists only to
+translate a constraint object written against the first interface into the
+current one. Its name records that the constraint object itself changed shape
+between the two interfaces, which is why code written against one does not run
+against the other.

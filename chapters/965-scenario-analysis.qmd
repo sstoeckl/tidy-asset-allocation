@@ -1,0 +1,789 @@
+---
+metadata:
+  pagetitle: "Scenario Analysis"
+  description-meta: "Shocking the factors of the modeled market and tracing the response of every asset class."
+---
+
+# Scenario Analysis {#sec-965-scenario-analysis}
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+What happens to a portfolio if yields rise by a hundred basis points, or if the
+dollar appreciates by ten percent against every currency? A scenario is a
+statement about a few factors, and the question is what it implies for every
+asset that loads on them. @meucci2008 frames a scenario as a change of
+probabilities on a panel of outcomes; @kupiec1998 places stress scenarios
+inside the same distributional framework as value at risk, so that a scenario
+has a probability and a loss rather than only a loss;
+@breuer2009 ask which scenarios are at once plausible, severe and useful, and
+answer with the worst loss inside an ellipsoid of plausible factor moves;
+@glasserman2015 select scenarios by empirical likelihood; @rebonato2010 argues
+that the factor moves of a scenario must be coherent with one another, which a
+model of their joint behavior supplies and a list of shocks does not; and
+@alexander2008 show how a market risk model supplies that coherence. Every one
+of these starts from the same object: a mapping from factor moves to asset
+returns. In the modeled market the mapping exists by construction, because
+every series is the output of a factor model
+(@sec-02-notation-and-data-simulated-market), so a shock to a factor moves
+every series that loads on it.
+
+The generator itself is not shipped. What ships are the factor layers: the
+level, slope and curvature of each region's curve and its two credit spreads in
+`sim_curve_weekly`, the exchange rates in `sim_fx_weekly`, the five regional
+equity classes and the commodity index. From them this appendix estimates a
+mapping $\boldsymbol{B}$ from factor shocks to the return of every instrument
+and every class, and then shocks it. Three things should be said plainly. The
+mapping is estimated from the shipped data, by regression, and checked against
+the analytical durations of @sec-22-fixed-income-sleeve-theory where those
+exist. It is linear and one-period: a scenario is a vector of simultaneous
+factor moves, and the response is $\boldsymbol{B}$ times that vector. And it
+is a tool for asking *what moves if*, not a re-run of the generator: the
+idiosyncratic draws, the convexity of the bonds and the correlation between
+factors are outside it, and @sec-965-scenario-analysis-episodes measures what
+that costs by pushing the four episodes of `sim_episodes` through the mapping.
+
+```{r}
+#| label: data
+A  <- as_xts_pm(sim_asset_returns_weekly, date, asset, return)   # 181 instruments, weekly
+Rw <- as_xts_pm(sim_class_returns_weekly, date, class, return)   # the sixteen classes, weekly
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)  # the same, monthly
+rf <- sim_riskfree_monthly$return                                 # the bill
+Re <- R - rf                                                      # excess returns
+cv <- sim_curve_weekly |>
+  tidyr::pivot_wider(names_from = series, values_from = value) |>
+  dplyr::arrange(date)
+fx <- sim_fx_weekly |>
+  tidyr::pivot_wider(id_cols = date, names_from = region, values_from = fx_return) |>
+  dplyr::arrange(date)
+wk <- as.Date(zoo::index(A))
+regions <- c("US", "UK", "EU", "CH", "JP"); foreign <- setdiff(regions, "US")
+stopifnot(ncol(A) == nrow(sim_assets), ncol(Rw) == 16L, identical(zoo::index(Rw), zoo::index(A)),
+          nrow(cv) == length(wk) + 1L, all(cv$date[-1] == wk), all(fx$date == wk),
+          setequal(names(fx)[-1], foreign))
+```
+
+## Factor Exposures {#sec-965-scenario-analysis-exposures}
+
+The factor set has thirty-five members. For each region there are the weekly
+changes of the level, the slope and the curvature of its curve and of its
+investment-grade and high-yield spreads; for each non-dollar region the return
+of its currency; for each region the return of its equity market **in local
+currency**, the class return less the currency's move by @eq-02-hedge, so that
+the equity factor and the currency factor say different things; and the return
+of the commodity index. The curve series are read in the units
+@sec-22-fixed-income-sleeve-implementation established: the level, slope and
+curvature are in percentage points and the spreads in decimals, so the first
+three are divided by a hundred and a loading is a duration in years.
+
+```{r}
+#| label: factors
+lsc <- grep("_(Level|Slope|Curvature)$", names(cv), value = TRUE)
+stopifnot(max(abs(cv$US_Level)) > 1, max(cv$US_HY_Spread) < 1)   # percentage points; decimals
+cv[lsc] <- cv[lsc] / 100
+dcv <- as.data.frame(lapply(cv[-1], diff))                       # weekly changes, aligned with A
+eq_local <- sapply(regions, function(rg)
+  as.numeric(Rw[, paste0(rg, "_equity")]) - (if (rg == "US") 0 else fx[[rg]]))
+colnames(eq_local) <- paste0(regions, "_equity")
+ccy <- as.matrix(fx[foreign]); colnames(ccy) <- paste0(foreign, "_fx")
+F <- cbind(as.matrix(dcv), ccy, eq_local, GLOBAL_commodity = as.numeric(Rw[, "GLOBAL_commodity"]))
+stopifnot(nrow(F) == nrow(A), ncol(F) == 35L, !anyNA(F))
+```
+
+Which factors an instrument may load on is a design decision, not a search: a
+government bond loads on its region's three curve factors, a credit bond also
+on the spread of its grade, a money-market instrument on the curve, an equity
+on its local market, a commodity on the commodity index, and every non-dollar
+instrument on its currency. The sixteen class series are treated the same way,
+except that a credit class loads on both spreads of its region. The exposures
+are the coefficients of a regression of weekly returns on those factor changes,
+with Newey–West standard errors as in @sec-05-factor-models-implementation
+[@newey1987], and everything is indexed by name.
+
+```{r}
+#| label: exposures
+meta <- dplyr::bind_rows(
+  sim_assets |> dplyr::transmute(name = asset_id, region, kind = asset_class,
+                                 grade = credit_grade, level = "instrument"),
+  tibble::tibble(name = colnames(Rw), region = sub("_.*$", "", name),
+                 kind = sub("^[^_]+_", "", name), grade = NA_character_, level = "class"))
+factors_of <- function(region, kind, grade) {
+  curve <- paste0(region, c("_Level", "_Slope", "_Curvature"))
+  ccy   <- if (region %in% foreign) paste0(region, "_fx")
+  spread <- if (is.na(grade)) paste0(region, c("_IG_Spread", "_HY_Spread")) else paste0(region, "_", grade, "_Spread")
+  switch(kind, government = c(curve, ccy), money_market = c(curve, ccy),
+         credit = c(curve, spread, ccy), equity = c(paste0(region, "_equity"), ccy),
+         commodity = "GLOBAL_commodity")
+}
+expose <- function(y, cols) {
+  m  <- stats::lm(y ~ ., data = data.frame(y = y, F[, cols, drop = FALSE]))
+  nw <- sandwich::NeweyWest(m, lag = 6, prewhite = FALSE)
+  b  <- stats::coef(m)
+  list(alpha = b[[1]], beta = b[-1], t = (b / sqrt(diag(nw)))[-1],
+       r2 = suppressWarnings(summary(m)$r.squared))          # an identity row fits exactly
+}
+Y <- cbind(as.matrix(A), as.matrix(Rw))
+stopifnot(identical(colnames(Y), meta$name))
+fits <- lapply(seq_len(nrow(meta)),
+               function(i) expose(Y[, i], factors_of(meta$region[i], meta$kind[i], meta$grade[i])))
+B <- matrix(0, nrow(meta), ncol(F), dimnames = list(meta$name, colnames(F)))
+for (i in seq_len(nrow(meta))) B[i, names(fits[[i]]$beta)] <- fits[[i]]$beta
+alpha   <- setNames(vapply(fits, `[[`, numeric(1), "alpha"), meta$name)
+meta$r2 <- vapply(fits, `[[`, numeric(1), "r2")
+meta$t_first <- vapply(fits, function(f) f$t[[1]], numeric(1))   # level, market or commodity loading
+stopifnot(all(abs(meta$t_first) > 5))
+
+# An equally weighted class is the average of its instruments, so its row of B
+# is the average of their rows. Asserted on the returns, not assumed.
+members <- split(sim_assets$asset_id, paste0(sim_assets$region, "_", sim_assets$asset_class))
+ew_classes <- grep("_(government|credit|commodity)$", colnames(Rw), value = TRUE)
+stopifnot(all(ew_classes %in% names(members)),
+          max(abs(as.matrix(Rw[, ew_classes]) -
+                  sapply(members[ew_classes], function(ids) rowMeans(A[, ids])))) < 1e-8)
+for (k in ew_classes) {
+  B[k, ]     <- colMeans(B[members[[k]], , drop = FALSE])
+  alpha[[k]] <- mean(alpha[members[[k]]])
+}
+```
+
+For the bonds the exposures are known before any regression is run. A
+zero-coupon bond of maturity $\tau$ has, by @eq-22-return, a loading of minus
+its duration on the yield at its maturity, and the shipped factors are the
+rotation of the two-, five- and ten-year yields that
+@sec-22-fixed-income-sleeve-implementation identified, the observable level,
+slope and curvature of @diebold2006: the level is the ten-year yield, the slope
+the two-year less the ten-year, and the curvature twice the five-year less the
+two ends. The loadings of the three yields on the three factors are therefore
+
+```{r}
+#| label: loadings
+B_emp <- rbind(`2` = c(level = 1, slope = 1, curvature = 0),
+               `5` = c(1, 0.5, 0.5), `10` = c(1, 0, 0))
+B_emp
+```
+
+and the analytical exposure of a bond of maturity $\tau$ is $-D(\tau)$ times
+its row, with $D(\tau) = \tau / (1 + \bar y(\tau))$ the modified duration under
+annual compounding at the mean yield; a credit bond adds a spread duration of
+the same size [@merton1974], and a non-dollar bond a loading of one on its
+currency. The latent loadings of @nelson1987 at the Diebold–Li decay are a
+different rotation of the same three yields, shown in
+@sec-22-fixed-income-sleeve-implementation; the mapping uses the rotation the
+data ship. The maturities are inferred as in that chapter, from the level
+loading, and the regression is required to recover the analytical level loading
+within ten percent.
+
+```{r}
+#| label: durations
+bonds <- meta |>
+  dplyr::filter(level == "instrument", kind %in% c("government", "credit")) |>
+  dplyr::mutate(b_level = B[cbind(name, paste0(region, "_Level"))]) |>
+  dplyr::group_by(region, kind, grade) |>
+  dplyr::mutate(maturity = c(10, 5, 2)[rank(b_level)]) |>          # most negative: the ten-year
+  dplyr::ungroup()
+stopifnot(all(table(bonds$region, bonds$maturity) == 3L))
+ybar <- function(rg, tau)                                            # mean yield at maturity tau
+  mean(as.matrix(cv[, paste0(rg, c("_Level", "_Slope", "_Curvature"))]) %*% B_emp[as.character(tau), ])
+bonds <- bonds |>
+  dplyr::mutate(D = maturity / (1 + mapply(ybar, region, maturity)),
+                a_level = -D * B_emp[as.character(maturity), "level"],
+                a_slope = -D * B_emp[as.character(maturity), "slope"],
+                a_curv  = -D * B_emp[as.character(maturity), "curvature"],
+                a_spread = ifelse(kind == "credit", -D, NA_real_),
+                b_slope = B[cbind(name, paste0(region, "_Slope"))],
+                b_curv  = B[cbind(name, paste0(region, "_Curvature"))],
+                b_spread = ifelse(kind == "credit",
+                                  B[cbind(name, paste0(region, "_", ifelse(is.na(grade), "IG", grade), "_Spread"))],
+                                  NA_real_))
+stopifnot(all(abs(bonds$b_level / bonds$a_level - 1) < 0.10))
+```
+
+```{r}
+#| label: tbl-965-bonds
+#| tbl-cap: "The nine US bond instruments: analytical exposures (minus the modified duration times the loading of the bond's yield on each factor, and minus the duration on the spread) against the regression estimates, with the R² of the regression. A loading is in years; a spread or yield shock in decimals times a loading is a return."
+#| echo: false
+bonds |>
+  dplyr::filter(region == "US") |>
+  dplyr::arrange(kind != "government", grade, maturity) |>
+  dplyr::transmute(name, grade = ifelse(is.na(grade), "", grade), maturity,
+                   level = sprintf("%.2f / %.2f", a_level, b_level),
+                   slope = sprintf("%.2f / %.2f", a_slope, b_slope),
+                   curvature = sprintf("%.2f / %.2f", a_curv, b_curv),
+                   spread = ifelse(is.na(a_spread), "", sprintf("%.2f / %.2f", a_spread, b_spread)),
+                   r2 = sprintf("%.3f", r2)) |>
+  kable(align = "llrrrrrr",
+        col.names = c("", "grade", "maturity", "level", "slope", "curvature", "spread", "R²"))
+```
+
+```{r}
+#| label: exposure-facts
+#| include: false
+r2_by <- meta |> dplyr::group_by(level, kind) |>
+  dplyr::summarise(min = min(r2), median = median(r2), max = max(r2), n = dplyr::n(), .groups = "drop")
+r2_at <- function(lv, k, s) r2_by[[s]][r2_by$level == lv & r2_by$kind == k]
+fx_load <- bonds |> dplyr::filter(region != "US") |>
+  dplyr::mutate(b_fx = B[cbind(name, paste0(region, "_fx"))])
+eq_beta <- meta |> dplyr::filter(level == "instrument", kind == "equity") |>
+  dplyr::mutate(beta = B[cbind(name, paste0(region, "_equity"))])
+dev_level <- max(abs(bonds$b_level / bonds$a_level - 1))
+rho_sp <- sapply(regions, function(rg)
+  stats::cor(dcv[[paste0(rg, "_IG_Spread")]], dcv[[paste0(rg, "_HY_Spread")]]))
+dev_other <- max(abs(c(bonds$b_slope - bonds$a_slope, bonds$b_curv - bonds$a_curv,
+                       bonds$b_spread - bonds$a_spread)), na.rm = TRUE)
+stopifnot(dev_other < 2,
+          r2_at("instrument", "government", "min") > 0.95,
+          r2_at("instrument", "credit", "min") > 0.9,
+          all(abs(fx_load$b_fx - 1) < 0.05),
+          r2_at("instrument", "equity", "max") < 0.9,
+          r2_at("class", "government", "min") > 0.99,
+          r2_at("class", "credit", "min") > 0.99)
+```
+
+In @tbl-965-bonds the two columns agree within
+`r sprintf("%.0f", 100 * dev_level)` percent on the level for every bond of
+every region, and within `r sprintf("%.1f", dev_other)` years on the slope,
+the curvature and the spread: the regression recovers the durations the theory
+states, the near rank deficiency of @sec-07-covariance-matrix-theory seen one
+bond at a time. Across all `r r2_at("instrument", "government", "n")`
+government and `r r2_at("instrument", "credit", "n")` credit instruments the
+lowest $R^2$ is
+`r sprintf("%.3f", min(r2_at("instrument", "government", "min"), r2_at("instrument", "credit", "min")))`,
+and every non-dollar bond loads on its currency within five percent of one.
+The `r r2_at("instrument", "equity", "n")` equities are the other extreme: a
+median beta on the local market of `r sprintf("%.2f", median(eq_beta$beta))`
+and a median $R^2$ of
+`r sprintf("%.2f", r2_at("instrument", "equity", "median"))`, the rest being
+the idiosyncratic draw that no factor carries (@fig-965-r2).
+
+```{r}
+#| label: fig-965-r2
+#| fig-cap: "R² of the exposure regressions, one point per instrument and one per class series, by asset class. A bond is spanned by its curve, its spread and its currency; an equity is its market plus an idiosyncratic draw the mapping cannot carry."
+#| echo: false
+#| fig-asp: 0.45
+meta |>
+  dplyr::mutate(kind = factor(kind, c("government", "credit", "money_market", "equity", "commodity")),
+                level = factor(level, c("instrument", "class"))) |>
+  ggplot2::ggplot(ggplot2::aes(r2, kind, colour = level, shape = level)) +
+  ggplot2::geom_jitter(height = 0.15, width = 0, size = 2, alpha = 0.8) +
+  scale_colour_tidyaa() +
+  ggplot2::labs(x = "R² of the exposure regression", y = NULL)
+```
+
+At class level the rows of $\boldsymbol{B}$ are what a scenario needs, and
+@tbl-965-classes collects them. The equity classes and the commodity index are
+themselves factor layers, so their rows are identities by construction: a
+foreign equity class is one times its local market plus one times its
+currency. What the mapping adds is the bond block, where a class is an
+equally weighted ladder of three maturities and its row is, by
+@eq-22-exposure, the average of its instruments' rows, which the chunk above
+asserts on the returns themselves. The credit rows are built that way for a
+second reason: the two spreads of a region share one credit factor
+(@sec-22-fixed-income-sleeve-theory), their weekly changes correlate at
+`r sprintf("%.2f", min(rho_sp))` or more, and a regression of the class on
+both cannot tell their loadings apart, whereas each credit instrument loads on
+the spread of its own grade. The regression at class level is kept as the
+check, and its $R^2$ is the last column.
+
+```{r}
+#| label: tbl-965-classes
+#| tbl-cap: "Factor exposures of the sixteen class series. Level, slope, curvature and the two spreads are in years; currency, equity and commodity are return betas; blank where the class does not load on the factor. The R² is from the regression of the weekly class return on the region's factor changes."
+#| echo: false
+b_at <- function(nm, col) vapply(seq_along(nm), function(i)
+  if (col[i] %in% colnames(B)) B[nm[i], col[i]] else NA_real_, numeric(1))
+classes <- meta |>
+  dplyr::filter(level == "class") |>
+  dplyr::mutate(level_d = b_at(name, paste0(region, "_Level")),
+                slope_d = b_at(name, paste0(region, "_Slope")),
+                curv_d  = b_at(name, paste0(region, "_Curvature")),
+                ig_d    = b_at(name, paste0(region, "_IG_Spread")),
+                hy_d    = b_at(name, paste0(region, "_HY_Spread")),
+                ccy_b   = b_at(name, paste0(region, "_fx")),
+                eq_b    = b_at(name, paste0(region, "_equity")),
+                cmd_b   = b_at(name, "GLOBAL_commodity")) |>
+  dplyr::mutate(dplyr::across(c(level_d:cmd_b), ~ ifelse(.x == 0, NA_real_, .x))) |>
+  dplyr::mutate(kind = factor(kind, c("government", "credit", "equity", "commodity")),
+                region = factor(region, c("US", "UK", "EU", "CH", "JP", "GLOBAL"))) |>
+  dplyr::arrange(kind, region)
+stopifnot(nrow(classes) == 16L)
+fmt <- function(x, d = 2) ifelse(is.na(x), "", sprintf(paste0("%.", d, "f"), x))
+classes |>
+  dplyr::transmute(name, level = fmt(level_d), slope = fmt(slope_d), curvature = fmt(curv_d),
+                   IG = fmt(ig_d), HY = fmt(hy_d), currency = fmt(ccy_b), equity = fmt(eq_b),
+                   commodity = fmt(cmd_b), r2 = sprintf("%.3f", r2)) |>
+  kable(align = "lrrrrrrrrr",
+        col.names = c("", "level", "slope", "curvature", "IG", "HY", "currency", "equity", "commodity", "R²"))
+```
+
+## Shocks and Their Propagation {#sec-965-scenario-analysis-shocks}
+
+A scenario is a named vector of factor shocks, zero wherever it is silent, and
+its propagation is one matrix product,
+
+$$
+\boldsymbol{r}^{\text{scenario}} = \boldsymbol{B}\,\boldsymbol{s},
+$$ {#eq-965-propagate}
+
+with $\boldsymbol{s}$ the shock vector in the factors' own units: a yield or
+spread change in decimals, a currency, equity or commodity move as a return.
+The function refuses a shock whose names do not match the columns of
+$\boldsymbol{B}$, for the reason @sec-09-mean-variance-implementation gives.
+
+```{r}
+#| label: propagate
+shock <- function(...) {
+  s <- setNames(rep(0, ncol(F)), colnames(F)); v <- c(...)
+  stopifnot(all(names(v) %in% names(s)))
+  s[names(v)] <- v; s
+}
+propagate <- function(shock, B) {
+  stopifnot(identical(names(shock), colnames(B)))
+  drop(B %*% shock)
+}
+scenarios <- list(
+  "curves +100 bp" = shock(setNames(rep(0.01, 5), paste0(regions, "_Level"))),
+  "spreads +200 bp, equities -15%" = shock(
+    setNames(rep(0.02, 10), paste0(rep(regions, each = 2), c("_IG_Spread", "_HY_Spread"))),
+    setNames(rep(-0.15, 5), paste0(regions, "_equity"))),
+  "dollar +10%" = shock(setNames(rep(-0.10, 4), paste0(foreign, "_fx"))),
+  "equities -25%, curves -50 bp" = shock(
+    setNames(rep(-0.25, 5), paste0(regions, "_equity")),
+    setNames(rep(-0.005, 5), paste0(regions, "_Level"))))
+S_class <- sapply(scenarios, propagate, B = B[colnames(R), ])
+stopifnot(identical(rownames(S_class), colnames(R)))
+```
+
+The four scenarios are a parallel rise of one hundred basis points in every
+curve, which moves the level alone because the slope and the curvature are
+differences of yields; a widening of every credit spread by two hundred basis
+points with every equity market down fifteen percent in local currency; an
+appreciation of the dollar that takes ten percent off the dollar value of every
+other currency; and an equity sell-off of twenty-five percent with every curve
+rallying fifty basis points. They are received by the policy portfolio of
+@sec-15-hierarchical-allocation-application, recomputed as that chapter builds
+it, a tangency portfolio across sleeves that are a tangency portfolio for
+equity and minimum variance for government and credit, and by three strategies
+of the register of @sec-25-backtesting-application at full-sample weights:
+long-only minimum variance, long-only tangency and equal weight.
+
+```{r}
+#| label: portfolios
+S <- stats::cov(Re); mu <- colMeans(Re)
+sleeve_of <- function(a) ifelse(grepl("_equity$", a), "equity",
+                         ifelse(grepl("_government$", a), "government",
+                         ifelse(grepl("_credit$", a), "credit", "commodity")))
+sleeves <- split(colnames(Re), sleeve_of(colnames(Re)))
+qp <- function(S, mu = NULL) {                 # long-only minimum variance, or tangency given mu
+  n <- ncol(S); a <- if (is.null(mu)) rep(1, n) else mu
+  sol <- quadprog::solve.QP(2 * S, rep(0, n), cbind(a, diag(n)), c(1, rep(0, n)), meq = 1)
+  w <- pmax(sol$solution, 0); setNames(w / sum(w), colnames(S))
+}
+v <- list(commodity  = c(GLOBAL_commodity = 1),
+          credit     = qp(S[sleeves$credit, sleeves$credit]),
+          equity     = qp(S[sleeves$equity, sleeves$equity], mu[sleeves$equity]),
+          government = qp(S[sleeves$government, sleeves$government]))[names(sleeves)]
+sl <- sapply(names(v), function(k) as.numeric(Re[, names(v[[k]])] %*% v[[k]]))
+b  <- qp(stats::cov(sl), colMeans(sl))
+w_policy <- unlist(lapply(names(v), function(k) b[[k]] * v[[k]]))[colnames(Re)]
+
+base  <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |> add.constraint(type = "long_only")
+w_gmv <- extractWeights(optimize.portfolio(Re, base |> add.objective(type = "risk", name = "var"),
+                                           optimize_method = "ROI"))
+w_tan <- extractWeights(optimize.portfolio(Re, base |> add.objective(type = "return", name = "mean") |>
+                                             add.objective(type = "risk", name = "StdDev"),
+                                           optimize_method = "ROI", maxSR = TRUE))
+W <- cbind(policy = w_policy, `minimum variance` = w_gmv[colnames(Re)],
+           tangency = w_tan[colnames(Re)], `equal weight` = 1 / ncol(Re))
+stopifnot(identical(rownames(W), colnames(R)), all(abs(colSums(W) - 1) < 1e-6), !anyNA(W))
+round(W[rowSums(W > 0.005) > 0, ], 3)
+```
+
+```{r}
+#| label: tbl-965-scenarios
+#| tbl-cap: "The four scenarios propagated through the class-level mapping: the return of every class series and of four portfolios, the policy portfolio of chapter 15 and the register's strategies at full-sample weights."
+#| echo: false
+sc <- dplyr::bind_rows(
+  tibble::as_tibble(S_class, rownames = "name") |> dplyr::mutate(kind = "class"),
+  tibble::as_tibble(t(W) %*% S_class, rownames = "name") |> dplyr::mutate(kind = "portfolio")) |>
+  tidyr::pivot_longer(-c(name, kind), names_to = "scenario", values_to = "ret") |>
+  dplyr::mutate(scenario = factor(scenario, names(scenarios)),
+                name = factor(name, c(classes$name, colnames(W))))
+stopifnot(!anyNA(sc$name), nrow(sc) == 20L * 4L)
+sc |>
+  dplyr::arrange(name) |>
+  tidyr::pivot_wider(id_cols = name, names_from = scenario, values_from = ret) |>
+  dplyr::mutate(dplyr::across(-name, ~ sprintf("%+.1f%%", 100 * .x))) |>
+  kable(align = "lrrrr")
+```
+
+```{r}
+#| label: fig-965-scenarios
+#| fig-cap: "The return of each class series under the four scenarios, from the linear mapping of @eq-965-propagate."
+#| echo: false
+#| fig-asp: 0.8
+sc |>
+  dplyr::filter(kind == "class") |>
+  dplyr::mutate(block = factor(sub("^[^_]+_", "", name), c("government", "credit", "equity", "commodity"))) |>
+  ggplot2::ggplot(ggplot2::aes(ret, name, fill = block)) +
+  ggplot2::geom_col() +
+  ggplot2::facet_wrap(~ scenario, ncol = 2) +
+  ggplot2::scale_x_continuous(labels = scales::percent) +
+  scale_fill_tidyaa() +
+  ggplot2::labs(x = "scenario return", y = NULL)
+```
+
+```{r}
+#| label: scenario-facts
+#| include: false
+pf  <- sc |> dplyr::filter(kind == "portfolio")
+pf_at <- function(p, s) pf$ret[pf$name == p & pf$scenario == s]
+cl  <- sc |> dplyr::filter(kind == "class")
+cl_at <- function(c, s) cl$ret[cl$name == c & cl$scenario == s]
+worst_of <- function(s) { x <- cl[cl$scenario == s, ]; as.character(x$name[which.min(x$ret)]) }
+bond_cl <- grep("_(government|credit)$", colnames(R), value = TRUE)
+us_cl   <- grep("^US_", colnames(R), value = TRUE)
+rng <- function(s, cls) range(cl$ret[cl$scenario == s & cl$name %in% cls])
+rank_of <- function(s) { x <- pf[pf$scenario == s, ]; setNames(rank(x$ret), x$name) }
+r1 <- rank_of("curves +100 bp"); r2 <- rank_of("spreads +200 bp, equities -15%")
+r3 <- rank_of("dollar +10%");    r4 <- rank_of("equities -25%, curves -50 bp")
+stopifnot(r1[["minimum variance"]] == 1, r1[["equal weight"]] == 4,          # worst, best
+          all(c(r2[["minimum variance"]], r3[["minimum variance"]], r4[["minimum variance"]]) == 4),
+          all(c(r2[["equal weight"]], r3[["equal weight"]], r4[["equal weight"]]) == 1),
+          all(abs(cl$ret[cl$scenario == "curves +100 bp" & cl$name %in% bond_cl] + 0.054) < 0.004),
+          all(cl$ret[cl$scenario == "curves +100 bp" & !cl$name %in% bond_cl] == 0),
+          all(cl$ret[cl$scenario == "dollar +10%" & cl$name %in% c(us_cl, "GLOBAL_commodity")] == 0),
+          all(abs(cl$ret[cl$scenario == "dollar +10%" & !cl$name %in% c(us_cl, "GLOBAL_commodity")] + 0.10) < 1e-3),
+          all(cl$ret[cl$scenario == "equities -25%, curves -50 bp" & cl$name %in% bond_cl] > 0),
+          W["US_government", "minimum variance"] > 0.8)
+```
+
+@tbl-965-scenarios and @fig-965-scenarios read the mapping across the four
+scenarios, one factor layer at a time. A parallel rise of one hundred basis
+points costs each of the ten bond classes its duration times one percent,
+between `r sprintf("%.1f", -100 * rng("curves +100 bp", bond_cl)[2])` and
+`r sprintf("%.1f", -100 * rng("curves +100 bp", bond_cl)[1])` percent, and
+moves nothing else. The minimum-variance portfolio, which holds
+`r sprintf("%.0f", 100 * W["US_government", "minimum variance"])` percent of
+`US_government`, loses
+`r sprintf("%.1f", -100 * pf_at("minimum variance", "curves +100 bp"))` percent
+and is the worst of the four portfolios, against
+`r sprintf("%.1f", -100 * pf_at("equal weight", "curves +100 bp"))` for equal
+weight: the least volatile portfolio of @sec-09-mean-variance-application is a
+concentrated position in the one factor this scenario shocks. The spread
+widening with equities down fifteen percent is the credit crisis in miniature.
+Each credit class loses its spread duration times two percent, between
+`r sprintf("%.1f", -100 * rng("spreads +200 bp, equities -15%", grep("_credit$", colnames(R), value = TRUE))[2])`
+and
+`r sprintf("%.1f", -100 * rng("spreads +200 bp, equities -15%", grep("_credit$", colnames(R), value = TRUE))[1])`
+percent, every equity class its fifteen, and the ranking reverses: equal weight
+loses `r sprintf("%.1f", -100 * pf_at("equal weight", "spreads +200 bp, equities -15%"))`
+percent and minimum variance
+`r sprintf("%.1f", -100 * pf_at("minimum variance", "spreads +200 bp, equities -15%"))`.
+The dollar scenario touches no US series and the commodity index and takes ten
+percent from every other class, so it is a test of home bias: equal weight,
+with twelve of its sixteen series abroad, loses
+`r sprintf("%.1f", -100 * pf_at("equal weight", "dollar +10%"))` percent, the
+policy portfolio `r sprintf("%.1f", -100 * pf_at("policy", "dollar +10%"))`
+and minimum variance
+`r sprintf("%.1f", -100 * pf_at("minimum variance", "dollar +10%"))`. The
+sell-off with a rally is the only scenario in which the bond block gains,
+`r sprintf("%.1f", 100 * rng("equities -25%, curves -50 bp", bond_cl)[1])` to
+`r sprintf("%.1f", 100 * rng("equities -25%, curves -50 bp", bond_cl)[2])`
+percent on fifty basis points, and the
+`r sprintf("%.0f", 100 * sum(W[grep("_equity$", rownames(W)), "policy"]))`
+percent the policy portfolio holds in equity costs it
+`r sprintf("%.1f", -100 * pf_at("policy", "equities -25%, curves -50 bp"))`
+percent against
+`r sprintf("%.1f", -100 * pf_at("minimum variance", "equities -25%, curves -50 bp"))`
+for minimum variance. In three of the four scenarios minimum variance loses
+least and equal weight most; in the parallel rise it is the other way round.
+Every number in the table is a weighted sum of a row of @tbl-965-classes, and
+that is the point: a scenario return can be traced to the loading that
+produced it.
+
+What a linear one-period mapping leaves out is listed rather than hidden. It
+has no convexity, so a large yield move is priced by the first-order term of
+@eq-22-return alone and the loss on a rise is overstated, the gain on a fall
+understated. It holds the exposures fixed, whereas @longin2001 and @ang2002
+show that correlations rise in falling markets and @chow1999 build the
+scenario portfolio on exactly that distinction between good and bad regimes.
+It has no second round: a spread widening that forces selling, or a currency
+move that changes a central bank's policy, is a path and not a vector. And it
+carries no idiosyncratic draw, so an instrument's return under a scenario is
+its systematic return only, which for the median equity is
+`r sprintf("%.0f", 100 * r2_at("instrument", "equity", "median"))` percent of
+its variance. The last two limits are what the turbulence measure of
+@kritzman2010 and the coherent scenarios of @rebonato2010 are built to
+address, and the next section measures the first and the last.
+
+## Scenarios Against the Episodes {#sec-965-scenario-analysis-episodes}
+
+The validation treats each episode of `sim_episodes` as a scenario the market
+actually ran. The realized factor moves over an episode's weeks are the sum of
+the weekly changes for the curve factors and the spreads and the compounded
+return for the currencies, the equity markets and the commodity index; pushed
+through $\boldsymbol{B}$, with each regression's constant times the number of
+weeks added, which for a bond is mostly its carry, they give the cumulative
+return the mapping predicts. The realized returns are the ones
+@sec-90-data-description tables for the classes, which the chunk asserts, and
+their counterparts for the instruments.
+
+```{r}
+#| label: episodes
+lv <- c(lsc, grep("_Spread$", names(cv), value = TRUE))        # factors that are changes
+rt <- setdiff(colnames(F), lv)                                  # factors that are returns
+episode_shock <- function(e) {
+  i <- which(in_episode(wk, e))
+  shock(colSums(F[i, lv]), apply(1 + F[i, rt, drop = FALSE], 2, prod) - 1)
+}
+fit <- dplyr::bind_rows(lapply(sim_episodes$episode, function(e) {
+  i <- which(in_episode(wk, e)); m <- in_episode(zoo::index(R), e)
+  realized <- apply(1 + Y[i, ], 2, prod) - 1
+  stopifnot(max(abs(realized[colnames(R)] - (apply(1 + R[m, ], 2, prod) - 1))) < 1e-8)
+  tibble::tibble(episode = sim_episodes$label[sim_episodes$episode == e], name = meta$name,
+                 level = meta$level, kind = meta$kind,
+                 predicted = propagate(episode_shock(e), B) + alpha * length(i),
+                 realized = realized[meta$name])
+})) |> dplyr::mutate(episode = factor(episode, sim_episodes$label))
+r2_line <- function(y, yhat) 1 - sum((y - yhat)^2) / sum((y - mean(y))^2)   # against the 45-degree line
+fit_tab <- fit |>
+  dplyr::group_by(episode) |>
+  dplyr::summarise(
+    r2_classes     = r2_line(realized[level == "class"], predicted[level == "class"]),
+    r2_instruments = r2_line(realized[level == "instrument"], predicted[level == "instrument"]),
+    miss_class     = name[level == "class"][which.max(abs(realized - predicted)[level == "class"])],
+    miss_instrument = name[level == "instrument"][which.max(abs(realized - predicted)[level == "instrument"])],
+    .groups = "drop")
+```
+
+```{r}
+#| label: tbl-965-fit
+#| tbl-cap: "The mapping against the four episodes: the R² of predicted cumulative returns against realized ones, measured against the 45-degree line, across the sixteen classes and across the instruments, and the series each misses by most."
+#| echo: false
+fit_tab |>
+  dplyr::mutate(dplyr::across(c(r2_classes, r2_instruments), ~ sprintf("%.3f", .x))) |>
+  kable(align = "lrrll",
+        col.names = c("episode", "R², classes", "R², instruments", "largest miss, class", "largest miss, instrument"))
+```
+
+```{r}
+#| label: fig-965-episodes
+#| fig-cap: "Predicted against realized cumulative returns over the four episodes, one panel per episode, the line the 45-degree line. Small points are instruments, large ones the sixteen class series; the bonds sit on the line and the equities scatter around it."
+#| echo: false
+#| fig-asp: 0.85
+fit |>
+  dplyr::mutate(kind = factor(kind, c("government", "credit", "money_market", "equity", "commodity"))) |>
+  ggplot2::ggplot(ggplot2::aes(predicted, realized, colour = kind)) +
+  ggplot2::geom_abline(slope = 1, intercept = 0, colour = tidyaa_colors[["ink_soft"]], linewidth = 0.3) +
+  ggplot2::geom_point(data = function(d) dplyr::filter(d, level == "instrument"), size = 1.2, alpha = 0.6) +
+  ggplot2::geom_point(data = function(d) dplyr::filter(d, level == "class"), size = 3, shape = 17) +
+  ggplot2::facet_wrap(~ episode, scales = "free") +
+  ggplot2::scale_x_continuous(labels = scales::percent) +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  scale_colour_tidyaa() +
+  ggplot2::labs(x = "predicted by the mapping", y = "realized")
+```
+
+```{r}
+#| label: fit-facts
+#| include: false
+ft <- function(e, col) fit_tab[[col]][fit_tab$episode == e]
+miss <- fit |> dplyr::mutate(err = realized - predicted)
+miss_at <- function(e, nm, col = "err") miss[[col]][miss$episode == e & miss$name == nm]
+eq_miss <- miss |> dplyr::filter(level == "instrument", kind == "equity") |>
+  dplyr::group_by(episode) |> dplyr::summarise(mad = mean(abs(err)), .groups = "drop")
+bond_miss <- miss |> dplyr::filter(level == "instrument", kind %in% c("government", "credit")) |>
+  dplyr::group_by(episode) |> dplyr::summarise(mad = mean(abs(err)), .groups = "drop")
+gov_cl <- grep("_government$", colnames(R), value = TRUE)
+conv   <- miss |> dplyr::filter(episode == "rates shock", name %in% gov_cl)
+lbl    <- setNames(sim_episodes$label, sim_episodes$episode)
+mad_at <- function(tab, e) tab$mad[tab$episode == e]
+hy_uk  <- sapply(sim_episodes$episode, function(e) episode_shock(e)[["UK_HY_Spread"]])
+y_rs0  <- cv$US_Level[min(which(in_episode(cv$date, "rates_shock"))) - 1L]   # the week before
+stopifnot(names(which.max(hy_uk)) == "credit_crisis", hy_uk[["credit_crisis"]] > 0.02,
+          y_rs0 < mean(cv$US_Level))
+stopifnot(all(fit_tab$r2_classes > 0.95), all(fit_tab$r2_instruments < 0.7),
+          all(fit_tab$r2_classes > fit_tab$r2_instruments),
+          all(eq_miss$mad > bond_miss$mad),
+          ft(lbl[["equity_bear"]], "miss_class") == "JP_equity",
+          miss_at(lbl[["equity_bear"]], "JP_equity") > 0,
+          ft(lbl[["credit_crisis"]], "miss_class") == "UK_credit",
+          miss_at(lbl[["credit_crisis"]], "UK_credit") > 0,
+          miss_at(lbl[["credit_crisis"]], "UK_credit", "realized") < 0,
+          all(conv$err < 0),                                      # carry credited, not earned
+          all(grepl("_EQU_", fit_tab$miss_instrument)),
+          which.max(abs(miss$err[miss$level == "instrument"])) %in%
+            which(miss$episode[miss$level == "instrument"] == lbl[["equity_bear"]]))
+```
+
+@tbl-965-fit and @fig-965-episodes give the answer. Across the sixteen
+classes the mapping explains between
+`r sprintf("%.1f", 100 * min(fit_tab$r2_classes))` and
+`r sprintf("%.1f", 100 * max(fit_tab$r2_classes))` percent of the variation
+in cumulative returns, measured against the 45-degree line without refitting,
+and the misses have names. In the
+`r lbl[["equity_bear"]]` the class the mapping misses by most is `JP_equity`,
+whose realized return lies
+`r sprintf("%.1f", 100 * miss_at(lbl[["equity_bear"]], "JP_equity"))`
+percentage points above the prediction over the
+`r sum(in_episode(zoo::index(R), "equity_bear"))` months of the episode: a
+foreign class is its local market *times* its currency and the mapping adds
+them, so the longer the window and the larger the moves, the larger the cross
+term it leaves out. In the `r lbl[["credit_crisis"]]` it is `UK_credit`, which
+lost `r sprintf("%.1f", -100 * miss_at(lbl[["credit_crisis"]], "UK_credit", "realized"))`
+percent against a predicted
+`r sprintf("%.1f", -100 * miss_at(lbl[["credit_crisis"]], "UK_credit", "predicted"))`:
+the UK high-yield spread widened by
+`r sprintf("%.0f", 1e4 * hy_uk[["credit_crisis"]])` basis points, the largest
+move of the four episodes, and a spread duration alone overstates the loss on
+a move of that size by the convexity term of @eq-22-return, which a spread has
+as much as a yield. In the `r lbl[["rates_shock"]]` the five government classes
+sit just below the line, by
+`r sprintf("%.1f", -100 * mean(conv$err))` percentage points on average over
+the year: the mapping credits each bond with its sample-average carry, and the
+episode starts from a US level of
+`r sprintf("%.1f", 100 * y_rs0)` percent against a sample mean of
+`r sprintf("%.1f", 100 * mean(cv$US_Level))`. Across the instruments
+the $R^2$ falls to between `r sprintf("%.2f", min(fit_tab$r2_instruments))`
+and `r sprintf("%.2f", max(fit_tab$r2_instruments))`, and the largest miss in
+every episode is a single equity, by as much as
+`r sprintf("%.0f", 100 * max(abs(miss$err[miss$level == "instrument"])))`
+percentage points for one name over the `r lbl[["equity_bear"]]`: the
+idiosyncratic draw, which carries the larger part of a single equity's
+variance in @fig-965-r2 and which no scenario can reach. In that episode the
+mean absolute miss of the `r r2_at("instrument", "equity", "n")` equities is
+`r sprintf("%.1f", 100 * mad_at(eq_miss, lbl[["equity_bear"]]))` percentage
+points against `r sprintf("%.1f", 100 * mad_at(bond_miss, lbl[["equity_bear"]]))`
+for the bonds. The mapping is, then, what it was said to be: exact for the
+factor layers, exact for the bonds up to convexity, carry and compounding, and
+silent on the draw.
+
+The stress test of the mandate of @sec-12-constraints-application closes the
+appendix. The mandate is minimum variance under seven linear lines, fully
+invested, no series above 35 percent, equities between 40 and 60 percent,
+government at least 10, credit at most 40, commodities at most 15 percent, and
+an expected excess return of at least six percent a year, with the position
+limit of eight imposed afterwards by the screen of that chapter. The lines are
+added one at a time from the long-only minimum-variance portfolio of
+@sec-09-mean-variance-application, so that the line that accounts for a
+difference can be read off.
+
+```{r}
+#| label: mandate
+grp   <- split(seq_along(colnames(Re)), sleeve_of(colnames(Re)))
+m_min <- c(commodity = 0.00, credit = 0.00, equity = 0.40, government = 0.10)
+m_max <- c(commodity = 0.15, credit = 0.40, equity = 0.60, government = 1.00)
+stopifnot(identical(names(grp), names(m_min)), identical(names(grp), names(m_max)))
+floor_ann <- 0.06
+min_var <- function(spec, X = Re) {
+  w <- extractWeights(optimize.portfolio(X, spec |> add.objective(type = "risk", name = "var"),
+                                         optimize_method = "ROI"))
+  stopifnot(!anyNA(w)); w
+}
+lines <- function(assets, with_group = TRUE, with_floor = TRUE) {
+  g <- split(seq_along(assets), sleeve_of(assets))
+  s <- portfolio.spec(assets = assets) |>
+    add.constraint(type = "full_investment") |>
+    add.constraint(type = "box", min = 0, max = 0.35)
+  if (with_group) s <- s |> add.constraint(type = "group", groups = g,
+                                           group_min = unname(m_min[names(g)]),
+                                           group_max = unname(m_max[names(g)]))
+  if (with_floor) s <- s |> add.constraint(type = "return", return_target = floor_ann / 12)
+  s
+}
+full <- function(w) { out <- setNames(rep(0, ncol(Re)), colnames(Re)); out[names(w)] <- w; out }
+w_cap   <- min_var(lines(colnames(Re), FALSE, FALSE))
+w_grp   <- min_var(lines(colnames(Re), TRUE, FALSE))
+w_floor <- min_var(lines(colnames(Re)))
+keep    <- names(sort(w_floor, decreasing = TRUE))[1:8]            # the screen of chapter 12
+w_mand  <- full(min_var(lines(keep), Re[, keep]))
+W_m <- cbind(`long only` = w_gmv[colnames(Re)], `+ 35% cap` = w_cap[colnames(Re)],
+             `+ class limits` = w_grp[colnames(Re)], `+ 6% floor` = w_floor[colnames(Re)],
+             `+ 8 positions (the mandate)` = w_mand[colnames(Re)])
+stopifnot(identical(rownames(W_m), colnames(R)), all(abs(colSums(W_m) - 1) < 1e-6),
+          sum(w_mand > 1e-6) <= 8L, sum(mu * w_mand) * 12 >= floor_ann - 1e-6)
+S_m <- t(W_m) %*% S_class
+```
+
+```{r}
+#| label: tbl-965-mandate
+#| tbl-cap: "The mandate of chapter 12 under the four scenarios, one rung at a time: the long-only minimum-variance portfolio, then with each line of the policy statement added in turn. The last row is the mandate."
+#| echo: false
+tibble::as_tibble(S_m, rownames = "portfolio") |>
+  dplyr::mutate(dplyr::across(-portfolio, ~ sprintf("%+.1f%%", 100 * .x))) |>
+  kable(align = "lrrrr")
+```
+
+```{r}
+#| label: mandate-facts
+#| include: false
+mand_better <- S_m["+ 8 positions (the mandate)", ] > S_m["long only", ]
+steps <- apply(S_m, 2, diff)                                     # the change each rung makes
+rownames(steps) <- colnames(W_m)[-1]
+accounts <- apply(steps, 2, function(x) rownames(steps)[which.max(abs(x))])
+sm <- function(p, s) S_m[p, s]
+share <- function(rung, pattern) sum(W_m[grepl(pattern, rownames(W_m)), rung])
+stopifnot(identical(unname(mand_better), c(TRUE, FALSE, FALSE, FALSE)),
+          accounts[["curves +100 bp"]] == "+ class limits",
+          abs(steps["+ 35% cap", "curves +100 bp"]) < 0.001,
+          accounts[["spreads +200 bp, equities -15%"]] == "+ 35% cap",
+          W_m["US_credit", "+ 35% cap"] > 0.2, W_m["US_credit", "long only"] < 0.001,
+          accounts[["equities -25%, curves -50 bp"]] == "+ class limits",
+          accounts[["dollar +10%"]] == "+ 6% floor", steps["+ 6% floor", "dollar +10%"] > 0,
+          share("+ class limits", "_(government|credit)$") < share("+ 35% cap", "_(government|credit)$"),
+          share("+ class limits", "_equity$") >= 0.40 - 1e-6,
+          W_m["US_equity", "+ 6% floor"] > W_m["US_equity", "+ class limits"],
+          share("+ 6% floor", "^(UK|EU|CH|JP)_") < share("+ class limits", "^(UK|EU|CH|JP)_"))
+```
+
+@tbl-965-mandate answers the question the mandate was written for. In one of
+the four scenarios the mandate loses less than the long-only minimum-variance
+portfolio: the parallel rise,
+`r sprintf("%.1f", -100 * sm("+ 8 positions (the mandate)", "curves +100 bp"))`
+against `r sprintf("%.1f", -100 * sm("long only", "curves +100 bp"))`
+percent, and the rung that accounts for it is the class limits. The cap alone
+changes nothing in that scenario, because the weight it releases from
+`US_government` goes to other bonds of the same duration; the class limits
+require forty percent in equities and so cut the bond block from
+`r sprintf("%.0f", 100 * share("+ 35% cap", "_(government|credit)$"))` to
+`r sprintf("%.0f", 100 * share("+ class limits", "_(government|credit)$"))`
+percent of the portfolio, and with it the duration. The same lines are what
+make the mandate lose more in the other three. In the spread widening the cap
+is the largest step, from
+`r sprintf("%.1f", -100 * sm("long only", "spreads +200 bp, equities -15%"))` to
+`r sprintf("%.1f", -100 * sm("+ 35% cap", "spreads +200 bp, equities -15%"))`
+percent, because the weight it releases goes in part to `US_credit`,
+`r sprintf("%.0f", 100 * W_m["US_credit", "+ 35% cap"])` percent of the
+portfolio at that rung against none before, which carries the spread duration
+the scenario shocks. In the sell-off the class limits are, taking the loss
+from `r sprintf("%.1f", -100 * sm("+ 35% cap", "equities -25%, curves -50 bp"))`
+to `r sprintf("%.1f", -100 * sm("+ class limits", "equities -25%, curves -50 bp"))`
+percent, which is what a forty percent equity floor means in a sell-off of
+twenty-five percent. And in the dollar scenario the return floor runs the
+other way, reducing the loss by
+`r sprintf("%.1f", 100 * steps["+ 6% floor", "dollar +10%"])` percentage
+points, because the expected return it demands is bought with `US_equity`,
+which rises from
+`r sprintf("%.0f", 100 * W_m["US_equity", "+ class limits"])` to
+`r sprintf("%.0f", 100 * W_m["US_equity", "+ 6% floor"])` percent at the
+expense of the foreign series the scenario hits. A mandate is a set of
+exposures the committee has chosen without naming them, and the table names
+them: the equity floor is a duration ceiling and a sell-off exposure, the cap
+is a decision to hold the spread duration the minimum-variance portfolio would
+not, and the return floor is a dollar position.
+
+That is what a reader can do with this appendix. A scenario is a vector,
+`shock()` names its entries, $\boldsymbol{B}$ carries one row per instrument
+and per class, and `propagate()` is one matrix product: any scenario a
+committee can write as factor moves, any portfolio written as weights by name,
+and any exposure matrix, the regression betas of
+@sec-05-factor-models-implementation or the durations of
+@sec-22-fixed-income-sleeve-implementation, can be substituted in a line. The
+book's data make both sides inspectable, and the four episodes say how far to
+trust the result: to within a few percentage points for the factor layers and
+the bonds, and not at all for the draw.

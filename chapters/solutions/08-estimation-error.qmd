@@ -1,0 +1,219 @@
+### Chapter 8: Estimation Error and Its Cost {.unnumbered}
+
+```{r}
+#| label: sol-08-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+N  <- ncol(Re)
+mu <- colMeans(Re)
+S  <- stats::cov(Re)
+rf_by_month <- setNames(rf, as.character(zoo::index(R)))
+
+# The chapter's helpers, repeated so that this fragment runs on its own.
+gmv_qp <- function(S) {
+  n <- ncol(S)
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(rep(1, n), diag(n)), bvec = c(1, rep(0, n)), meq = 1)
+  w <- pmax(sol$solution, 0)
+  setNames(w / sum(w), colnames(S))
+}
+tan_qp <- function(mu, S) {
+  n <- length(mu)
+  if (max(mu) <= 0) return(gmv_qp(S))
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(mu * 1e2, diag(n)), bvec = c(1, rep(0, n)), meq = 1)
+  y <- pmax(sol$solution, 0)
+  setNames(y / sum(y), names(mu))
+}
+sharpe_of <- function(w, mu, S) as.numeric(sum(w * mu) / sqrt(t(w) %*% S %*% w)) * sqrt(12)
+sharpe_realized <- function(r, rf) {
+  n <- length(r)
+  (prod(1 + r)^(12 / n) - prod(1 + rf)^(12 / n)) / (stats::sd(r) * sqrt(12))
+}
+
+# The rolling loop of the chapter with two knobs: the window, and a shrinkage
+# of the estimated mean towards its cross-sectional average.
+rolling_gap <- function(win, shrink = 0, oos_start = zoo::index(R)[121]) {
+  ends <- seq.int(win, nrow(Re) - 1L)
+  roll <- lapply(ends, function(e) {
+    X <- zoo::coredata(Re)[(e - win + 1L):e, , drop = FALSE]
+    m <- colMeans(X); V <- stats::cov(X)
+    m <- (1 - shrink) * m + shrink * mean(m)
+    rules <- list(max_sharpe   = tan_qp(m, V),
+                  min_variance = gmv_qp(V),
+                  equal_weight = setNames(rep(1 / N, N), colnames(Re)),
+                  inverse_vol  = setNames((1 / sqrt(diag(V))) / sum(1 / sqrt(diag(V))), colnames(Re)))
+    nxt <- zoo::coredata(R)[e + 1L, ]
+    tibble::tibble(date = zoo::index(R)[e + 1L], rule = names(rules),
+                   promised = vapply(rules, sharpe_of, numeric(1), mu = m, S = V),
+                   realized = vapply(rules, function(w) sum(w * nxt), numeric(1)))
+  }) |> dplyr::bind_rows()
+  roll |>
+    dplyr::filter(date >= oos_start) |>
+    dplyr::group_by(rule) |>
+    dplyr::summarise(promised = mean(promised),
+                     realized = sharpe_realized(realized, rf_by_month[as.character(date)]),
+                     .groups = "drop") |>
+    dplyr::mutate(gap = promised - realized, kept = realized / promised) |>
+    dplyr::arrange(dplyr::desc(realized))
+}
+sweep <- utils::read.csv("output/tables/oos-sweep.csv") |>
+  dplyr::filter(universe == "classes", frequency == "months", basis == "gross")
+```
+
+#### Exercise 1
+
+A longer window estimates both moments better, so the promise should fall and
+the realization should rise. Both happen for the two optimized rules, and the
+register agrees.
+
+```{r}
+#| label: sol-08-ex1
+gap_60  <- rolling_gap(60L)
+gap_120 <- rolling_gap(120L)
+reg_120 <- sweep[sweep$window == 120, ]
+
+ex1 <- gap_120 |>
+  dplyr::mutate(register  = reg_120$sharpe[match(rule, reg_120$strategy)],
+                gap_at_60 = gap_60$gap[match(rule, gap_60$rule)])
+ex1 |> dplyr::select(rule, promised, realized, register, gap, gap_at_60)
+
+v <- function(d, r, col) d[[col]][match(r, d$rule)]
+d <- function(r, col) v(gap_120, r, col) - v(gap_60, r, col)     # change from 60 to 120 months
+opt <- c("min_variance", "max_sharpe")
+stopifnot(!anyNA(ex1$register), d(opt, "promised") < 0, d(opt, "realized") > 0,
+          abs(d("equal_weight", "realized")) < 1e-12,
+          gap_60$rule[4] == "max_sharpe", identical(gap_120$rule[1:2], opt))   # last, then second
+```
+
+The tangency portfolio's gap falls from
+`r sprintf("%.2f", v(gap_60, "max_sharpe", "gap"))` to
+`r sprintf("%.2f", v(gap_120, "max_sharpe", "gap"))`. The promise shrinking
+accounts for
+`r sprintf("%.0f%%", 100 * d("max_sharpe", "promised") / d("max_sharpe", "gap"))`
+of the fall, since doubling the window halves the $N/T$ term of
+@eq-08-inflation, and the realization rising from
+`r sprintf("%.2f", v(gap_60, "max_sharpe", "realized"))` to
+`r sprintf("%.2f", v(gap_120, "max_sharpe", "realized"))` for the rest. Equal
+weighting's realized Sharpe ratio is identical in the two rows, as it must be,
+since it estimates nothing and both are scored on the same months; its gap
+moves only because a longer window reports a different in-sample Sharpe ratio
+for the same portfolio. The tangency portfolio is last on sixty-month windows
+and second on 120-month ones, behind minimum variance alone, and the
+register's 120-month rows match the loop to within
+`r sprintf("%.3f", max(abs(ex1$realized - ex1$register)))`.
+
+#### Exercise 2
+
+A block bootstrap keeps the fat tails and the serial dependence of the actual
+returns that a normal draw discards. The full-sample moments remain the truth.
+
+```{r}
+#| label: sol-08-ex2
+set.seed(1602)
+block_draw <- function(T, block = 12L) {
+  starts <- sample.int(nrow(Re) - block + 1L, ceiling(T / block), replace = TRUE)
+  zoo::coredata(Re)[as.vector(outer(0:(block - 1L), starts, "+"))[seq_len(T)], , drop = FALSE]
+}
+boot <- vapply(seq_len(300L), function(b) {
+  X <- block_draw(60L); m <- colMeans(X); V <- stats::cov(X)
+  c(plug_in   = sharpe_of(tan_qp(m, V), mu, S),
+    mean_only = sharpe_of(tan_qp(m, S), mu, S),
+    cov_only  = sharpe_of(tan_qp(mu, V), mu, S))
+}, numeric(3))
+sr_star <- sharpe_of(tan_qp(mu, S), mu, S)
+sr_ew   <- sharpe_of(rep(1 / N, N), mu, S)
+stopifnot(mean(boot["mean_only", ]) < mean(boot["cov_only", ]))    # the mean channel costs more
+round(c(ceiling = sr_star, rowMeans(boot), equal_weight = sr_ew), 3)
+```
+
+The mean channel still dominates: holding the covariance at its true value loses
+`r sprintf("%.2f", sr_star - mean(boot["mean_only", ]))` of Sharpe ratio against
+`r sprintf("%.2f", sr_star - mean(boot["cov_only", ]))` for the covariance
+channel. The plug-in portfolio delivers
+`r sprintf("%.2f", mean(boot["plug_in", ]))`, `r if (mean(boot["plug_in", ]) > sr_ew) "still above" else "now below"`
+equal weighting's `r sprintf("%.2f", sr_ew)`. Resampling the actual months changes
+the size of the loss by a few hundredths and the conclusion not at all, which is
+the expected result on sixteen series: the tails matter for the risk measure of
+chapter 10, not for which moment is hard to estimate.
+
+#### Exercise 3
+
+Both thresholds come from a root of @eq-08-kz in $T$, with $\theta^2$ held at the
+sixteen-series value.
+
+```{r}
+#| label: sol-08-ex3
+theta2 <- as.numeric(t(mu) %*% solve(S, mu))
+kz_utility <- function(theta2, N, T) {
+  theta2 * T / (T - N - 2) -
+    T^2 * (T - 2) / (2 * (T - N - 1) * (T - N - 2) * (T - N - 4)) * (theta2 + N / T)
+}
+thresholds <- function(N) {
+  c(N = N,
+    positive = uniroot(function(T) kz_utility(theta2, N, T), c(N + 5, 1e6))$root,
+    ninety   = uniroot(function(T) kz_utility(theta2, N, T) - 0.9 * theta2 / 2, c(N + 5, 1e7))$root)
+}
+thr <- rbind(thresholds(16L), thresholds(50L))
+round(thr)
+```
+
+With sixteen assets the unconstrained plug-in investor needs about
+`r round(thr[1, "positive"])` months before the rule is expected to beat cash and
+about `r round(thr[1, "ninety"])` before it recovers ninety percent of the
+optimum. With fifty assets and the same $\theta^2$ the thresholds are
+`r round(thr[2, "positive"])` and `r round(thr[2, "ninety"])` months. Both scale
+roughly in proportion to $N$, because for fixed $\theta^2$ every term in the loss
+is a function of $N/T$; this is the calculation behind the thousands of months
+in @demiguel2009, and it is what changes when the benefit is allowed to grow
+with $N$ as it does in @tbl-08-crossover.
+
+#### Exercise 4
+
+Shrinking the estimated mean halfway to its cross-sectional average removes half
+of the cross-sectional dispersion the optimizer would otherwise chase.
+
+```{r}
+#| label: sol-08-ex4
+gap_shrunk <- rolling_gap(60L, shrink = 0.5)
+dplyr::bind_rows(plain = gap_60, shrunk = gap_shrunk, .id = "mean") |>
+  dplyr::filter(rule == "max_sharpe") |>
+  dplyr::select(mean, promised, realized, gap, kept)
+
+
+# The constraint priced on the same months: the excess return of the unconstrained
+# position solve(V, m), from the window that forecasts observation 121 onward.
+r_unc <- vapply(seq.int(120L, nrow(Re) - 1L), function(e) {
+  X <- zoo::coredata(Re)[(e - 59L):e, ]
+  sum(solve(stats::cov(X), colMeans(X)) * zoo::coredata(Re)[e + 1L, ])
+}, numeric(1))
+sr <- c(unconstrained = mean(r_unc) / stats::sd(r_unc) * sqrt(12),
+        long_only     = v(gap_60, "max_sharpe", "realized"),
+        shrunk        = v(gap_shrunk, "max_sharpe", "realized"))
+bought <- diff(sr)                                # by the constraint, then by the shrinkage
+stopifnot(bought > 0, bought[["shrunk"]] > bought[["long_only"]],
+          sr[["shrunk"]] > v(gap_60, "equal_weight", "realized"))
+round(sr, 3)
+```
+
+The tangency portfolio's promise falls from
+`r sprintf("%.2f", gap_60$promised[gap_60$rule == "max_sharpe"])` to
+`r sprintf("%.2f", gap_shrunk$promised[gap_shrunk$rule == "max_sharpe"])` and its
+realized Sharpe ratio moves from
+`r sprintf("%.2f", gap_60$realized[gap_60$rule == "max_sharpe"])` to
+`r sprintf("%.2f", gap_shrunk$realized[gap_shrunk$rule == "max_sharpe"])`, so the
+gap `r if (gap_shrunk$gap[gap_shrunk$rule == "max_sharpe"] < gap_60$gap[gap_60$rule == "max_sharpe"]) "narrows" else "widens"`
+to `r sprintf("%.2f", gap_shrunk$gap[gap_shrunk$rule == "max_sharpe"])`. The
+constraint can be priced on the same months: the unconstrained position
+$\hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}$ realizes
+`r sprintf("%.2f", sr[["unconstrained"]])`, so the constraint bought
+`r sprintf("%.2f", bought[["long_only"]])` of Sharpe ratio and the shrinkage a
+further `r sprintf("%.2f", bought[["shrunk"]])`. Here the crude shrinkage helps
+more than the constraint did, and it lifts the tangency portfolio above equal
+weighting's `r sprintf("%.2f", v(gap_60, "equal_weight", "realized"))`. The
+intensity should not be fixed at one half; @sec-06-expected-returns-theory
+chooses it from the data.

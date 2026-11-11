@@ -1,0 +1,176 @@
+project:
+  type: book
+  output-dir: ../../../../tmp/tidyaa_book
+  # Chapters live in chapters/ but run from the project root, so that
+  # source("R/_common.R") and relative data paths work everywhere.
+  execute-dir: project
+  preview:
+    port: 4200
+    browser: true
+
+book:
+  title: "Tidy Asset Allocation in R"
+  subtitle: "A handbook for building, constraining and testing multi-asset portfolios"
+  author: "Sebastian Stöckl"
+  date: today
+  date-format: "D MMMM YYYY"
+  site-url: https://www.tidy-asset-allocation.org
+  repo-url: https://github.com/sstoeckl/tidy-asset-allocation
+  repo-actions: [edit, issue]
+  search: true
+  page-navigation: true
+  reader-mode: true
+  back-to-top-navigation: true
+  sidebar:
+    style: docked
+    collapse-level: 1
+    border: false
+    search: true
+  page-footer:
+    border: false
+    left: |
+      *Tidy Asset Allocation in R* &middot; Sebastian Stöckl
+    right:
+      - text: "Source"
+        href: https://github.com/sstoeckl/tidy-asset-allocation
+      - text: "Report an issue"
+        href: https://github.com/sstoeckl/tidy-asset-allocation/issues/new
+  # Parts are named for granularity: classes first, then inside the sleeves.
+  # Strategic and tactical are vocabulary, defined in chapter 3 and used to
+  # label what each chapter does. See CLAUDE.md, "The two axes".
+  chapters:
+    - index.qmd
+
+    - part: "Prerequisites"
+      chapters:
+        - chapters/01-setting-up.qmd
+        - chapters/02-notation-and-data.qmd
+
+    - part: "Foundations of Portfolio Choice"
+      chapters:
+        - chapters/03-return-risk-and-the-investor.qmd
+        - chapters/04-descriptive-analysis.qmd
+        - chapters/05-factor-models.qmd
+
+    - part: "Estimating the Inputs"
+      chapters:
+        - chapters/06-expected-returns.qmd
+        - chapters/07-covariance-matrix.qmd
+        - chapters/08-estimation-error.qmd
+
+    - part: "Portfolio Optimization"
+      chapters:
+        - chapters/09-mean-variance.qmd
+        - chapters/10-risk-measures.qmd
+        - chapters/11-higher-moments.qmd
+        - chapters/12-constraints.qmd
+        - chapters/13-solvers.qmd
+        - chapters/14-risk-based-allocation.qmd
+
+    - part: "Allocation Strategies"
+      chapters:
+        - chapters/15-hierarchical-allocation.qmd
+        - chapters/16-signals-and-forecasts.qmd
+        - chapters/17-expressing-views.qmd
+        - chapters/18-parametric-policies.qmd
+        - chapters/19-regimes.qmd
+        - chapters/20-sustainability.qmd
+
+    - part: "Inside the Sleeves"
+      chapters:
+        - chapters/21-equity-sleeve.qmd
+        - chapters/22-fixed-income-sleeve.qmd
+
+    - part: "Implementation and Evaluation"
+      chapters:
+        - chapters/23-rebalancing.qmd
+        - chapters/24-benchmarks-and-active-risk.qmd
+        - chapters/25-backtesting.qmd
+
+    - part: "Advanced Topics"
+      chapters:
+        - chapters/26-forecast-error-cost.qmd
+        - chapters/27-decision-aware-forecasting.qmd
+        - chapters/28-robustness.qmd
+
+    - chapters/99-references.qmd
+
+  appendices:
+    - chapters/90-data-description.qmd
+    - chapters/91-proofs.qmd
+    - chapters/92-solver-matrix.qmd
+    - chapters/93-package-notes.qmd
+    - chapters/94-r-primer.qmd
+    - chapters/95-coverage-ledger.qmd
+    - chapters/96-solutions.qmd
+    - chapters/965-scenario-analysis.qmd
+    - chapters/97-colophon.qmd
+    - chapters/98-acknowledgements.qmd
+
+bibliography: assets/bib/references.bib
+
+crossref:
+  chapters: true
+
+execute:
+  freeze: auto
+  warning: false
+  message: false
+
+knitr:
+  opts_chunk:
+    comment: "#>"
+    collapse: true
+    dev: "ragg_png"
+    fig.align: "center"
+    fig.width: 7
+    fig.asp: 0.618
+    out.width: "90%"
+    dpi: 300
+
+format:
+  html:
+    # `cosmo` carries the page, `_brand.yml` sets the palette and typeface, and
+    # custom.scss only removes ornament and styles the title block. This is the
+    # Tidy Finance arrangement. No dark mode: every figure is a light-ground
+    # PNG, so a dark page inverts the text and leaves the plots behind.
+    theme: [cosmo, brand, assets/css/custom.scss]
+    toc: true
+    toc-depth: 3
+    toc-title: "On this page"
+    code-link: true
+    code-copy: true
+    code-overflow: wrap
+    code-tools:
+      source: false
+      toggle: true
+      caption: "Code"
+    df-print: tibble
+    fig-responsive: true
+    fig-align: center
+    lightbox: auto
+    anchor-sections: true
+    section-divs: true
+    smooth-scroll: true
+    link-external-newwindow: true
+    link-external-icon: false
+    citations-hover: true
+    footnotes-hover: true
+    crossrefs-hover: true
+    email-obfuscation: javascript
+
+  pdf:
+    documentclass: scrbook
+    papersize: a4
+    classoption: [oneside]
+    geometry:
+      - inner=3cm
+      - outer=3cm
+      - top=2.5cm
+      - bottom=2.5cm
+    colorlinks: true
+    keep-tex: false
+    include-in-header:
+      text: |
+        \usepackage{booktabs}
+        \usepackage{longtable}

@@ -1,0 +1,783 @@
+---
+title: "Descriptive Analysis of Asset Returns"
+metadata:
+  pagetitle: "Descriptive Analysis of Asset Returns"
+  description-meta: "The moments of a return series, which of them can be estimated, and what the modeled market of this book actually looks like."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+
+# One convention for the whole book, fixed here and never varied silently:
+# annualized return is geometric, annualized volatility is the standard
+# deviation of total returns scaled by the square root of the frequency, and
+# the Sharpe ratio divides the excess of the first over the bill by the second.
+ann_ret <- function(x, p = 12) prod(1 + x)^(p / length(x)) - 1
+ann_vol <- function(x, p = 12) stats::sd(x) * sqrt(p)
+```
+
+Every later chapter takes a return series and does something to it: estimates a
+moment, imposes a constraint, holds a portfolio through a crisis. None of that is
+interpretable without knowing what the series are, and none of it is trustworthy
+without knowing which of their properties can be estimated at all. Since
+@mandelbrot1963 and @fama1965 it has been understood that financial returns are
+not Gaussian, and @cont2001 collects the regularities that survive across markets
+and periods. This chapter asks which of those regularities hold in the market
+this book uses, and which of the numbers we are about to rely on are worth
+relying on.
+
+We first set out what the moments of a return series are and how precisely each
+can be estimated, then compute them, then examine the two properties of this
+market that shape every portfolio result that follows: its tails arrive as
+events rather than as a distribution, and its currency exposure is a property of
+the asset rather than of the country.
+
+The data are the modeled market of @sec-02-notation-and-data-simulated-market:
+five regions, the United States, Europe, the United Kingdom, Switzerland and
+Japan, each with equities, government bonds and credit, plus a global commodity
+index, which makes sixteen risky class series over
+`r length(unique(sim_class_returns_monthly$date))` months, model years 1 to
+`r max(model_year(sim_class_returns_monthly$date))`, all in US dollars and
+unhedged, with a money-market series per region beside them and the US Treasury
+bill as the risk-free rate. No series in it is the history of a real security,
+so it ships with the package, and every number below reproduces on the reader's
+machine without an account anywhere.
+
+## What Can Be Estimated {#sec-04-descriptive-analysis-theory}
+
+Let $r_t$ denote the return on an asset in period $t$, observed for
+$t = 1, \dots, T$. The four sample moments in universal use are
+
+$$
+\hat{\mu} = \frac{1}{T}\sum_{t=1}^{T} r_t,
+\qquad
+\hat{\sigma}^2 = \frac{1}{T-1}\sum_{t=1}^{T}(r_t - \hat{\mu})^2,
+$$ {#eq-04-moments12}
+
+$$
+\hat{S} = \frac{1}{T}\sum_{t=1}^{T}\left(\frac{r_t - \hat{\mu}}{\hat{\sigma}}\right)^{3},
+\qquad
+\hat{K} = \frac{1}{T}\sum_{t=1}^{T}\left(\frac{r_t - \hat{\mu}}{\hat{\sigma}}\right)^{4} - 3 .
+$$ {#eq-04-moments34}
+
+They are conventionally reported side by side, in one table, as though they were
+four facts of the same kind. They are not, and the difference is the single most
+consequential thing in this chapter.
+
+### The mean is the moment that does not improve
+
+Suppose returns are independent with mean $\mu$ and variance $\sigma^2$ per unit
+of time, observed over a calendar span $\tau$ at intervals of length $\Delta$, so
+that $T = \tau / \Delta$. The standard errors of the first two moments behave
+quite differently:
+
+$$
+\operatorname{se}(\hat{\mu}) = \frac{\sigma}{\sqrt{\tau}},
+\qquad
+\operatorname{se}(\hat{\sigma}^2) \approx \sigma^2\sqrt{\frac{2}{T}}
+= \sigma^2\sqrt{\frac{2\Delta}{\tau}}.
+$$ {#eq-04-precision}
+
+The precision of the mean depends only on the **calendar span** $\tau$. Sampling
+the same thirty years weekly rather than monthly multiplies $T$ by roughly four
+and does nothing whatever to the standard error of $\hat{\mu}$, because each
+observation carries proportionally less of the drift. The precision of the
+variance depends on the **number of observations**, so the same change cuts its
+standard error in half. This is the point of @merton1980, and it is why
+expected returns remain the hard problem while volatility modeling has made
+steady progress. @sec-06-expected-returns-theory and
+@sec-07-covariance-matrix-theory are the two chapters this asymmetry splits the
+book into.
+
+Higher moments are worse still. $\hat{S}$ and $\hat{K}$ depend on third and
+fourth powers of standardized returns, so a single extreme observation can move
+them by more than the rest of the sample combined.
+
+### Testing normality rather than assuming it
+
+@jarque1980 combine the two shape moments into a single statistic,
+
+$$
+\mathrm{JB} = \frac{T}{6}\left(\hat{S}^2 + \frac{\hat{K}^2}{4}\right)
+\;\xrightarrow{\;d\;}\; \chi^2_2
+$$ {#eq-04-jb}
+
+under the null of normality. It is a specification test, not a model, and a
+rejection says only that some combination of skewness and excess kurtosis is
+larger than sampling error allows.
+
+Whether normality matters depends on what is being computed. For a portfolio
+variance it hardly does. For a tail quantile it decides the answer. Write
+$\mathrm{VaR}_\alpha$ for the $\alpha$-quantile of the loss distribution and
+
+$$
+\mathrm{ES}_\alpha = \mathbb{E}\!\left[\, r \mid r \leq \mathrm{VaR}_\alpha \right]
+$$ {#eq-04-es}
+
+for the expected shortfall, the average loss conditional on being in the tail.
+Expected shortfall is preferred to value at risk because it is coherent in the
+sense of @artzner1999, in particular subadditive, so that combining two positions
+can never make the measured risk larger than the sum of its parts
+[@acerbi2002]. Value at risk fails that test, which matters precisely when
+portfolios are being built.
+
+@eq-04-es can be estimated directly from the sample tail, or from a normal
+quantile corrected for the observed skewness and kurtosis using the
+Cornish-Fisher expansion,
+
+$$
+z_{\mathrm{CF}} = z + \frac{(z^2-1)\hat{S}}{6}
+  + \frac{(z^3-3z)\hat{K}}{24} - \frac{(2z^3-5z)\hat{S}^2}{36},
+$$ {#eq-04-cornish-fisher}
+
+with $z$ the standard normal quantile. The resulting modified expected shortfall
+was brought into portfolio work by @favre2002 and refined by @boudt2008, and it
+is what `PerformanceAnalytics` computes by default. The gap between the two
+estimates measures how much the normal approximation is costing.
+
+## Implementation {#sec-04-descriptive-analysis-implementation}
+
+Three tables carry the whole book, and their shape is the shape everything else
+expects.
+
+```{r}
+#| label: universe
+returns  <- sim_class_returns_monthly     # date, class, return, index
+money    <- sim_money_market_monthly      # the five money markets, beside them
+bill     <- sim_riskfree_monthly          # date, rate_annual, return
+assets   <- sim_assets                    # one row per instrument
+
+dplyr::glimpse(returns, width = 72)
+```
+
+`r length(unique(returns$class))` risky class series,
+`r length(unique(returns$date))` complete months, no gaps. Underneath them sit
+`r nrow(assets)` individual instruments in `sim_asset_returns_monthly`, the same
+market at a finer grain and the universe the sleeve chapters of Part VI use.
+
+`PortfolioAnalytics`, which occupies most of this book, wants none of this shape.
+It wants a wide `xts` matrix, and it will not convert on the reader's behalf.
+
+```{r}
+#| label: to-xts
+R  <- as_xts_pm(returns, date, class, return)
+M  <- as_xts_pm(money,   date, class, return)
+rf <- bill$return
+stopifnot(identical(zoo::index(R), zoo::index(M)), length(rf) == nrow(R))
+dim(R)
+```
+
+That is the boundary between the tidy world and the matrix world that @sec-01-setting-up-implementation establishes, and this book
+crosses it explicitly every time rather than letting a helper do it invisibly.
+
+### The moments
+
+```{r}
+#| label: moments
+moments <- tibble::tibble(
+  series   = colnames(R),
+  ret      = apply(R, 2, ann_ret),
+  vol      = apply(R, 2, ann_vol),
+  sharpe   = (apply(R, 2, ann_ret) - ann_ret(rf)) / apply(R, 2, ann_vol),
+  skew     = as.numeric(PerformanceAnalytics::skewness(R)),
+  exkurt   = as.numeric(PerformanceAnalytics::kurtosis(R, method = "excess")),
+  maxdd    = apply(R, 2, function(x) { i <- cumprod(1 + x); min(i / cummax(i)) - 1 })
+) |>
+  dplyr::arrange(dplyr::desc(sharpe))
+```
+
+```{r}
+#| label: tbl-04-moments
+#| tbl-cap: "The sixteen risky class series over the full sample, annualized. Sorted by Sharpe ratio over the three-month bill."
+#| echo: false
+moments |>
+  dplyr::mutate(dplyr::across(c(ret, vol, maxdd), ~ sprintf("%.1f%%", 100 * .x)),
+                dplyr::across(c(sharpe, skew, exkurt), ~ sprintf("%.2f", .x))) |>
+  knitr::kable(align = "lrrrrrr",
+               col.names = c("", "return", "volatility", "Sharpe", "skew",
+                             "exc. kurtosis", "max drawdown"))
+```
+
+```{r}
+#| label: moments-claims
+#| include: false
+# The paragraph below types "less than half" and "under half": hold it to them.
+mom    <- function(s, col) moments[[col]][moments$series == s]
+equity <- grepl("_equity$", moments$series)
+stopifnot(mom("US_credit", "ret") < mom("US_equity", "ret") / 2,
+          mom("US_credit", "vol") < mom("US_equity", "vol") / 2)
+```
+
+Three features of @tbl-04-moments matter for what follows.
+
+**The return ranking is not the Sharpe ranking.** `US_credit` earns
+`r sprintf("%.1f%%", 100 * mom("US_credit", "ret"))` a year against
+`US_equity`'s `r sprintf("%.1f%%", 100 * mom("US_equity", "ret"))`, less than
+half, and on Sharpe ratio it ranks `r match("US_credit", moments$series)` of
+`r nrow(moments)`, at `r sprintf("%.2f", mom("US_credit", "sharpe"))` against
+`r sprintf("%.2f", mom("US_equity", "sharpe"))` for `US_equity` and above
+`r sum(moments$sharpe[equity] < mom("US_credit", "sharpe"))` of the
+`r sum(equity)` equity markets, because its volatility is under half that of
+`US_equity`. Whether that makes it the better
+holding depends on whether variance is the right measure of its risk, which
+@sec-04-descriptive-analysis-application takes up and
+@sec-10-risk-measures-theory settles.
+
+**The money market is not the risk-free rate.** The five money-market series are
+kept outside the risky universe, and the reason is worth one calculation.
+`US_money_market` is a three-month instrument marked to market off a fitted
+curve rather than a bill held to maturity.
+
+```{r}
+#| label: mm-not-bill
+mm <- as.numeric(M[, "US_money_market"])
+c(mm_negative_months   = mean(mm < 0),
+  bill_negative_months = mean(rf < 0),
+  correlation          = stats::cor(mm, rf),
+  mm_drawdown          = { i <- cumprod(1 + mm); min(i / cummax(i)) - 1 })
+```
+
+It tracks the bill, at a correlation of `r sprintf("%.2f", stats::cor(mm, rf))`,
+but it carries duration: it loses money in
+`r sprintf("%.0f%%", 100 * mean(mm < 0))` of months against the bill's
+`r sprintf("%.1f%%", 100 * mean(rf < 0))`. A risk-free rate has to be riskless
+over the holding period, and this series is not. We treat the money markets as
+short-duration assets and use `sim_riskfree_monthly` as the risk-free rate; every
+risk-free figure in this book comes from there.
+
+**Currency is a first-order driver.** The four foreign money markets have
+volatilities near ten percent.
+
+```{r}
+#| label: mm-currency
+round(apply(M, 2, ann_vol), 3)
+```
+
+A three-month instrument has almost no duration, so unhedged in dollars it is
+very nearly a pure currency position, and the same currency sits inside every
+foreign bond and equity series in @tbl-04-moments.
+@sec-04-descriptive-analysis-application takes that apart.
+
+```{r}
+#| label: fig-04-risk-return
+#| fig-cap: "Every class series in mean-volatility space. The dashed line runs from the bill through the highest Sharpe ratio available; series below it earn less per unit of risk than the best single holding did."
+#| echo: false
+#| fig-asp: 0.62
+best <- max(moments$sharpe)
+ggplot2::ggplot(moments, ggplot2::aes(vol, ret)) +
+  ggplot2::geom_abline(intercept = ann_ret(rf), slope = best,
+                       linetype = "22", colour = tidyaa_colors[["ink_soft"]],
+                       linewidth = 0.4) +
+  ggplot2::geom_point(ggplot2::aes(colour = sub("^[A-Z]+_", "", series)), size = 2.4) +
+  ggplot2::geom_text(ggplot2::aes(label = series), size = 2.4, hjust = -0.1,
+                     colour = tidyaa_colors[["ink_soft"]]) +
+  ggplot2::scale_x_continuous(labels = scales::percent, limits = c(0, 0.30)) +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  ggplot2::labs(x = "annualized volatility", y = "annualized return", colour = NULL)
+```
+
+### Testing the distribution
+
+Applying @eq-04-jb to each series gives one verdict and sixteen very different
+statistics, and their order is not the one intuition suggests.
+
+```{r}
+#| label: normality
+jb_stat <- vapply(colnames(R), function(s) {
+  x <- as.numeric(R[, s]); n <- length(x)
+  s3 <- mean((x - mean(x))^3) / stats::sd(x)^3
+  s4 <- mean((x - mean(x))^4) / stats::sd(x)^4 - 3
+  n / 6 * (s3^2 + s4^2 / 4)
+}, numeric(1))
+jb <- stats::pchisq(jb_stat, df = 2, lower.tail = FALSE)
+
+sum(jb < 0.05)                      # of 16
+round(sort(jb_stat), 1)             # the statistic, closest to Gaussian first
+```
+
+```{r}
+#| label: normality-claims
+#| include: false
+# The two ranks and the location of the largest statistics that the text states.
+stopifnot(identical(names(jb_stat), colnames(R)),
+          rank(-apply(R, 2, ann_vol))[["JP_equity"]] == 2,
+          rank(jb_stat)[["JP_equity"]] == 2,
+          mom("US_credit", "vol") < mom("JP_equity", "vol") / 2,
+          all(grepl("_credit$", names(sort(jb_stat, decreasing = TRUE))[1:3])))
+```
+
+`r sum(jb < 0.05)` of `r length(jb)` series reject normality at the five percent
+level, and the statistic runs from `r sprintf("%.0f", min(jb_stat))` to
+`r sprintf("%.0f", max(jb_stat))`. `JP_equity`, at
+`r sprintf("%.1f%%", 100 * mom("JP_equity", "vol"))` volatility the second most
+volatile series in the set, is the second closest to Gaussian, with a statistic
+of `r sprintf("%.0f", jb_stat[["JP_equity"]])`: its skewness is
+`r sprintf("%.2f", mom("JP_equity", "skew"))` and its excess kurtosis
+`r sprintf("%.2f", mom("JP_equity", "exkurt"))`, against
+`r sprintf("%.2f", mom("US_credit", "skew"))` and
+`r sprintf("%.2f", mom("US_credit", "exkurt"))` for `US_credit`, whose statistic
+is `r sprintf("%.0f", jb_stat[["US_credit"]])` at less than half the
+volatility. Volatility and non-normality are different properties, and this is
+the cleanest demonstration of it in the book.
+
+The three largest statistics belong to credit series rather than to equity, and
+@eq-04-cornish-fisher puts a number on what that costs.
+
+```{r}
+#| label: tbl-04-tails
+#| tbl-cap: "Expected shortfall at 95%, computed two ways. The Gaussian-corrected figure is the Cornish-Fisher expansion, which adjusts a normal quantile for skewness and kurtosis; the historical figure simply averages the realized tail."
+tails <- tibble::tibble(
+  series = colnames(R),
+  es_hist = apply(R, 2, function(x)
+    as.numeric(PerformanceAnalytics::ES(x, p = 0.95, method = "historical"))),
+  es_mod  = apply(R, 2, function(x)
+    as.numeric(PerformanceAnalytics::ES(x, p = 0.95, method = "modified")))
+) |>
+  dplyr::mutate(ratio = es_mod / es_hist) |>
+  dplyr::arrange(dplyr::desc(ratio))
+
+head(tails, 4)
+```
+
+For `US_credit` the two estimates disagree by a factor of
+`r sprintf("%.1f", tails$ratio[tails$series == "US_credit"])`. For `US_equity`
+they disagree by a factor of
+`r sprintf("%.2f", tails$ratio[tails$series == "US_equity"])`. A Gaussian risk
+model is roughly right for equities and roughly half right for credit, and
+`US_credit` is the series that ranked `r match("US_credit", moments$series)` of
+`r nrow(moments)` on Sharpe ratio in @tbl-04-moments.
+
+::: {.callout-note}
+## `ES()` does not default to the historical estimate
+
+`PerformanceAnalytics::ES()` defaults to `method = "modified"`, so a call without
+that argument returns the Cornish-Fisher figure of @eq-04-cornish-fisher rather
+than the sample tail. It is the better default, given how few observations a
+95% tail contains, and it is rarely noticed. Whenever a reported expected
+shortfall is compared against another source, check which estimator produced it.
+:::
+
+### How well each moment is estimated
+
+@eq-04-precision is a statement about standard errors under independence. Its
+practical counterpart is what a rolling window would have told an investor at
+each point in the sample.
+
+```{r}
+#| label: instability
+#| cache: false
+win <- 60L
+risky <- colnames(R)
+
+roll_stat <- function(x, f) zoo::rollapply(x, win, f, align = "right")
+
+instab <- lapply(risky, function(s) {
+  x <- as.numeric(R[, s])
+  full <- c(mean = mean(x), vol = stats::sd(x),
+            skew = mean((x - mean(x))^3) / stats::sd(x)^3)
+  rw <- list(mean = roll_stat(x, mean), vol = roll_stat(x, stats::sd),
+             skew = roll_stat(x, function(z)
+               mean((z - mean(z))^3) / stats::sd(z)^3))
+  tibble::tibble(
+    series = s, moment = names(full),
+    rel_iqr   = vapply(names(full), function(m)
+      as.numeric(stats::IQR(rw[[m]]) / abs(full[[m]])), numeric(1)),
+    sign_flip = vapply(names(full), function(m)
+      mean(sign(rw[[m]]) != sign(full[[m]])), numeric(1))
+  )
+}) |> dplyr::bind_rows()
+
+instab_med <- instab |>
+  dplyr::group_by(moment) |>
+  dplyr::summarise(median_rel_iqr = median(rel_iqr),
+                   median_sign_flip = median(sign_flip))
+instab_med
+```
+
+```{r}
+#| label: instability-claims
+#| include: false
+med <- function(m, col) sprintf("%.0f%%", 100 * instab_med[[col]][instab_med$moment == m])
+stopifnot(instab_med$median_rel_iqr[instab_med$moment == "mean"] > 1)
+```
+
+Read the second column first. Across `r length(risky)` risky series and
+`r length(zoo::rollapply(as.numeric(R[, 1]), win, mean, align = "right"))`
+overlapping sixty-month windows, the rolling volatility never once disagrees in
+sign with its full-sample value, which it cannot, being a positive quantity, and
+for the median series its interquartile range is
+`r med("vol", "median_rel_iqr")` of its own level. The rolling mean wanders by
+more than its own level, `r med("mean", "median_rel_iqr")` of it. The rolling
+skewness disagrees in sign with the full-sample skewness in
+`r med("skew", "median_sign_flip")` of all windows.
+
+That is @eq-04-precision made concrete, and it is the statement this book leans
+on repeatedly: volatility is estimable, the mean is not, and skewness will
+regularly report the opposite of the truth.
+
+```{r}
+#| label: fig-04-instability
+#| fig-cap: "Rolling sixty-month estimates against the full-sample value, for four representative series. The dashed horizontal line is the whole-sample answer; the solid line is what a sixty-month window would have told an investor at each point in the sample."
+#| echo: false
+#| fig-asp: 0.55
+show <- c("US_equity", "US_credit", "US_government", "GLOBAL_commodity")
+rolls <- lapply(show, function(s) {
+  x <- as.numeric(R[, s])
+  tibble::tibble(series = s,
+                 date = zoo::index(R)[win:length(x)],
+                 vol  = as.numeric(roll_stat(x, stats::sd)) * sqrt(12),
+                 mean = as.numeric(roll_stat(x, mean)) * 12)
+}) |> dplyr::bind_rows() |>
+  tidyr::pivot_longer(c(vol, mean), names_to = "moment")
+
+fullv <- tibble::tibble(
+  series = rep(show, each = 2), moment = rep(c("vol", "mean"), length(show)),
+  value = as.numeric(vapply(show, function(s)
+    c(ann_vol(as.numeric(R[, s])), ann_ret(as.numeric(R[, s]))), numeric(2))))
+
+ggplot2::ggplot(rolls, ggplot2::aes(date, value, colour = moment)) +
+  ggplot2::geom_hline(data = fullv, ggplot2::aes(yintercept = value, colour = moment),
+                      linetype = "22", linewidth = 0.35) +
+  ggplot2::geom_line(linewidth = 0.55) +
+  ggplot2::facet_wrap(~ series, nrow = 1) +
+  scale_x_model(by = 10) +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  ggplot2::scale_colour_manual(values = c(mean = tidyaa_colors[["broken"]],
+                                          vol = tidyaa_colors[["blue"]])) +
+  ggplot2::labs(y = NULL, colour = NULL)
+```
+
+### Drawdowns are episodes, not a number
+
+Maximum drawdown is the summary an investor asks for first.
+`PerformanceAnalytics` will return it in one call, and that call discards most of
+what the reader needs.
+
+```{r}
+#| label: drawdowns
+# table.Drawdowns() returns dates; we print them on the model calendar.
+model_dates <- function(tab) {
+  dplyr::mutate(tab, dplyr::across(c(From, Trough, To),
+                                   ~ ifelse(is.na(.x), NA, fmt_model(.x))))
+}
+PerformanceAnalytics::table.Drawdowns(R[, "US_government"], top = 3) |>
+  model_dates() |>
+  knitr::kable()
+```
+
+`table.Drawdowns()` returns the individual episodes: when each began, when it
+bottomed, when it ended, and, the column that matters, how long recovery took. An
+`NA` in `Recovery` means the series never got back.
+
+```{r}
+#| label: unrecovered
+deepest <- lapply(colnames(R), function(s) {
+  cbind(series = s, PerformanceAnalytics::table.Drawdowns(R[, s], top = 1))
+}) |> dplyr::bind_rows()
+still_down <- is.na(deepest$Recovery)
+deepest$series[still_down]
+```
+
+`r sum(still_down)` of the `r ncol(R)` series end the sample inside their
+deepest drawdown, having not recovered by its last month. A single
+`maxDrawdown()` call reports nothing but a depth, the same kind of number for
+`r paste0("\x60", deepest$series[which.min(deepest$Recovery)], "\x60")`, whose
+deepest drawdown was recovered in `r min(deepest$Recovery, na.rm = TRUE)`
+months, and for a series that never recovered at all. The episode table
+distinguishes them for the cost of one argument.
+
+## Two Properties That Shape Every Portfolio {#sec-04-descriptive-analysis-application}
+
+Neither is visible in a table of moments, and both decide what the optimizers of
+Part IV can achieve.
+
+### Fat tails are events, not a distribution
+
+@tbl-04-moments reports an excess kurtosis for each series separately, which
+invites the reading that each series independently has a fat tail. That reading
+is wrong, and the error matters for a portfolio, because independent fat tails
+diversify and shared ones do not.
+
+```{r}
+#| label: clustering
+Rr  <- R[, risky]
+z   <- scale(Rr)
+hit <- rowSums(abs(z) > 2.5)
+p   <- mean(abs(z) > 2.5)
+
+obs <- table(factor(hit, levels = 0:ncol(Rr)))
+exp <- stats::dbinom(0:ncol(Rr), ncol(Rr), p) * nrow(Rr)
+
+tibble::tibble(k = 0:ncol(Rr), observed = as.integer(obs), expected = round(exp, 2)) |>
+  dplyr::filter(k >= 3, observed > 0)
+```
+
+Months in which five or more of the `r ncol(Rr)` risky series moved beyond two
+and a half standard deviations number `r sum(hit >= 5)` observed against
+`r sprintf("%.2f", sum(exp[6:length(exp)]))` expected under independence. The
+excess is not marginal; it is a different phenomenon.
+
+```{r}
+#| label: worst-month
+d <- zoo::index(Rr)
+w <- d[which.max(hit)]
+stopifnot(in_episode(w, "credit_crisis"))   # the text below places it there
+c(month = fmt_model(w), series_beyond_2.5sd = max(hit), of = ncol(Rr))
+```
+
+In `r fmt_model(w)`, a month of the credit crisis described below,
+`r max(hit)` of the `r ncol(Rr)` risky series moved beyond two and a half
+standard deviations at once. The fat tail in this market is not sixteen fat
+tails. It is `r sum(hit >= 5)` months in which a large part of the market
+moves together, which is the joint counterpart of the marginal non-normality
+@eq-04-jb detected, and the reason @longin2001 study correlation in the tails
+rather than on average.
+
+```{r}
+#| label: fig-04-outliers
+#| fig-cap: "Standardized monthly returns of the risky series. Each row is a series, each column a month; the dark vertical stripes are the events in which the whole market moved at once."
+#| echo: false
+#| fig-asp: 0.5
+tibble::as_tibble(z) |>
+  dplyr::mutate(date = zoo::index(Rr)) |>
+  tidyr::pivot_longer(-date, names_to = "series", values_to = "z") |>
+  ggplot2::ggplot(ggplot2::aes(date, series, fill = pmax(pmin(z, 4), -4))) +
+  ggplot2::geom_tile() +
+  scale_x_model(expand = c(0, 0)) +
+  ggplot2::scale_fill_gradient2(low = tidyaa_colors[["broken"]], mid = "white",
+                                high = tidyaa_colors[["blue"]], midpoint = 0) +
+  ggplot2::labs(y = NULL, fill = NULL)
+```
+
+### The crises are not one crisis
+
+We keep four episodes apart throughout the book, because they are economically
+different and a lesson learned from one is false in another. They ship with the
+data as `sim_episodes`, each named for what happens in it, and
+@sec-90-data-description tabulates them.
+
+```{r}
+#| label: episodes
+ep  <- sim_episodes                 # episode, label, start, end, description
+cum <- vapply(ep$episode, function(e) {
+  apply(Rr[in_episode(d, e), ], 2, function(x) prod(1 + x) - 1)
+}, numeric(ncol(Rr)))
+round(100 * cum[c("US_equity", "US_government", "JP_government",
+                  "US_credit", "EU_credit", "GLOBAL_commodity"), ], 1)
+```
+
+```{r}
+#| label: episodes-claims
+#| include: false
+# The reading of the four episodes below rests on these signs.
+pct     <- function(x) sprintf("%.1f%%", 100 * abs(x))
+n_ep    <- vapply(ep$episode, function(e) sum(in_episode(d, e)), integer(1))
+bonds   <- grepl("_government$|_credit$", rownames(cum))
+others  <- setdiff(colnames(cum), "rates_shock")
+winners <- names(which(cum[, "rates_shock"] > 0))
+stopifnot(
+  nrow(ep) == 4L, identical(colnames(cum), ep$episode),
+  cum["US_government", "credit_crisis"] > 0, cum["US_equity", "credit_crisis"] < 0,
+  cum["US_credit", "credit_crisis"] < 0,
+  cum["US_equity", "equity_bear"] < 0, cum["US_credit", "equity_bear"] > 0,
+  all(cum["US_government", others] > 0), all(cum[bonds, "rates_shock"] < 0),
+  "GLOBAL_commodity" %in% winners, cum["GLOBAL_commodity", "credit_crisis"] < 0
+)
+```
+
+In the credit crisis the safest government bonds did what the textbook says
+they do: `US_government` gained `r pct(cum["US_government", "credit_crisis"])`
+while `US_equity` lost `r pct(cum["US_equity", "credit_crisis"])`, and credit
+fell with equity, `US_credit` by `r pct(cum["US_credit", "credit_crisis"])`.
+The equity bear market was a different decline. `US_equity` lost
+`r pct(cum["US_equity", "equity_bear"])` over `r n_ep[["equity_bear"]]` months
+while `US_credit` gained `r pct(cum["US_credit", "equity_bear"])` beside a
+government bond that gained `r pct(cum["US_government", "equity_bear"])`, so
+credit sided with bonds in one equity decline and with equities in the other.
+In the `r n_ep[["liquidity_shock"]]` months of the liquidity shock
+`r sum(cum[, "liquidity_shock"] < 0)` of the `r nrow(cum)` series fell. In the
+rates shock the government bond that had gained in each of the other three
+episodes lost `r pct(cum["US_government", "rates_shock"])`, every government
+bond and credit series lost with it, and only `r length(winners)` of the
+`r nrow(cum)` series gained.
+
+```{r}
+#| label: rates-winners
+names(which(cum[, "rates_shock"] > 0))
+```
+
+One of them, `GLOBAL_commodity`, had lost
+`r pct(cum["GLOBAL_commodity", "credit_crisis"])` in the credit crisis. A book
+that teaches diversification from the credit crisis alone teaches a rule that
+reverses in the rates shock, which is why every backtest in
+@sec-25-backtesting-application reports these episodes separately rather than
+averaging over them.
+
+The correlation matrix says the same thing in the form an optimizer will feel.
+
+```{r}
+#| label: regime-correlations
+mean_cor <- function(idx) {
+  C <- stats::cor(Rr[idx, ]); mean(C[upper.tri(C)])
+}
+in_ep <- vapply(ep$episode, function(e) in_episode(d, e), logical(nrow(Rr)))
+calm  <- rowSums(in_ep) == 0
+
+regime <- tibble::tibble(
+  regime   = c("calm", ep$episode),
+  months   = c(sum(calm), unname(colSums(in_ep))),
+  mean_cor = c(mean_cor(calm), unname(apply(in_ep, 2, mean_cor)))
+)
+regime
+```
+
+```{r}
+#| label: regime-claims
+#| include: false
+rc <- stats::setNames(regime$mean_cor, regime$regime)
+stopifnot(rc[["credit_crisis"]] > rc[["calm"]], rc[["rates_shock"]] > rc[["calm"]],
+          rc[["equity_bear"]] < rc[["calm"]])
+```
+
+Average pairwise correlation rises from `r sprintf("%.2f", rc[["calm"]])` in
+calm months to `r sprintf("%.2f", rc[["credit_crisis"]])` through the credit
+crisis and `r sprintf("%.2f", rc[["rates_shock"]])` through the rates shock. In
+the equity bear market it falls to `r sprintf("%.2f", rc[["equity_bear"]])`,
+because bonds rose while equities fell. The diversification an optimizer found
+in the calm sample is not the diversification available when it is needed.
+@longin2001 and @ang2002 document the same asymmetry in real equity markets:
+correlations rise in falling markets and not in rising ones.
+
+One caution about the numbers themselves. The credit crisis is
+`r n_ep[["credit_crisis"]]` months and the liquidity shock
+`r n_ep[["liquidity_shock"]]`, and a correlation matrix estimated on so few
+observations is a description rather than an estimate. @forbes2002 show further
+that measured correlation rises mechanically with volatility even when the
+underlying dependence is unchanged, so a rise of this kind is not by itself
+evidence of contagion. The cumulative returns above carry far more weight than
+the correlations do.
+
+### Currency is not one decision
+
+Everything here is unhedged in dollars, so a foreign holding carries its local
+return and its currency's move together. How much of it is currency depends on
+the asset rather than on the country, and that is the non-obvious part.
+
+```{r}
+#| label: currency
+fx <- sim_fx_monthly
+share <- function(series, region) {
+  u <- as.numeric(R[, series])
+  f <- fx$fx_return[fx$region == region][
+        match(zoo::index(R), fx$date[fx$region == region])]
+  c(unhedged  = ann_vol(u),
+    hedged    = ann_vol(u - f),
+    fx_share  = 1 - stats::var(u - f) / stats::var(u),
+    if_indep  = stats::var(f) / stats::var(u))
+}
+round(rbind(
+  JP_government = share("JP_government", "JP"),
+  JP_equity     = share("JP_equity", "JP"),
+  CH_equity     = share("CH_equity", "CH"),
+  EU_credit     = share("EU_credit", "EU")
+), 3)
+```
+
+```{r}
+#| label: currency-claims
+#| include: false
+# The signs the next two paragraphs state.
+jp_eq <- share("JP_equity", "JP"); eu_cr <- share("EU_credit", "EU")
+stopifnot(jp_eq[["hedged"]] > jp_eq[["unhedged"]], jp_eq[["fx_share"]] < 0,
+          eu_cr[["fx_share"]] > eu_cr[["if_indep"]])
+```
+
+Hedging `JP_government` takes its volatility from
+`r sprintf("%.1f%%", 100 * share("JP_government","JP")[["unhedged"]])` to
+`r sprintf("%.1f%%", 100 * share("JP_government","JP")[["hedged"]])`. Hedging
+`JP_equity` takes it from
+`r sprintf("%.1f%%", 100 * jp_eq[["unhedged"]])` to
+`r sprintf("%.1f%%", 100 * jp_eq[["hedged"]])`, which is to say it removes
+nothing and adds a little.
+
+The `if_indep` column explains why. Writing $r^{\text{usd}} = r^{\text{loc}} + f$
+for the unhedged return of a foreign asset, where $f$ is the currency return, the
+variance decomposes as
+
+$$
+\operatorname{Var}(r^{\text{usd}})
+= \operatorname{Var}(r^{\text{loc}}) + \operatorname{Var}(f)
++ 2\operatorname{Cov}(r^{\text{loc}}, f).
+$$ {#eq-04-fx}
+
+If the local return and the currency were unrelated the covariance term would
+vanish and the currency's share of variance would be
+$\operatorname{Var}(f)/\operatorname{Var}(r^{\text{usd}})$, which is the
+`if_indep` column. For `JP_equity` that benchmark is
+`r sprintf("%.0f%%", 100 * share("JP_equity","JP")[["if_indep"]])` and the
+measured share is
+`r sprintf("%.0f%%", 100 * share("JP_equity","JP")[["fx_share"]])`. The gap is a
+negative covariance: the Japanese market rises when the yen falls, so the hedge
+is supplied by the economics rather than by a forward contract. For `EU_credit`
+the covariance runs the other way and hedging removes more than the currency's
+own share.
+
+The practical conclusion matches @campbell2010, who find that the optimal
+currency hedge differs systematically between bonds and equities because
+currencies covary differently with each. Whether to hedge is therefore not one
+question with one answer per currency. It is a different question for the bond
+sleeve and the equity sleeve of the same country, and
+@sec-15-hierarchical-allocation-implementation treats it as such. @perold1988 and
+@black1989 are the two classic and opposed statements of the general case.
+
+## Key Takeaways {.unnumbered}
+
+- The four moments of @eq-04-moments12 and @eq-04-moments34 are not four facts of
+  the same kind. By @eq-04-precision the mean's precision depends only on the
+  calendar span, while the variance improves with the number of observations, so
+  sampling more finely helps one and not the other [@merton1980].
+- Measured on sixty-month rolling windows, volatility never changes sign and
+  moves by `r med("vol", "median_rel_iqr")` of its level, the mean moves by
+  `r med("mean", "median_rel_iqr")` of its own level, and skewness reverses sign
+  in `r med("skew", "median_sign_flip")` of windows.
+- Non-normality and volatility are unrelated. All `r length(jb)` series reject
+  the normality test of @eq-04-jb, but `JP_equity`, the second most volatile, is
+  the second closest to Gaussian, while `US_credit`, at less than half its
+  volatility, has two estimates of expected shortfall that differ by a factor
+  of `r sprintf("%.1f", tails$ratio[tails$series == "US_credit"])`.
+- Fat tails in this market are events rather than a distribution.
+  `r sum(hit >= 5)` months show joint exceedances of a kind that independence
+  would produce once in `r sprintf("%.0f", 1 / sum(exp[6:length(exp)]))` samples
+  of this length. Independent fat tails diversify; shared ones do not.
+- The four episodes of `sim_episodes` are not one crisis. Average correlation
+  rises in the credit crisis and the rates shock and falls in the equity bear
+  market, and a correlation estimated on a `r n_ep[["credit_crisis"]]`-month
+  window is a description, part of whose rise is mechanical [@forbes2002].
+- The currency share of a foreign holding is a property of the asset, not of the
+  country. Hedging a Japanese government bond removes most of its volatility;
+  hedging Japanese equity removes none [@campbell2010].
+
+## Exercises {.unnumbered}
+
+1. `sim_class_returns_weekly` holds the same market at the model's native
+   frequency. Recompute @tbl-04-moments on it, annualizing by $\sqrt{52}$ instead
+   of $\sqrt{12}$. Which of the six columns change materially and which do not?
+   Explain the pattern using @eq-04-precision.
+2. The exceedance count above used a threshold of 2.5 standard deviations. Repeat
+   it at 2, 3 and 4. At which threshold does the excess over independence first
+   appear, and what does that tell you about where in the distribution the
+   dependence lives?
+3. Pick two series with similar volatility but opposite skewness, for example
+   `US_credit` and `JP_government`. Construct the equally weighted combination and
+   compute its skewness. Is it the average of the two? Explain why not.
+4. Using `sim_fx_monthly`, build the fully hedged version of all sixteen risky
+   series and recompute the average pairwise correlation in calm months and in
+   each of the four episodes. Does hedging change the diversification of the
+   set, or only its volatility?
+5. Verify @eq-04-precision by simulation. Draw 30 years of returns at monthly and
+   at weekly frequency from the same process, estimate the mean and the variance
+   from each, repeat 1,000 times, and compare the two sets of standard errors
+   against the formula.

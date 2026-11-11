@@ -1,0 +1,227 @@
+### Chapter 19: Regime-Dependent Allocation {.unnumbered}
+
+```{r}
+#| label: sol-19-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+N  <- ncol(Re); dates <- zoo::index(R); X <- zoo::coredata(Re)
+ep <- sim_episodes
+stopifnot(N == 16L, !anyNA(Re), all(sim_riskfree_monthly$date == dates))
+
+first_oos <- 121L; win <- 60L
+reb <- (first_oos - 1L):(nrow(Re) - 1L)      # weights set at the end of these months
+oos <- reb + 1L                              # earn the returns of these
+
+# The chapter's two portfolios, both as quadratic programs so that this fragment
+# runs on its own in a few seconds. The chapter obtains the stress portfolio from
+# optimize.portfolio.rebalancing(); the two agree to solver precision.
+qp <- function(S, a) {
+  n <- ncol(S)
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(a, diag(n)), bvec = c(1, rep(0, n)), meq = 1)
+  w <- pmax(sol$solution, 0)
+  setNames(w / sum(w), colnames(S))
+}
+window_of <- function(t) X[(t - win + 1L):t, ]
+W_calm   <- t(vapply(reb, function(t) qp(stats::cov(window_of(t)), colMeans(window_of(t)) * 1e2), numeric(N)))
+W_stress <- t(vapply(reb, function(t) qp(stats::cov(window_of(t)), rep(1, N)), numeric(N)))
+dimnames(W_calm) <- dimnames(W_stress) <- list(as.character(dates[reb]), colnames(Re))
+stopifnot(!anyNA(W_calm), !anyNA(W_stress))
+
+tb <- as.numeric(uncertaintymeasures::OSturbulence(R, rolling = TRUE, roll.obs = 60)$turb)
+turb_flag <- function(tb, q = 0.75, burn = 24L) {
+  threshold <- vapply(seq_along(tb), function(t) {
+    past <- tb[seq_len(t - 1L)]; past <- past[!is.na(past)]
+    if (length(past) < burn) NA_real_ else stats::quantile(past, q, names = FALSE)
+  }, numeric(1))
+  tb > threshold
+}
+in_any <- Reduce(`|`, lapply(ep$episode, function(k) in_episode(dates, k)))
+
+# The chapter's accounting, extended to weights that sum to less than one: the
+# remainder is in the bill, which earns rf and is traded without cost.
+cost_rate <- pm_costs_default()[sub(".*_", "", colnames(R))]
+stopifnot(!anyNA(cost_rate)); names(cost_rate) <- colnames(R)
+run_path <- function(W) {
+  stopifnot(identical(colnames(W), colnames(R)), nrow(W) == length(oos))
+  Rm    <- zoo::coredata(R)[oos, ]
+  gross <- rowSums(W * Rm) + (1 - rowSums(W)) * rf[oos]
+  held  <- rbind(0, (W * (1 + Rm) / (1 + gross))[-nrow(W), ])
+  trade <- abs(W - held)
+  tibble::tibble(date = dates[oos], gross = gross, turnover = rowSums(trade) / 2,
+                 cost = as.numeric(trade %*% cost_rate))
+}
+sharpe_of <- function(r) {
+  n <- length(r)
+  (prod(1 + r)^(12 / n) - prod(1 + rf[oos])^(12 / n)) / (stats::sd(r) * sqrt(12))
+}
+switch_W <- function(s, stress = W_stress) { W <- W_calm; W[s, ] <- stress[s, ]; W }
+sr_static <- sharpe_of(run_path(W_calm)$gross)
+```
+
+#### Exercise 1
+
+```{r}
+#| label: sol-19-1
+thresholds <- lapply(c(0.50, 0.75, 0.90), function(q) {
+  s <- turb_flag(tb, q)[reb]
+  tibble::tibble(percentile = q, in_stress = mean(s),
+                 sharpe   = sharpe_of(run_path(switch_W(s))$gross),
+                 same_mix = sharpe_of(run_path(mean(s) * W_stress + (1 - mean(s)) * W_calm)$gross))
+}) |> dplyr::bind_rows() |>
+  dplyr::mutate(timing = sharpe - same_mix)
+thresholds
+```
+
+```{r}
+#| label: sol-19-1-facts
+#| include: false
+th <- function(q, col) thresholds[[col]][thresholds$percentile == q]
+best <- thresholds$percentile[which.max(thresholds$timing)]
+```
+
+A lower threshold flags more months, `r sprintf("%.0f%%", 100 * th(0.5, "in_stress"))`
+at the median against `r sprintf("%.0f%%", 100 * th(0.9, "in_stress"))` at the
+90th percentile, and a strategy that is in the minimum-variance portfolio more
+often has a higher Sharpe ratio for that reason alone, which the `same_mix`
+column removes. The timing column is what remains:
+`r paste(sprintf("%+.2f", thresholds$timing), collapse = ", ")` at the 50th,
+75th and 90th percentiles. The largest is at the
+`r sprintf("%.0fth", 100 * best)` percentile, and none of the three is large
+beside the standard error of a Sharpe ratio over `r length(oos)` months, about
+`r sprintf("%.2f", sqrt((1 + (sr_static / sqrt(12))^2 / 2) / length(oos)) * sqrt(12))`.
+The threshold trades false alarms against missed months, and on this path
+neither end of that trade times the market; choosing the percentile by this
+table would be the parameter tuning that
+@sec-25-backtesting-application warns against.
+
+#### Exercise 2
+
+```{r}
+#| label: sol-19-2
+delay <- list(`label of the month ahead (infeasible)` = in_any[oos],
+              `label of the rebalancing month`        = in_any[reb])
+delayed <- lapply(names(delay), function(nm) {
+  p <- run_path(switch_W(delay[[nm]]))
+  tibble::tibble(rule = nm, sharpe = sharpe_of(p$gross), episode = ep$label,
+                 ret = vapply(ep$episode, function(e) prod(1 + p$gross[in_episode(p$date, e)]) - 1,
+                              numeric(1)))
+}) |> dplyr::bind_rows()
+delayed |>
+  dplyr::mutate(ret = round(100 * ret, 1)) |>
+  tidyr::pivot_wider(names_from = episode, values_from = ret)
+```
+
+```{r}
+#| label: sol-19-2-facts
+#| include: false
+sr_d   <- unique(delayed[, c("rule", "sharpe")])$sharpe
+lost   <- (sr_d[1] - sr_d[2]) / (sr_d[1] - sr_static)
+gap    <- delayed$ret[delayed$rule == names(delay)[1]] - delayed$ret[delayed$rule == names(delay)[2]]
+worst  <- ep$label[which.max(gap)]
+stopifnot(sr_d[1] > sr_d[2], sr_d[2] > sr_static)
+```
+
+Read at the rebalancing date, as `regime.portfolios()` reads it, the dated
+label enters each episode one month late and leaves it one month late. The
+Sharpe ratio falls from `r sprintf("%.3f", sr_d[1])` to
+`r sprintf("%.3f", sr_d[2])`, which is
+`r sprintf("%.0f%%", 100 * lost)` of the advantage over the static policy's
+`r sprintf("%.3f", sr_static)`. The loss is largest in the `r worst`, at
+`r sprintf("%.1f", 100 * max(gap))` percentage points: the first month of a
+short episode is a large part of it. Even a perfect dating rule that is one
+month slow is still ahead of the static policy, so the delay alone does not
+explain why the detected strategies of the chapter keep so little; their
+false alarms, and the further month a detector needs, do.
+
+#### Exercise 3
+
+```{r}
+#| label: sol-19-3
+set.seed(1602)
+n <- 1e5; stay <- c(0.98, 0.93); sigma <- c(0.06, 0.14) / sqrt(12)
+u <- stats::runif(n); s <- integer(n); s[1] <- 1L
+for (t in 2:n) s[t] <- if (u[t] < stay[s[t - 1L]]) s[t - 1L] else 3L - s[t - 1L]
+r <- stats::rnorm(n, mean = 0, sd = sigma[s])
+
+pi_bar <- (1 - rev(stay)) / sum(1 - stay)                      # long-run shares
+formula_kurtosis <- 3 * (sum(pi_bar * sigma^4) / sum(pi_bar * sigma^2)^2 - 1)
+sim <- c(share_state_2    = mean(s == 2L), formula_share = pi_bar[2],
+         sample_kurtosis  = as.numeric(PerformanceAnalytics::kurtosis(r, method = "excess")),
+         formula_kurtosis = formula_kurtosis,
+         acf1_returns     = stats::acf(r, 1, plot = FALSE)$acf[2],
+         acf1_squared     = stats::acf(r^2, 1, plot = FALSE)$acf[2])
+round(sim, 3)
+```
+
+The chain spends `r sprintf("%.0f%%", 100 * sim[["share_state_2"]])` of its
+months in the high-volatility state, as its transition probabilities imply,
+and the sample excess kurtosis of `r sprintf("%.2f", sim[["sample_kurtosis"]])`
+matches the `r sprintf("%.2f", sim[["formula_kurtosis"]])` of
+@eq-19-kurtosis: every draw is Gaussian and the mixture is not. The formula
+would give the same number if the states were drawn independently each month.
+What the persistence adds is in the last two entries. The returns themselves
+are uncorrelated, at `r sprintf("%.3f", sim[["acf1_returns"]])`, and their
+squares are not, at `r sprintf("%.2f", sim[["acf1_squared"]])`: large moves
+follow large moves. That is volatility clustering, the reason the tails of
+@sec-04-descriptive-analysis-application arrive as episodes rather than as
+isolated months, and it is also the only reason a filter can work at all,
+since a state that did not persist could be recognized but not used.
+
+#### Exercise 4
+
+```{r}
+#| label: sol-19-4
+stress_rule <- list(`minimum variance` = W_stress, `half of it, half in the bill` = 0.5 * W_stress)
+derisk <- lapply(names(stress_rule), function(nm) {
+  p <- run_path(switch_W(in_any[oos], stress_rule[[nm]]))
+  tibble::tibble(stress = nm, sharpe = sharpe_of(p$gross),
+                 drawdown = as.numeric(PerformanceAnalytics::maxDrawdown(xts::xts(p$gross, order.by = p$date))),
+                 episode = ep$label,
+                 ret = vapply(ep$episode, function(e) prod(1 + p$gross[in_episode(p$date, e)]) - 1,
+                              numeric(1)))
+}) |> dplyr::bind_rows()
+derisk |>
+  dplyr::mutate(ret = round(100 * ret, 1), drawdown = round(100 * drawdown, 1)) |>
+  tidyr::pivot_wider(names_from = episode, values_from = ret)
+```
+
+```{r}
+#| label: sol-19-4-facts
+#| include: false
+dr <- function(nm, e) derisk$ret[derisk$stress == nm & derisk$episode == e]
+ds <- function(nm, col) unique(derisk[derisk$stress == nm, c("sharpe", "drawdown")])[[col]]
+stopifnot(dr(names(stress_rule)[2], "rates shock") > dr(names(stress_rule)[1], "rates shock"),
+          dr(names(stress_rule)[2], "equity bear market") < dr(names(stress_rule)[1], "equity bear market"),
+          dr(names(stress_rule)[2], "credit crisis") > dr(names(stress_rule)[1], "credit crisis"))
+```
+
+In the excess-return formulation of
+@sec-03-return-risk-and-the-investor-theory a weight vector that sums to one
+half holds the other half in the bill, so the new stress portfolio is half the
+minimum-variance weights and the accounting adds the bill's return on the
+remainder. It does what moving to bonds could not: the loss inside the rates
+shock falls from `r sprintf("%.1f%%", -100 * dr(names(stress_rule)[1], "rates shock"))`
+to `r sprintf("%.1f%%", -100 * dr(names(stress_rule)[2], "rates shock"))`,
+because the only asset that does not fall when yields rise is the one with no
+duration. The price is paid in the equity bear market, where bonds rallied:
+`r sprintf("%+.1f%%", 100 * dr(names(stress_rule)[2], "equity bear market"))`
+against `r sprintf("%+.1f%%", 100 * dr(names(stress_rule)[1], "equity bear market"))`.
+In the credit crisis the half-invested portfolio loses less,
+`r sprintf("%+.1f%%", 100 * dr(names(stress_rule)[2], "credit crisis"))` against
+`r sprintf("%+.1f%%", 100 * dr(names(stress_rule)[1], "credit crisis"))`, because
+even the minimum-variance portfolio holds some of what was falling. Over
+the whole period the Sharpe ratio moves from
+`r sprintf("%.3f", ds(names(stress_rule)[1], "sharpe"))` to
+`r sprintf("%.3f", ds(names(stress_rule)[2], "sharpe"))` and the maximum
+drawdown from `r sprintf("%.1f%%", 100 * ds(names(stress_rule)[1], "drawdown"))`
+to `r sprintf("%.1f%%", 100 * ds(names(stress_rule)[2], "drawdown"))`. Which
+stress portfolio is right depends on which stress arrives, and a two-state
+model does not say. In `PortfolioAnalytics` the specification is
+`add.constraint(type = "weight_sum", min_sum = 0.5, max_sum = 0.5)` in place
+of `full_investment`, and `regime.portfolios()` accepts it beside a fully
+invested calm specification, as the callout in the chapter measured.

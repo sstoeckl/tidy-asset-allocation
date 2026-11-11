@@ -1,0 +1,93 @@
+---
+metadata:
+  pagetitle: "Coverage Ledger"
+  description-meta: "Which chapter uses which exported function of PortfolioAnalytics, generated from the chapter sources."
+---
+
+# Coverage Ledger {#sec-95-coverage-ledger}
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(knitr)
+```
+
+`PortfolioAnalytics` exports `r length(getNamespaceExports("PortfolioAnalytics"))`
+functions. This appendix walks that namespace against the book's own source
+files and records, for every export, the chapters whose code calls it. It is
+generated at render time from `chapters/*.qmd`, so it cannot fall behind the
+text. A capability with no chapter is either a deliberate omission or an
+oversight, and the table forces the distinction: the omissions are listed at
+the end with their reasons.
+
+```{r}
+#| label: scan
+exports <- sort(getNamespaceExports("PortfolioAnalytics"))
+files   <- list.files("chapters", pattern = "^[0-9]{2}-.*[.]qmd$", full.names = TRUE)
+files   <- files[!grepl("/9[0-9]-", files)]          # narrative chapters only
+chapter_of <- function(f) sub("^([0-9]{2}).*$", "\\1", basename(f))
+
+# Code inside chunks and inline expressions; prose mentions in code font are
+# excluded, because naming a function is not using it.
+code_of <- function(f) {
+  x <- readLines(f, warn = FALSE, encoding = "UTF-8")
+  fence <- cumsum(grepl("^```", x)) %% 2 == 1
+  chunks <- x[fence & !grepl("^```", x)]
+  inline <- unlist(regmatches(x, gregexpr("`r [^`]*`", x)))
+  paste(c(chunks, inline), collapse = "\n")
+}
+code <- setNames(lapply(files, code_of), vapply(files, chapter_of, character(1)))
+
+uses <- lapply(exports, function(fn) {
+  pat <- paste0("(?<![A-Za-z0-9_.])", gsub(".", "[.]", fn, fixed = TRUE), "\\s*\\(")
+  names(code)[vapply(code, function(s) grepl(pat, s, perl = TRUE), logical(1))]
+})
+ledger <- tibble::tibble(
+  export   = exports,
+  chapters = vapply(uses, function(u) paste(u, collapse = ", "), character(1)),
+  n        = lengths(uses)
+)
+c(exports = nrow(ledger), used = sum(ledger$n > 0), unused = sum(ledger$n == 0))
+```
+
+```{r}
+#| label: tbl-95-ledger
+#| tbl-cap: "Every export of PortfolioAnalytics and the chapters whose code calls it."
+#| echo: false
+ledger |>
+  dplyr::mutate(export = paste0("`", export, "()`"),
+                chapters = ifelse(n == 0, "—", chapters)) |>
+  dplyr::select(export, chapters) |>
+  kable(align = "ll", col.names = c("export", "chapters"))
+```
+
+## What is not covered, and why {.unnumbered}
+
+```{r}
+#| label: unused
+#| echo: false
+unused <- ledger$export[ledger$n == 0]
+legacy <- unused[grepl("_v[12]$|_v1tov2$", unused)]
+other  <- setdiff(unused, legacy)
+```
+
+`r length(legacy)` of the `r length(unused)` unused exports are the `_v1` and
+`_v2` legacy shims kept for backward compatibility
+(`r paste0("\x60", legacy, "\x60", collapse = ", ")`); the book uses the
+unsuffixed functions throughout, as @sec-01-setting-up-implementation explains.
+
+The remaining `r length(other)` are
+`r paste0("\x60", other, "\x60", collapse = ", ")`. Each is either an internal
+helper that the package exports for its own use (`fn_map()`, `rp_transform()`,
+`generatesequence()`, `scatterFUN()`, the `constrained_objective*()` family and
+`objective()`/`constraint()` constructors that `add.objective()` and
+`add.constraint()` call), a plotting wrapper superseded by a chapter's own
+figure, or a capability the book declines on purpose. The declines are recorded
+here so that an omission cannot be mistaken for an oversight:
+`EntropyProg()` and the `centroid.complete.mc()`/`centroid.sectors()` variants
+beyond those chapter 17 demonstrates, and `random_walk_portfolios()`, which
+draws weights with no feasible-set structure and is dominated for every purpose
+in the book by `rp_sample()`, `rp_simplex()` and `rp_grid()`
+(@sec-28-robustness-implementation). If a name appears in this list that the
+reader expected to find in a chapter, that is the place to say so.

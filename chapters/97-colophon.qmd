@@ -1,0 +1,113 @@
+---
+metadata:
+  pagetitle: "Colophon and Changelog"
+  description-meta: "How this book was built, which versions it was built against, and what has changed."
+---
+
+# Colophon and Changelog {#sec-97-colophon}
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(knitr)
+```
+
+This appendix records what the book was built with, so that a reader who wants
+to reproduce a number knows which versions produced it, and what has changed
+between editions of the text.
+
+## How This Book Was Built {#sec-97-colophon-built}
+
+The book is a Quarto project. Every chapter is a `.qmd` file whose code runs
+when the book is rendered, so every number, table and figure in the text is the
+output of the code shown beside it. Results are cached with Quarto's freeze
+mechanism and re-executed only when a chapter's source changes. The chapters run
+from the project root and share one setup file, `R/_common.R`, which fixes the
+random seed, the display options and the figure theme.
+
+```{r}
+#| label: versions
+#| echo: false
+lock <- jsonlite::fromJSON("renv.lock")
+pkgs <- c("PortfolioAnalytics", "PerformanceAnalytics", "tidypm", "xts", "zoo",
+          "ROI", "ROI.plugin.quadprog", "ROI.plugin.glpk", "quadprog", "CVXR",
+          "DEoptim", "GenSA", "pso", "corpcor", "copula", "sandwich",
+          "dplyr", "tidyr", "ggplot2", "tibble", "knitr", "rmarkdown")
+present <- pkgs[pkgs %in% names(lock$Packages)]
+versions <- tibble::tibble(
+  package = present,
+  version = vapply(present, function(p) lock$Packages[[p]]$Version, character(1)),
+  source  = vapply(present, function(p) {
+    src <- lock$Packages[[p]]$Source
+    ref <- lock$Packages[[p]]$RemoteRef
+    if (!is.null(ref) && src != "Repository") paste0(src, " (", ref, ")") else src
+  }, character(1))
+)
+```
+
+```{r}
+#| label: tbl-97-versions
+#| tbl-cap: "The versions this book was rendered against, read from the project's lockfile."
+#| echo: false
+dplyr::bind_rows(
+  tibble::tibble(package = "R", version = lock$R$Version, source = "CRAN"),
+  tibble::tibble(package = "Quarto",
+                 version = tryCatch(as.character(quarto::quarto_version()),
+                                    error = function(e) Sys.getenv("QUARTO_VERSION", "1.9")),
+                 source = "bundled"),
+  versions
+) |> kable(align = "lll")
+```
+
+The full dependency set, `r length(lock$Packages)` packages in all, is pinned
+in `renv.lock`; `renv::restore()` recreates it. Two dependencies do not come
+from CRAN: `tidypm`, the companion package, which ships the modeled market
+and the machinery `PortfolioAnalytics` does not have; and the build of
+`PortfolioAnalytics` itself, which is the CRAN release with three fixes carried
+on a fork while the pull request is open. @sec-93-package-notes records every
+deviation.
+
+The data are the modeled market at dataset version 6.2.0, on its model
+calendar of thirty-one model years, described in
+@sec-02-notation-and-data-simulated-market and in full in
+@sec-90-data-description. The dataset is frozen: the source model redraws the
+idiosyncratic component of every instrument on each run, so a regenerated
+dataset is a different realized path, and every number in the book is pinned
+to this one. `R/verify-claims.R` in the repository recomputes the load-bearing
+numbers and names the ones a new dataset would move.
+
+The prose follows the conventions of *Tidy Finance with R* [@scheuch2023] and
+*Machine Learning for Factor Investing* [@coqueret2020]: the question first,
+the mathematics in the running text, the method attributed on first use, the
+code executed, and takeaways and exercises at the end. The typeface is Source
+Sans 3; the accent color is a light blue. Figures are drawn with `ggplot2` and
+the theme in `R/_common.R`, and are built from a single data frame per figure
+so that no coordinate can be paired with the wrong label.
+
+## Changelog {#sec-97-colophon-changelog}
+
+- **2026-11-09.** The data moved to dataset version 6.2.0, read out of the
+  source model itself, and onto a model calendar: thirty-one model years, with
+  the stress episodes named for what happens in them. Every chapter was
+  re-executed against it and its sentences checked against their numbers;
+  chapters 18 and 19 were written.
+- **2026-09-14.** The modeled market moved to export 5.1.0 and the class
+  universe was fixed at the sixteen risky series, with the money markets shipped
+  beside it. Every chapter was written or rewritten to the present contract,
+  the appendices were generated from the sources, and the bibliography was
+  checked entry by entry against Crossref. This is the first complete baseline
+  of the book.
+- **2026-09-13.** Chapter 9 was rewritten as the reference chapter and reviewed;
+  the review produced the rules on data preparation, dominance vocabulary and
+  worked examples that the other chapters follow. The review round-trip through
+  Word was set up.
+- **2026-09-12.** The book was restructured into its present twenty-eight
+  chapters and eight parts, the four-beat chapter form was retired in favor of
+  theory, implementation and application, mathematics returned to the running
+  text with proofs in an appendix, and the design was rebuilt on one accent
+  color.
+- **2026-08-27.** The data layer: the companion package, the tibble–`xts`
+  boundary, and the first export of the simulated market.
+- **2018–2024.** Earlier drafts, as *Tidy Portfoliomanagement in R*, from which
+  parts of the present material descend; see @sec-98-acknowledgements.

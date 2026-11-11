@@ -1,0 +1,157 @@
+### Chapter 22: The Fixed Income Sleeve {.unnumbered}
+
+```{r}
+#| label: sol-22-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+bonds <- dplyr::filter(sim_assets, asset_class %in% c("government", "credit"))
+gov   <- bonds$asset_id[bonds$asset_class == "government"]
+A  <- as_xts_pm(dplyr::filter(sim_asset_returns_weekly, asset %in% gov), date, asset, return)
+Am <- as_xts_pm(dplyr::filter(sim_asset_returns_monthly, asset %in% gov), date, asset, return)
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+cv <- sim_curve_weekly |>
+  tidyr::pivot_wider(names_from = series, values_from = value) |> dplyr::arrange(date)
+lsc <- grep("_(Level|Slope|Curvature)$", names(cv), value = TRUE); cv[lsc] <- cv[lsc] / 100
+fx <- sim_fx_weekly |>
+  tidyr::pivot_wider(id_cols = date, names_from = region, values_from = fx_return) |>
+  dplyr::arrange(date)
+dates <- zoo::index(R); Tn <- length(dates)
+stopifnot(all(cv$date[-1] == as.Date(zoo::index(A))), all(fx$date == as.Date(zoo::index(A))))
+
+# The chapter's durations, rebuilt: hedged weekly returns on the region's
+# level, slope and curvature changes; the maturity is inferred from the loading.
+region_of <- function(id) sub("_.*$", "", id)
+dcv <- as.data.frame(lapply(cv[-1], diff))
+hedged <- function(id) {
+  rg <- region_of(id); f <- if (rg == "US") 0 else fx[[rg]]
+  as.numeric(A[, id]) - f
+}
+D_hat <- vapply(gov, function(id) {
+  X <- dcv[, paste0(region_of(id), c("_Level", "_Slope", "_Curvature"))]
+  -stats::coef(stats::lm(hedged(id) ~ as.matrix(X)))[2]
+}, numeric(1))
+mat <- vapply(split(D_hat, region_of(gov)), function(d) c(2, 5, 10)[rank(d)], numeric(3))
+mat <- setNames(as.numeric(mat), unlist(lapply(colnames(mat), function(r) names(D_hat)[region_of(gov) == r])))
+stopifnot(all(abs(D_hat[names(mat)] / mat - 1) < 0.1))
+G <- A[, gov]; B <- D_hat[gov]
+sleeve <- function(assets, B, lower, upper = lower, band = 1e-6) {
+  stopifnot(identical(if (is.matrix(B)) rownames(B) else names(B), assets))
+  portfolio.spec(assets) |>
+    add.constraint(type = "full_investment") |> add.constraint(type = "long_only") |>
+    add.constraint(type = "factor_exposure", B = B, lower = lower - band, upper = upper + band) |>
+    add.objective(type = "risk", name = "var")
+}
+ann_vol <- function(w, X) sqrt(as.numeric(t(w) %*% stats::cov(X) %*% w) * 52)
+```
+
+#### Exercise 1
+
+```{r}
+#| label: sol-22-ex1
+Gh <- G
+for (id in gov) Gh[, id] <- hedged(id)
+w_u <- extractWeights(optimize.portfolio(G,  sleeve(gov, B, 5), optimize_method = "ROI"))
+w_h <- extractWeights(optimize.portfolio(Gh, sleeve(gov, B, 5), optimize_method = "ROI"))
+round(w_h[w_h > 0.005], 3)
+round(c(duration_hedged = sum(w_h * B), vol_unhedged = ann_vol(w_u, G), vol_hedged = ann_vol(w_h, Gh)), 4)
+```
+
+Hedged, the sleeve leaves the US curve: it buys its five years of duration
+mostly in `r names(which.max(w_h))` and the other low-volatility curves, at
+`r sprintf("%.2f%%", 100 * ann_vol(w_h, Gh))` against
+`r sprintf("%.2f%%", 100 * ann_vol(w_u, G))` unhedged. The lowest-cost
+duration is bought on whichever curve moves least, and that choice is only
+available once the currency has been removed; unhedged, the currency decides
+the curve.
+
+#### Exercise 2
+
+```{r}
+#| label: sol-22-ex2
+i_last  <- findInterval(dates, cv$date)
+term    <- -cv$US_Slope[i_last]
+z       <- (term - mean(term)) / stats::sd(term)
+id_us   <- function(tau) names(mat)[region_of(names(mat)) == "US" & mat == tau]
+r_long  <- as.numeric(Am[, id_us(10)]); r_short <- as.numeric(Am[, id_us(2)])
+w_bar   <- (mean(c(2, 5, 10)) - 2) / 8
+fit <- function(i, gamma) stats::optimize(function(th) {
+  w <- w_bar + th * z[-Tn][i]
+  mean((1 + w * r_long[-1][i] + (1 - w) * r_short[-1][i])^(1 - gamma) / (1 - gamma))
+}, c(-3, 3), maximum = TRUE)$maximum
+block_index <- function(n, block = 12L) {
+  starts <- sample.int(n - block + 1L, ceiling(n / block), replace = TRUE)
+  as.vector(outer(0:(block - 1L), starts, "+"))[seq_len(n)]
+}
+set.seed(1602)
+t(vapply(c(2, 5, 10), function(g) {
+  th <- fit(seq_len(Tn - 1L), g)
+  se <- stats::sd(vapply(seq_len(200L), function(b) fit(block_index(Tn - 1L), g), numeric(1)))
+  c(gamma = g, theta = th, se = se, t = th / se)
+}, numeric(4)))
+```
+
+$\hat\theta$ falls as risk aversion rises, roughly in proportion to
+$1/\gamma$, while the $t$-statistic stays below two throughout: the data say
+the same thing about the direction of the tilt whoever asks, and $\gamma$ only
+scales how far the investor acts on it. A duration overlay is for an investor whose
+mandate tolerates the duration swings a low $\gamma$ produces.
+
+#### Exercise 3
+
+```{r}
+#| label: sol-22-ex3
+oos   <- 61:Tn
+G_oos <- Am[oos, gov]
+ends  <- 60:nrow(G_oos)
+D_bar <- mean(c(2, 5, 10))
+failed <- vapply(ends, function(e) anyNA(extractWeights(optimize.portfolio(
+  G_oos[(e - 59):e, ], sleeve(gov, mat[gov], D_bar, band = 0), optimize_method = "ROI"))),
+  logical(1))
+retry <- vapply(head(ends[failed], 12), function(e) {
+  w <- extractWeights(optimize.portfolio(G_oos[(e - 59):e, ],
+                                         sleeve(gov, mat[gov], D_bar, band = 0),
+                                         optimize_method = c("CVXR", "OSQP")))
+  c(solved = !anyNA(w), duration = sum(w * mat[gov]))
+}, numeric(2))
+c(failed_under_ROI = sum(failed), solved_by_CVXR = sum(retry["solved", ]),
+  max_duration_gap = max(abs(retry["duration", ] - D_bar)))
+```
+
+Every window `quadprog` rejected is solved by `OSQP` with the duration met
+to within `r sprintf("%.0e", max(abs(retry["duration", ] - D_bar)))`: the
+failure is the degeneracy of the two opposing inequalities, not the problem.
+`pm_backtest()` carries the previous period's weights forward through a
+failed window and reports the count in `n_failed`, so that the backtest
+describes a slightly different strategy and says so.
+
+#### Exercise 4
+
+```{r}
+#| label: sol-22-ex4
+cre_cl <- grep("_credit$", colnames(R), value = TRUE)
+U  <- cbind(Am[oos, gov], R[oos, cre_cl])
+ew <- function(assets) portfolio.spec(assets) |>
+  add.constraint(type = "full_investment") |> add.constraint(type = "long_only")
+top <- ew(c("government", "credit")) |> add.objective(type = "risk", name = "var")
+ml <- mult.portfolio.spec(top) |>
+  add.sub.portfolio(sleeve(gov, mat[gov], D_bar), optimize_method = "ROI",
+                    rebalance_on = "quarters", training_period = 60, trailing_periods = 60) |>
+  add.sub.portfolio(ew(cre_cl) |> add.objective(type = "risk", name = "var"),
+                    optimize_method = "ROI", rebalance_on = "quarters",
+                    training_period = 60, trailing_periods = 60)
+proxy <- suppressWarnings(PortfolioAnalytics:::proxy.mult.portfolio(U, ml))
+before <- zoo::index(proxy) < zoo::index(U)[60]
+ew_gov <- xts::xts(rowMeans(U[, gov]), order.by = zoo::index(U))
+c(months_before_first_rebalance = sum(before),
+  correlation_with_equal_weight = stats::cor(proxy[before, 1], ew_gov[zoo::index(proxy)[before]]),
+  top_level_weights = extractWeights(optimize.portfolio(U, ml, optimize_method = "ROI")))
+```
+
+The proxy series has `r sum(before)` months before the first rebalancing
+date, produced by the equal weights `Return.portfolio()` back-fills, the trap
+of @sec-23-rebalancing-implementation: over those months the government proxy
+correlates `r sprintf("%.3f", stats::cor(proxy[before, 1], ew_gov[zoo::index(proxy)[before]]))`
+with the equal-weighted sleeve. The top-level optimization is then estimated on
+a series that is the equal-weighted ladder for its first five years and the
+duration-constrained sleeve afterwards.

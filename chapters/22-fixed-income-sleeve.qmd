@@ -1,0 +1,998 @@
+---
+title: "The Fixed Income Sleeve"
+metadata:
+  pagetitle: "The Fixed Income Sleeve"
+  description-meta: "Bonds as exposures to the level, slope and curvature of the yield curve and to credit spreads: measuring the exposures, targeting duration with a factor exposure constraint in PortfolioAnalytics, and a term-spread duration overlay as a parametric policy, in R."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+What changes in portfolio construction when the asset has a duration?
+@litterman1991 answered that three common factors, the level, the slope and
+the curvature of the yield curve, explain nearly all of the variation in
+government bond returns, so that a bond portfolio is described better by its
+exposures to those factors than by the list of bonds it holds. The curve itself
+has the three-parameter form of @nelson1987, which @diebold2006 turned into a
+dynamic model whose factors carry the same three names. This chapter is about
+the fixed income sleeve, the bond part of the allocation one level below the
+class series on which @sec-15-hierarchical-allocation-theory allocates, and
+its claim is that duration targeting and portfolio optimization are the same
+problem in different clothes.
+
+We first derive why a bond is a set of exposures rather than a return series,
+and what credit and currency add; then measure the exposures of the government
+and credit instruments of the modeled market on the curve factors that ship
+with it, build a sleeve whose duration is a constraint, and fit a duration
+overlay as a parametric policy; then run the sleeves out of sample against the
+class series the allocation sees. On the horizon axis of
+@sec-03-return-risk-and-the-investor-theory the duration decision is
+**strategic**, a level of exposure held for the long run, and the positioning
+along the curve that the overlay varies with the term spread is **tactical**.
+
+The data are the weekly curve factors of `sim_curve_weekly` and the bond
+instruments of `sim_asset_returns_weekly`, both described in
+@sec-02-notation-and-data-simulated-market and @sec-90-data-description;
+monthly instrument and class series enter in the application. Everything is in
+dollars, unhedged, and the hedged return of a foreign bond is its unhedged
+return less the matching `fx_return`, @eq-02-hedge.
+
+```{r}
+#| label: data
+bonds <- dplyr::filter(sim_assets, asset_class %in% c("government", "credit"))
+A  <- as_xts_pm(dplyr::filter(sim_asset_returns_weekly, asset %in% bonds$asset_id),
+                date, asset, return)                               # 45 bond instruments, weekly
+cv <- sim_curve_weekly |>
+  tidyr::pivot_wider(names_from = series, values_from = value) |>
+  dplyr::arrange(date)                                             # 25 curve series, weekly
+fx <- sim_fx_weekly |>
+  tidyr::pivot_wider(id_cols = date, names_from = region, values_from = fx_return) |>
+  dplyr::arrange(date)
+Am <- as_xts_pm(dplyr::filter(sim_asset_returns_monthly, asset %in% bonds$asset_id),
+                date, asset, return)                               # the same instruments, monthly
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)    # sixteen risky classes
+rf <- sim_riskfree_monthly$return                                  # the bill
+wk <- as.Date(zoo::index(A)); dates <- zoo::index(R); Tn <- length(dates)
+stopifnot(ncol(A) == 45L, nrow(cv) == nrow(A) + 1L, all(cv$date[-1] == wk),
+          all(fx$date == wk), identical(zoo::index(Am), dates), !anyNA(A))
+```
+
+The curve table has one week more than the return table: it starts a week
+earlier, so that a change in the curve exists for the first return.
+
+## Bonds as Exposures to the Curve {#sec-22-fixed-income-sleeve-theory}
+
+### Price, duration and the return decomposition
+
+A zero-coupon bond paying one unit at maturity $\tau$ has, at a continuously
+compounded yield $y_t(\tau)$, the price
+
+$$
+P_t(\tau) = e^{-\tau\, y_t(\tau)} .
+$$ {#eq-22-price}
+
+Hold it for a period $\Delta$. It ages to maturity $\tau-\Delta$ and is priced
+at the new yield for that maturity, so the log return is exactly
+
+$$
+\log\frac{P_{t+\Delta}(\tau-\Delta)}{P_t(\tau)}
+= \underbrace{\Delta\, y_t(\tau)}_{\text{carry}}
++ \underbrace{(\tau-\Delta)\big[y_t(\tau) - y_t(\tau-\Delta)\big]}_{\text{rolldown}}
+- \underbrace{(\tau-\Delta)\big[y_{t+\Delta}(\tau-\Delta) - y_t(\tau-\Delta)\big]}_{\text{duration}\times\text{yield change}} ,
+$$ {#eq-22-return}
+
+an identity obtained by adding and subtracting $(\tau-\Delta)\,y_t(\tau-\Delta)$.
+The first term is the yield earned by standing still, the second what the bond
+gains by sliding down an upward-sloping curve that does not move, and the third
+the loss from a rise in the yield at the bond's new maturity, scaled by that
+maturity. @ilmanen2011 treats the first two as the expected return of a bond on
+an unchanged curve, and @koijen2018 show that the same carry logic prices assets
+well beyond bonds. The scale factor on the yield change is the **duration** of
+@macaulay1938, the maturity for a zero-coupon bond; the simple return $e^{r}-1$
+adds the second-order **convexity** term $\tfrac{1}{2}(\tau-\Delta)^2(\Delta y)^2$,
+positive whichever way yields move. In the modeled market every government bond
+is a zero-coupon bond held at a constant maturity of two, five or ten years
+(@sec-90-data-description-instruments), so its duration is known rather than
+estimated, a gift for teaching and a limitation for realism.
+
+The third term of @eq-22-return is why a bond portfolio is a set of exposures.
+Suppose the yield changes at all maturities are driven by $K$ factors,
+$\Delta y(\tau) = \sum_k b_k(\tau)\,\Delta f_k$. A portfolio with weights
+$w_i$ in bonds of maturities $\tau_i$ then earns, up to carry and rolldown,
+
+$$
+r_p \approx -\sum_{k=1}^{K} \beta_k\, \Delta f_k,
+\qquad
+\beta_k = \sum_{i} w_i\, \tau_i\, b_k(\tau_i),
+$$ {#eq-22-exposure}
+
+and the weights matter only through the $K$ numbers $\beta_k$. Two portfolios
+with the same exposures have the same risk, whatever bonds they hold. With
+$K=3$ this is the finding of @litterman1991, and it is the reason the sleeve
+below is specified as a set of exposures rather than as a set of weights.
+
+### Three factors of the curve
+
+@nelson1987 write the whole curve at a date as
+
+$$
+y_t(\tau) = L_t
++ S_t\,\frac{1-e^{-\lambda\tau}}{\lambda\tau}
++ C_t\left(\frac{1-e^{-\lambda\tau}}{\lambda\tau} - e^{-\lambda\tau}\right),
+$$ {#eq-22-ns}
+
+with loadings that @diebold2006 read as level, slope and curvature: the
+loading on $L_t$ is one at every maturity, the loading on $S_t$ falls from one
+at the short end to zero at the long end, so that $S_t$ is the short rate
+minus the long rate, and the loading on $C_t$ is a hump that peaks in the
+middle. @diebold2006 fix the decay $\lambda$ at $0.0609$ per month, which puts
+the hump at thirty months, estimate the factors by least squares at each date,
+and show that they track three observable quantities almost perfectly: the long
+yield, the short minus the long yield, and twice a middle yield minus the two
+ends. @litterman1991 reached the same three factors without a functional form,
+as the first three principal components of yield changes, the first explaining
+about ninety percent of the variance. With three maturities and three factors,
+as here, any three-factor description is an exact rotation of the three yields;
+which rotation the data ship, @sec-22-fixed-income-sleeve-implementation
+measures. The rank deficiency of the bond block in
+@sec-07-covariance-matrix-theory is the same fact seen from the covariance
+matrix: five curves of three factors span the fifteen government bonds, and one
+credit factor per region spans the credit bonds with them.
+
+### Credit as a separate exposure
+
+A corporate bond of maturity $\tau$ yields the government rate plus a spread
+$s_t(\tau)$, so its price is $e^{-\tau(y_t + s_t)}$ and @eq-22-return acquires
+a fourth term, $-(\tau-\Delta)\,\Delta s$: the **spread duration**, which for
+a zero-coupon bond equals its duration. @merton1974 explains the spread as the
+value of the default option the bondholder has written; @elton2001 show that
+the expected loss from default explains only a small part of it, with taxes
+and a premium for systematic risk making up the rest; and @collindufresne2001
+find that spread changes across issuers are driven mostly by one common factor,
+which is also how this market is built: the two grades of a region share one
+credit factor. Two features matter for the sleeve. The spread is persistent: the weekly first-order autocorrelation of the US
+investment-grade spread is
+`r sprintf("%.3f", stats::acf(cv$US_IG_Spread, lag.max = 1, plot = FALSE)$acf[2])`,
+a half-life of
+`r sprintf("%.0f", log(0.5) / log(stats::acf(cv$US_IG_Spread, lag.max = 1, plot = FALSE)$acf[2]))`
+weeks, so a spread that widens in a crisis stays wide for as long as the
+credit cycle does. And the volatility of a spread is roughly proportional to
+its level, which is why @bendor2007 measure credit exposure as duration times
+spread rather than as duration alone: in this market the weekly changes of the
+US high-yield spread have
+`r sprintf("%.1f", stats::sd(diff(cv$US_HY_Spread)) / stats::sd(diff(cv$US_IG_Spread)))`
+times the standard deviation of the investment-grade changes.
+
+### Duration targeting as a constrained optimization
+
+The classical use of duration is immunization: @fisher1971 showed that a bond
+portfolio whose duration equals the investor's horizon is protected, to first
+order, against a parallel shift of the curve. A duration target is therefore a
+linear constraint on the weights, $\sum_i w_i D_i = \bar D$, and minimizing
+variance subject to it is still a quadratic program of the kind
+@sec-12-constraints-theory and @sec-13-solvers-theory solve. In
+`PortfolioAnalytics` such a constraint is a `factor_exposure` constraint with
+the durations as the exposure vector $\boldsymbol{B}$: the package has no
+notion of a bond, and does not need one, because by @eq-22-exposure a duration
+target is a bound on the portfolio's loading on the level factor, and a second
+column bounds the loading on the slope, which decides whether the duration is
+delivered by a bullet at the middle of the curve or a barbell of its ends. The
+level $\bar D$ is strategic: for a long-horizon investor @campbell2002 argue
+that the long bond, not the bill, is the riskless asset, and how much duration
+the policy portfolio carries is a decision of that kind. The deviation from
+$\bar D$ conditioned on the curve is tactical, and
+@sec-22-fixed-income-sleeve-implementation writes it as the parametric policy
+of @sec-18-parametric-policies-theory.
+
+### Currency, and why the two decisions are not separable abroad
+
+Every series is in dollars, so a foreign bond carries its local return and its
+currency's move together, and @sec-04-descriptive-analysis-application showed
+that how much of a foreign holding is currency depends on the asset. For a
+bond it is most of it:
+
+```{r}
+#| label: currency-share
+fx_share <- function(series, region) {
+  f <- sim_fx_monthly[sim_fx_monthly$region == region, ]
+  stopifnot(all(f$date == dates))
+  u <- as.numeric(R[, series])
+  1 - stats::var(u - f$fx_return) / stats::var(u)          # @eq-04-fx: share removed by hedging
+}
+round(c(JP_government = fx_share("JP_government", "JP"),
+        EU_government = fx_share("EU_government", "EU")), 3)
+```
+
+Hedging removes `r sprintf("%.0f%%", 100 * fx_share("JP_government", "JP"))`
+of the variance of `JP_government`: a dollar investor who buys a Japanese bond
+for its duration takes a currency position several times the size of the
+interest-rate position. That is the case for fully hedging bonds that
+@campbell2010 make and the "free lunch" of @perold1988; @black1989 argues for a
+universal partial hedge, and @karnosky1994 attribute the result to the two
+decisions separately. For the sleeve the consequence is that the duration and
+currency decisions cannot be taken one at a time: an unhedged foreign bond is a
+currency position with a small duration attached, and
+@sec-22-fixed-income-sleeve-implementation measures what that does to the fit
+of the curve factors.
+
+### Predictability from the curve
+
+The tactical case rests on the finding that the shape of the curve forecasts
+bond returns. @fama1987 showed that forward spreads forecast the excess return
+of long bonds over short ones; @campbell1991 showed that the yield spread
+forecasts long-bond returns in the direction opposite to the expectations
+hypothesis; @cochrane2005 found that a single combination of forward rates
+forecasts the excess returns on bonds of every maturity with $R^2$ up to about
+forty percent; and @fama1989 placed the term spread among the business-cycle
+predictors of both stock and bond returns.
+@sec-16-signals-and-forecasts-application tested the term spread on this
+market and found it the one signal whose out-of-sample $R^2$ survives, which
+is the signal the duration overlay below conditions on.
+
+## Measuring and Targeting the Exposures {#sec-22-fixed-income-sleeve-implementation}
+
+### The factor series and their units
+
+Nothing in a column of numbers says whether a level of four is four percent or
+four hundred, so the units are read from the magnitudes before anything is
+computed from them.
+
+```{r}
+#| label: units
+units <- sim_curve_weekly |>
+  dplyr::mutate(kind = sub("^[A-Z]+_", "", series)) |>
+  dplyr::group_by(kind) |>
+  dplyr::summarise(median_abs = median(abs(value)), max_abs = max(abs(value)))
+units
+lsc <- grep("_(Level|Slope|Curvature)$", names(cv), value = TRUE)
+stopifnot(units$max_abs[units$kind == "Level"] > 1,              # a level of 8 is 8 percent
+          all(units$max_abs[grepl("Spread", units$kind)] < 1))   # a spread of 0.14 is 14 percent
+cv[lsc] <- cv[lsc] / 100                                          # decimals from here on
+```
+
+The level reaches `r sprintf("%.1f", units$max_abs[units$kind == "Level"])`,
+which can only be percentage points, and the spreads peak at
+`r sprintf("%.2f", max(units$max_abs[grepl("Spread", units$kind)]))`, which can
+only be a decimal, as @sec-16-signals-and-forecasts-implementation also found;
+the chunk puts everything in decimals so that a loading is a duration in years.
+
+```{r}
+#| label: fig-22-factors
+#| fig-cap: "Level, slope and curvature of the US curve, weekly, in percentage points. The slope is the short end minus the long end, so an inverted curve shows as a positive slope. The shaded bands are the four episodes of `sim_episodes`."
+#| echo: false
+#| fig-asp: 0.75
+fac <- sim_curve_weekly |>
+  dplyr::filter(series %in% paste0("US_", c("Level", "Slope", "Curvature"))) |>
+  dplyr::mutate(kind = factor(sub("^US_", "", series),
+                              levels = c("Level", "Slope", "Curvature")))
+ggplot2::ggplot(fac, ggplot2::aes(date, value)) +
+  ggplot2::geom_rect(data = sim_episodes,
+                     ggplot2::aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf),
+                     inherit.aes = FALSE, fill = tidyaa_colors[["rule"]], alpha = 0.7) +
+  ggplot2::geom_hline(yintercept = 0, linewidth = 0.25, colour = tidyaa_colors[["ink_soft"]]) +
+  ggplot2::geom_line(colour = tidyaa_colors[["blue"]], linewidth = 0.45) +
+  ggplot2::facet_wrap(~ kind, ncol = 1, scales = "free_y") +
+  scale_x_model() +
+  ggplot2::labs(y = "percentage points")
+```
+
+### Factor exposures, and which bond is which
+
+The exposures of @eq-22-exposure are regression coefficients: each
+instrument's weekly return on the weekly changes of its region's level, slope
+and curvature, and for credit also of its grade's spread. Each regression is
+run twice, on the return as shipped and on the hedged return, which subtracts
+the region's `fx_return`.
+
+```{r}
+#| label: exposures
+dcv <- as.data.frame(lapply(cv[-1], diff))                 # factor changes, aligned with the returns
+exposure <- function(id) {
+  rg <- bonds$region[bonds$asset_id == id]; gr <- bonds$credit_grade[bonds$asset_id == id]
+  X  <- data.frame(level = dcv[[paste0(rg, "_Level")]], slope = dcv[[paste0(rg, "_Slope")]],
+                   curvature = dcv[[paste0(rg, "_Curvature")]],
+                   spread = if (is.na(gr)) 0 else dcv[[paste0(rg, "_", gr, "_Spread")]])
+  f   <- if (rg == "US") 0 else fx[[rg]]
+  fml <- if (is.na(gr)) y ~ level + slope + curvature else y ~ level + slope + curvature + spread
+  mh  <- stats::lm(fml, data = cbind(y = as.numeric(A[, id]) - f, X))   # hedged
+  mu  <- stats::lm(fml, data = cbind(y = as.numeric(A[, id]),     X))   # unhedged, as shipped
+  b   <- stats::coef(mh)
+  tibble::tibble(asset = id, region = rg, class = bonds$asset_class[bonds$asset_id == id],
+                 grade = ifelse(is.na(gr), "", gr),
+                 level = b[["level"]], slope = b[["slope"]], curvature = b[["curvature"]],
+                 spread = if (is.na(gr)) NA_real_ else b[["spread"]],
+                 r2_hedged = summary(mh)$r.squared, r2_unhedged = summary(mu)$r.squared)
+}
+expo <- dplyr::bind_rows(lapply(colnames(A), exposure))
+```
+
+`sim_assets` carries no maturity, so which instrument is the two-, five- or
+ten-year has to be inferred, and @eq-22-return says how: the loading on the
+level is minus the duration, and the ten-year is the most rate-sensitive bond
+of its region and grade. The inference is asserted rather than assumed, by
+requiring every implied duration to lie within ten percent of the maturity it
+has been assigned.
+
+```{r}
+#| label: maturities
+expo <- expo |>
+  dplyr::group_by(region, class, grade) |>
+  dplyr::mutate(maturity = c(10, 5, 2)[rank(level)]) |>      # most negative loading: the ten-year
+  dplyr::ungroup()
+stopifnot(all(abs(-expo$level / expo$maturity - 1) < 0.10),
+          all(table(expo$region, expo$maturity) == 3L))      # three bonds per maturity and region
+mat <- setNames(expo$maturity, expo$asset)
+id_of <- function(rg, tau, cls = "government", gr = "")
+  expo$asset[expo$region == rg & expo$class == cls & expo$grade == gr & expo$maturity == tau]
+```
+
+```{r}
+#| label: tbl-22-exposures
+#| tbl-cap: "Factor exposures of the nine US bond instruments: weekly returns regressed on the weekly changes of the US level, slope, curvature and, for credit, the spread of the bond's grade, all in decimals, so that minus a loading is a duration in years. Maturities are inferred from the level loading."
+#| echo: false
+expo |>
+  dplyr::filter(region == "US") |>
+  dplyr::arrange(class != "government", grade, maturity) |>
+  dplyr::transmute(asset, grade, maturity,
+                   level = sprintf("%.2f", level), slope = sprintf("%.2f", slope),
+                   curvature = sprintf("%.2f", curvature),
+                   spread = ifelse(is.na(spread), "", sprintf("%.2f", spread)),
+                   r2 = sprintf("%.3f", r2_hedged)) |>
+  kable(align = "llrrrrrr",
+        col.names = c("", "grade", "maturity", "level", "slope", "curvature", "spread", "R²"))
+```
+
+The level loadings of the government bonds in @tbl-22-exposures are
+`r paste(sprintf("%.2f", expo$level[match(id_of("US", c(2, 5, 10)), expo$asset)]), collapse = ", ")`,
+minus the maturity divided by one plus the yield: the modified duration under
+annual compounding, so the bonds are repriced in full rather than through the
+first-order term of @eq-22-return. The credit bonds have the same durations and
+a spread duration of the same size, as the theory says, and every $R^2$ is
+`r sprintf("%.3f", min(expo$r2_hedged[expo$region == "US"]))` or better: a US
+bond is spanned by the factors up to the time variation of its carry, the rank
+deficiency of @sec-07-covariance-matrix-theory seen one instrument at a time.
+
+The slope and curvature columns reveal which rotation of the three yields the
+factors are: the ten-year loads on the level alone, the two-year equally on
+level and slope, the five-year on the level and half of the slope and half of
+the curvature.
+
+```{r}
+#| label: loading-matrix
+B_hat <- expo |>
+  dplyr::filter(class == "government") |>
+  dplyr::group_by(maturity) |>
+  dplyr::summarise(slope = mean(slope / level), curvature = mean(curvature / level)) |>
+  dplyr::mutate(level = 1, .after = maturity)                # loadings relative to the level loading
+B_hat
+B_emp <- rbind(`2` = c(1, 1, 0), `5` = c(1, 0.5, 0.5), `10` = c(1, 0, 0))
+stopifnot(max(abs(as.matrix(B_hat[, -1]) - B_emp)) < 0.05)
+```
+
+So the shipped factors are the observable level, slope and curvature that
+@diebold2006 use to interpret their latent ones: the ten-year yield, the
+two-year minus the ten-year, and twice the five-year minus the two- and
+ten-year. The latent loadings of @eq-22-ns at the Diebold–Li decay, three lines
+of code, are a different rotation of the same three yields, and the exposures of
+@eq-22-exposure transform with the rotation while the risk they describe does
+not.
+
+```{r}
+#| label: nelson-siegel
+lam <- 0.0609 * 12                                            # Diebold-Li decay, per year
+ns_load <- function(tau) cbind(level = 1, slope = (1 - exp(-lam * tau)) / (lam * tau),
+                               curvature = (1 - exp(-lam * tau)) / (lam * tau) - exp(-lam * tau))
+yields <- function(rg) {                                       # the three yields, from B_emp
+  F <- as.matrix(cv[, paste0(rg, c("_Level", "_Slope", "_Curvature"))])
+  Y <- F %*% t(B_emp); colnames(Y) <- c("y2", "y5", "y10"); Y
+}
+Y_us <- yields("US")
+round(ns_load(c(2, 5, 10)), 3)                                 # latent loadings at 2, 5 and 10 years
+```
+
+The principal components of @litterman1991 are the third description, and the
+one that needs no functional form at all.
+
+```{r}
+#| label: pca
+pc <- stats::prcomp(diff(Y_us))
+share <- summary(pc)$importance["Proportion of Variance", ]
+round(share, 3)
+round(pc$rotation, 2)
+stopifnot(length(unique(sign(pc$rotation[, 1]))) == 1L,            # a level: all one sign
+          sign(pc$rotation["y2", 2]) != sign(pc$rotation["y10", 2]), # a slope: ends opposed
+          sign(pc$rotation["y5", 3]) != sign(pc$rotation["y2", 3]))  # a curvature: middle opposed
+```
+
+The first component moves all three yields the same way and carries
+`r sprintf("%.1f%%", 100 * share[[1]])` of the variance of weekly yield
+changes; the second opposes the two ends and carries
+`r sprintf("%.1f%%", 100 * share[[2]])`; the third opposes the middle to the
+ends and carries the remaining `r sprintf("%.1f%%", 100 * share[[3]])`, within
+a few points of the proportions @litterman1991 report.
+
+::: {.callout-note collapse="true"}
+## Worked: the week the ten-year moved most
+
+@eq-22-return is checked on the week in which the US ten-year yield moved most,
+with $y^{c} = \log(1+y)$ the continuously compounded yield.
+
+```{r}
+#| label: worked-week
+yc  <- log(1 + Y_us[, "y10"])                                  # continuously compounded
+i   <- which.max(abs(diff(yc)))                                # the week of the largest move
+dy  <- diff(yc)[i]; y0 <- yc[i]; tau <- 10; d <- 1 / 52
+r_actual <- as.numeric(A[i, id_of("US", 10)])
+carry    <- d * y0
+duration <- -(tau - d) * dy
+convexity <- 0.5 * (tau - d)^2 * dy^2
+round(c(yield_change_bp = 1e4 * dy, carry = carry, duration = duration,
+        convexity = convexity, first_order = carry + duration,
+        second_order = carry + duration + convexity, actual = r_actual), 5)
+```
+
+In `r fmt_model(wk[i])` the ten-year yield rose by
+`r sprintf("%.0f", 1e4 * dy)` basis points. Substituting into @eq-22-return,
+
+$$
+r \approx \underbrace{\tfrac{1}{52}\times `r sprintf("%.4f", y0)`}_{\text{carry}}
+\;-\; \underbrace{`r sprintf("%.3f", tau - d)` \times `r sprintf("%.5f", dy)`}_{\text{duration}}
+\;+\; \underbrace{\tfrac{1}{2}\times `r sprintf("%.2f", (tau - d)^2)` \times `r sprintf("%.5f", dy)`^{\,2}}_{\text{convexity}}
+= `r sprintf("%.4f", carry + duration + convexity)`,
+$$
+
+against an actual return of `r sprintf("%.4f", r_actual)`. The duration term
+is the whole of the move, the convexity gives back
+`r sprintf("%.0f", 1e4 * convexity)` basis points of the loss, and the
+`r sprintf("%.0f", 1e4 * (r_actual - carry - duration - convexity))`
+basis points that remain are that week's rolldown and the error of the
+expansion.
+:::
+
+### What the currency does to the fit
+
+Outside the US the same regressions tell two stories.
+
+```{r}
+#| label: tbl-22-regions
+#| tbl-cap: "Government bonds by region: the implied durations from the hedged regressions, and the mean R² of the three regressions on the region's own curve factors, hedged and unhedged."
+#| echo: false
+expo |>
+  dplyr::filter(class == "government") |>
+  dplyr::group_by(region) |>
+  dplyr::summarise(d2  = -level[maturity == 2], d5 = -level[maturity == 5],
+                   d10 = -level[maturity == 10],
+                   r2_hedged = mean(r2_hedged), r2_unhedged = mean(r2_unhedged)) |>
+  dplyr::arrange(dplyr::desc(r2_unhedged)) |>
+  dplyr::mutate(dplyr::across(c(d2, d5, d10), ~ sprintf("%.2f", .x)),
+                dplyr::across(c(r2_hedged, r2_unhedged), ~ sprintf("%.3f", .x))) |>
+  kable(align = "lrrrrr",
+        col.names = c("region", "D (2y)", "D (5y)", "D (10y)", "R² hedged", "R² unhedged"))
+```
+
+```{r}
+#| label: r2-facts
+#| include: false
+r2_f <- expo |>
+  dplyr::filter(class == "government", region != "US") |>
+  dplyr::summarise(hedged = mean(r2_hedged), unhedged = mean(r2_unhedged))
+worst <- expo |> dplyr::filter(class == "government") |> dplyr::slice_min(r2_hedged, n = 1)
+stopifnot(r2_f$hedged > 0.9, r2_f$unhedged < 0.3)
+```
+
+Hedged, the foreign government bonds are explained by their own curves as well
+as the US bonds are, a mean $R^2$ of `r sprintf("%.3f", r2_f$hedged)` across
+the four regions, the lowest `r worst$asset` at
+`r sprintf("%.3f", worst$r2_hedged)`. Unhedged, the mean is
+`r sprintf("%.3f", r2_f$unhedged)`: the same local return sits inside a
+currency move that explains most of the variance, the share computed in
+@sec-22-fixed-income-sleeve-theory, so a duration target set on an unhedged
+foreign sleeve controls a minority of its risk.
+
+### The sleeve as a set of exposures
+
+The sleeve is the fifteen government bonds, weekly and unhedged, and the
+duration is a `factor_exposure` constraint whose $\boldsymbol{B}$ holds the
+duration of each bond from the level loadings above. The matrix is bound to the
+asset names and the binding asserted, for the reason the callout below gives;
+every bound is widened by a millionth of a year, for the reason the callout in
+@sec-22-fixed-income-sleeve-application gives.
+
+```{r}
+#| label: sleeve
+gov <- expo$asset[expo$class == "government"]
+G   <- A[, gov]
+B   <- cbind(duration = -expo$level, slope = -expo$slope)[match(gov, expo$asset), ]
+rownames(B) <- gov
+stopifnot(identical(rownames(B), colnames(G)))
+sleeve <- function(assets, B, lower, upper = lower, band = 1e-6) {
+  stopifnot(identical(if (is.matrix(B)) rownames(B) else names(B), assets))
+  portfolio.spec(assets) |>
+    add.constraint(type = "full_investment") |>
+    add.constraint(type = "long_only") |>
+    add.constraint(type = "factor_exposure", B = B,            # band: the application says why
+                   lower = lower - band, upper = upper + band) |>
+    add.objective(type = "risk", name = "var")
+}
+exposures <- function(w) setNames(as.numeric(t(w[rownames(B)]) %*% B), colnames(B))
+ann_vol   <- function(w) sqrt(as.numeric(t(w) %*% stats::cov(G) %*% w) * 52)
+
+w_free <- extractWeights(optimize.portfolio(G, sleeve(gov, B[, "duration"], 0, 20),
+                                            optimize_method = "ROI"))
+w_five <- extractWeights(optimize.portfolio(G, sleeve(gov, B[, "duration"], 5),
+                                            optimize_method = "ROI"))
+round(w_free[w_free > 0.005], 3)
+round(w_five[w_five > 0.005], 3)
+rbind(unconstrained = c(exposures(w_free), vol = ann_vol(w_free)),
+      duration_5    = c(exposures(w_five), vol = ann_vol(w_five))) |> round(3)
+```
+
+Left to itself, minimum variance holds the US two-year and almost nothing else, at a
+duration of `r sprintf("%.2f", exposures(w_free)[1])`: the least volatile bond
+is the shortest one in the home currency, and the argument of
+@sec-09-mean-variance-application applies unchanged. Told to carry a duration
+of five, the optimizer delivers it as a **barbell**: the US two-year and
+ten-year carry `r sprintf("%.0f%%", 100 * sum(w_five[c(id_of("US", 2), id_of("US", 10))]))`
+of the portfolio between them, with
+`r sprintf("%.0f%%", 100 * sum(w_five[!grepl("^US_", names(w_five))]))` in
+foreign ten-year bonds whose currency moves diversify the dollar curve, and
+the five-year is not held at all. The duration is met exactly, and the slope
+exposure that comes with it is `r sprintf("%.2f", exposures(w_five)[2])`.
+
+::: {.callout-warning}
+## `factor_exposure_constraint()` binds `B` by position, not by name
+
+The constructor checks that `B` has as many rows as there are assets and
+nothing else: row names are stored, never compared with the asset names. A
+`B` whose rows are in a different order than `colnames(R)` is accepted and the
+constraint is applied to the wrong bonds.
+
+```{r}
+#| label: positional
+B_rev  <- B[rev(rownames(B)), "duration"]                    # same numbers, reversed order
+w_rev  <- extractWeights(optimize.portfolio(G, sleeve(rev(gov), B_rev, 5),
+                                            optimize_method = "ROI"))
+c(what_the_solver_believed = 5, true_duration = sum(w_rev * B[names(w_rev), "duration"]))
+```
+
+The solver reports a duration of five and the portfolio has one of
+`r sprintf("%.2f", sum(w_rev * B[names(w_rev), "duration"]))`. `sleeve()`
+refuses a `B` whose names are not identical to the assets in the order of the
+return matrix, the rule of @sec-09-mean-variance-implementation applied to a
+constraint; `random_portfolios()` ignores factor-exposure bounds altogether,
+which @sec-28-robustness-implementation returns to.
+:::
+
+A second column of $\boldsymbol{B}$ bounds the slope exposure. With the
+duration fixed, the slope decides *where* on the curve the duration sits.
+
+```{r}
+#| label: bullet
+w_bullet <- extractWeights(optimize.portfolio(G, sleeve(gov, B, lower = c(5, 2), upper = c(5, 2.5)),
+                                              optimize_method = "ROI"))
+round(w_bullet[w_bullet > 0.005], 3)
+rbind(barbell = c(exposures(w_five), vol = ann_vol(w_five)),
+      bullet  = c(exposures(w_bullet), vol = ann_vol(w_bullet))) |> round(3)
+```
+
+Requiring a slope exposure of at least two pushes the sleeve into the
+five-year, a **bullet**, at the same duration and a volatility of
+`r sprintf("%.2f%%", 100 * ann_vol(w_bullet))` against
+`r sprintf("%.2f%%", 100 * ann_vol(w_five))` for the barbell: the same
+exposure to a parallel shift, different exposures to a twist, and on this
+sample the ends of the curve hedged each other better than the middle hedged
+itself.
+
+A bound the bonds cannot meet is the last case. No long-only combination of
+two-, five- and ten-year bonds has a duration of twelve:
+
+```{r}
+#| label: infeasible
+o_bad <- optimize.portfolio(G, sleeve(gov, B[, "duration"], 12), optimize_method = "ROI")
+c(class = class(o_bad)[1], weights_are_na = anyNA(o_bad$weights), status = o_bad$solver_status)
+```
+
+No error and no warning: the object has the usual class, weights of `NA` and
+the solver's message stored inside it. In a rebalancing loop this is a period
+of `NA`, the failure @sec-25-backtesting-implementation is built to catch, and
+the application uses `pm_backtest()` for that reason.
+
+### The duration overlay as a parametric policy
+
+The tactical layer is written as the policy of @eq-18-policy with one
+characteristic. Let $z_t$ be the US term spread, the ten-year less the
+two-year yield, standardized, and let the long end of the sleeve be the US
+ten-year and the short end the US two-year. The weight on the long end is
+
+$$
+w_t = \bar w + \theta\, z_t,
+\qquad
+\hat\theta = \arg\max_\theta \frac{1}{T}\sum_{t} u\!\big(w_t\, r^{10}_{t+1} + (1-w_t)\, r^{2}_{t+1}\big),
+$$ {#eq-22-overlay}
+
+with $u$ the power utility of @eq-18-estimator at $\gamma = 5$. The anchor
+$\bar w$ is the strategic decision, set so that the policy at $z_t = 0$ has the
+duration of the equal-weighted two-, five- and ten-year ladder, which is the
+class series the allocation sees; $\theta$ is the tactical one. The data are
+monthly, with the curve read at each month end from the last weekly observation
+of that month, as @sec-16-signals-and-forecasts-implementation does.
+
+```{r}
+#| label: overlay-data
+i_last <- findInterval(dates, cv$date)                      # last weekly curve point in each month
+stopifnot(all(format(cv$date[i_last], "%Y-%m") == format(dates, "%Y-%m")))
+term    <- -cv$US_Slope[i_last]                             # ten-year less two-year, decimal
+r_long  <- as.numeric(Am[, id_of("US", 10)])
+r_short <- as.numeric(Am[, id_of("US", 2)])
+gamma   <- 5
+D_bar   <- mean(c(2, 5, 10))                                # the ladder's duration, in years
+w_bar   <- (D_bar - 2) / (10 - 2)                           # long-end weight that delivers it
+```
+
+```{r}
+#| label: overlay-fit
+crra <- function(r) (1 + r)^(1 - gamma) / (1 - gamma)
+policy_utility <- function(theta, z, rl, rs) {
+  w <- w_bar + theta * z
+  mean(crra(w * rl + (1 - w) * rs))                         # @eq-22-overlay
+}
+z <- (term - mean(term)) / stats::sd(term)
+# the signal at t sits beside the return of t + 1: z[-Tn] against r[-1]
+fit_theta <- function(i) stats::optimize(policy_utility, c(-3, 3), z = z[-Tn][i],
+                                         rl = r_long[-1][i], rs = r_short[-1][i],
+                                         maximum = TRUE)$maximum
+theta_hat <- fit_theta(seq_len(Tn - 1L))
+
+set.seed(1602)
+block_index <- function(n, block = 12L) {                   # the block bootstrap of chapter 9
+  starts <- sample.int(n - block + 1L, ceiling(n / block), replace = TRUE)
+  as.vector(outer(0:(block - 1L), starts, "+"))[seq_len(n)]
+}
+boot  <- vapply(seq_len(500L), function(b) fit_theta(block_index(Tn - 1L)), numeric(1))
+ce    <- function(theta)                                    # monthly certainty equivalent
+  ((1 - gamma) * policy_utility(theta, z[-Tn], r_long[-1], r_short[-1]))^(1 / (1 - gamma)) - 1
+round(c(theta = theta_hat, se_block_bootstrap = stats::sd(boot), t = theta_hat / stats::sd(boot),
+        ce_gain_annual = 12 * (ce(theta_hat) - ce(0))), 3)
+```
+
+The fitted $\hat\theta$ is `r sprintf("%.2f", theta_hat)`: one standard
+deviation of term spread moves the long-end weight by
+`r sprintf("%.0f", 100 * theta_hat)` percentage points, or the duration by
+`r sprintf("%.1f", 8 * theta_hat)` years, in the direction @cochrane2005
+predicts. Its block-bootstrap standard error [@kuensch1989] is
+`r sprintf("%.2f", stats::sd(boot))`, a $t$-statistic of
+`r sprintf("%.2f", theta_hat / stats::sd(boot))`, and the in-sample
+certainty-equivalent gain over the constant policy is
+`r sprintf("%.2f", 100 * 12 * (ce(theta_hat) - ce(0)))` percentage points a
+year: the sign the literature predicts without the precision to be sure of it,
+the usual state of a tactical signal [@welch2008].
+
+## The Sleeve Out of Sample {#sec-22-fixed-income-sleeve-application}
+
+The application runs from observation 121, the first out-of-sample month of
+the register of @sec-25-backtesting-application, with a sixty-month window and
+monthly rebalancing. One plain limitation first: the five government class
+series are each the equal-weighted ladder of the same three maturities, so they
+share one duration and a duration target cannot be set on them. The sleeves
+therefore run on the fifteen government instruments behind those classes and
+are judged against the class series. The **equal-weighted sleeve** holds the
+five government class series equally, the benchmark the allocation sees, with a
+duration of `r sprintf("%.2f", D_bar)`. The **constant-duration sleeve** is
+minimum variance on the fifteen instruments with the duration bound to that
+same `r sprintf("%.2f", D_bar)`, the durations being the maturities, which need
+no estimation. The **duration overlay** is the same optimization with the
+target moved by the policy of @eq-22-overlay, re-estimated every month on the
+data available then. And **credit** enters as a separate exposure: the five
+credit class series join the universe with a second column of
+$\boldsymbol{B}$, the spread duration, bound so that the sleeve carries the
+duration and the spread duration of an equal-weighted portfolio of all ten bond
+classes, its benchmark.
+
+```{r}
+#| label: overlay-path
+tilt <- vapply(120:Tn, function(t) {                           # everything indexed <= t
+  zt <- (term[1:t] - mean(term[1:t])) / stats::sd(term[1:t])
+  th <- stats::optimize(policy_utility, c(-3, 3), z = zt[-t],
+                        rl = r_long[2:t], rs = r_short[2:t], maximum = TRUE)$maximum
+  th * zt[t]
+}, numeric(1))
+w_long <- pmin(pmax(w_bar + tilt, 0), 1)                     # long only: clipped at the ends
+D_path <- setNames(2 + 8 * w_long, as.character(dates[120:Tn]))   # one target per rebalancing date
+round(c(min = min(D_path), mean = mean(D_path), max = max(D_path),
+        share_at_a_bound = mean(w_long %in% c(0, 1))), 2)
+```
+
+```{r}
+#| label: fig-22-duration
+#| fig-cap: "The duration target of the overlay at each rebalancing date, set from the term spread with the policy re-estimated on the data available at that date. The dashed line is the constant target; the shaded bands are the episodes."
+#| echo: false
+#| fig-asp: 0.45
+dpath <- tibble::tibble(date = as.Date(names(D_path)), duration = D_path, kind = "overlay")
+ggplot2::ggplot(dpath, ggplot2::aes(date, duration)) +
+  ggplot2::geom_rect(data = dplyr::filter(sim_episodes, end >= min(dpath$date)),
+                     ggplot2::aes(xmin = pmax(start, min(dpath$date)), xmax = end,
+                                  ymin = -Inf, ymax = Inf),
+                     inherit.aes = FALSE, fill = tidyaa_colors[["rule"]], alpha = 0.7) +
+  ggplot2::geom_hline(yintercept = D_bar, linetype = "22", colour = tidyaa_colors[["ink"]]) +
+  ggplot2::geom_step(colour = tidyaa_colors[["blue"]], linewidth = 0.6) +
+  scale_x_model() +
+  ggplot2::labs(y = "target duration, years")
+```
+
+```{r}
+#| label: backtests
+oos  <- 61:Tn                      # a 60-month window ending at 120 puts the first OOS month at 121
+cost_of <- setNames(unname(pm_costs_default()[sim_assets$asset_class]), sim_assets$asset_id)
+gov_cl <- grep("_government$", colnames(R), value = TRUE)
+cre_cl <- grep("_credit$",     colnames(R), value = TRUE)
+ew_spec <- function(assets) portfolio.spec(assets) |>
+  add.constraint(type = "full_investment") |> add.constraint(type = "long_only")
+
+equal_weight <- pm_strategy("equal_weight", spec = ew_spec, weight_fun = equal.weight,
+                            metric = "sharpe", label = "Equal weight")
+constant_duration <- pm_strategy("constant_duration", optimize_method = "ROI",
+  spec  = function(assets) sleeve(assets, mat[assets], D_bar),
+  label = "Constant duration")
+overlay <- pm_strategy("overlay", label = "Duration overlay",
+  spec  = function(assets) sleeve(assets, mat[assets], D_bar),
+  weight_fun = function(R, portfolio, ...) {                 # R is the window ending at the rebalance
+    D <- D_path[[as.character(zoo::index(R)[nrow(R)])]]
+    optimize.portfolio(R, sleeve(colnames(R), mat[colnames(R)], D), optimize_method = "ROI")
+  })
+U_cre <- cbind(Am[oos, gov], R[oos, cre_cl])
+B_cre <- cbind(duration = c(mat[gov], setNames(rep(D_bar, 5), cre_cl)),
+               spread   = c(setNames(rep(0, 15), gov), setNames(rep(D_bar, 5), cre_cl)))
+with_credit <- pm_strategy("with_credit", optimize_method = "ROI",
+  spec  = function(assets) sleeve(assets, B_cre[assets, ], c(D_bar, D_bar / 2)),
+  label = "Constant duration plus credit")
+
+run <- function(X, ..., costs = pm_costs_default())
+  pm_backtest(X, pm_register(...), riskfree = sim_riskfree_monthly, estimation_window = 60L,
+              costs = costs, verbose = FALSE)
+bt <- list(
+  ew_gov = run(R[oos, gov_cl], equal_weight),
+  sleeve = run(Am[oos, gov], constant_duration, overlay, costs = cost_of[gov]),
+  ew_all = run(R[oos, c(gov_cl, cre_cl)], equal_weight),
+  credit = run(U_cre, with_credit, costs = c(cost_of[gov], credit = pm_costs_default()[["credit"]]))
+)
+labels <- c(ew_gov = "Equal weight, five government classes", ew_all = "Equal weight, ten bond classes")
+mets <- dplyr::bind_rows(lapply(names(bt), function(k) {
+  m <- bt[[k]]$metrics
+  if (k %in% names(labels)) m$label <- labels[[k]]
+  dplyr::mutate(m, key = k, .before = 1)                     # two strategies share a name
+}))
+stopifnot(all(mets$n_failed == 0L), all(vapply(bt, function(b) b$meta$oos_start, Sys.Date()) == dates[121]))
+```
+
+```{r}
+#| label: exact-target
+G_oos  <- Am[oos, gov]
+ends   <- 60:nrow(G_oos)                                     # the rebalancing dates of the backtest
+failed <- vapply(ends, function(e) {                         # the same windows, lower == upper
+  w <- extractWeights(optimize.portfolio(G_oos[(e - 59):e, ],
+                                         sleeve(gov, mat[gov], D_bar, band = 0),
+                                         optimize_method = "ROI"))
+  anyNA(w)
+}, logical(1))
+stopifnot(length(ends) == bt$sleeve$metrics$n_periods[1])
+c(windows = length(ends), failed_with_exact_target = sum(failed))
+```
+
+::: {.callout-important}
+## An exact exposure target can be reported infeasible in a third of the windows
+
+The `band` argument of `sleeve()` is not cosmetic. With `band = 0`, the exposure
+equality reaches `quadprog` as two opposing inequalities, the same degeneracy
+that @sec-09-mean-variance-implementation documents for `full_investment`, and
+on these fifteen bonds `r sum(failed)` of the `r length(ends)` rolling windows
+come back with the message
+seen above and weights of `NA`; the same windows solve once the bounds are a
+millionth of a year apart. `pm_backtest()` counts such periods in `n_failed`
+and carries the previous weights forward, and the assertion above requires the
+count to be zero, so that the table below describes the strategy that was
+specified.
+:::
+
+```{r}
+#| label: tbl-22-oos
+#| tbl-cap: "The sleeves out of sample from observation 121, sixty-month window, monthly rebalancing. Sharpe ratios are over the bill, gross and net of the per-class costs of chapter 23; turnover is annual one-way."
+#| echo: false
+oos_tab <- mets |>
+  dplyr::filter(basis == "gross") |>
+  dplyr::mutate(sharpe_net = mets$sharpe[mets$basis == "net"]) |>
+  dplyr::select(label, sharpe, sharpe_net, ann_vol, max_drawdown, ann_turnover)
+oos_tab |>
+  dplyr::mutate(dplyr::across(c(sharpe, sharpe_net), ~ sprintf("%.2f", .x)),
+                dplyr::across(c(ann_vol, max_drawdown), ~ sprintf("%.1f%%", 100 * .x)),
+                ann_turnover = sprintf("%.2f", ann_turnover)) |>
+  kable(align = "lrrrrr",
+        col.names = c("", "Sharpe", "Sharpe, net", "volatility", "max drawdown", "turnover"))
+```
+
+```{r}
+#| label: oos-facts
+#| include: false
+sr <- setNames(oos_tab$sharpe, oos_tab$label)
+vol <- setNames(oos_tab$ann_vol, oos_tab$label)
+dd  <- setNames(oos_tab$max_drawdown, oos_tab$label)
+stopifnot(vol[["Constant duration"]] < vol[["Equal weight, five government classes"]])
+hold <- bt$sleeve$weights |>
+  dplyr::filter(strategy == "constant_duration") |>
+  dplyr::group_by(asset) |> dplyr::summarise(w = mean(weight)) |> dplyr::arrange(dplyr::desc(w))
+us_share <- sum(hold$w[grepl("^US_", hold$asset)])
+```
+
+Three things in @tbl-22-oos are worth stating. The constant-duration sleeve
+has the duration of the equal-weighted government sleeve and
+`r sprintf("%.1f%%", 100 * vol[["Constant duration"]])` volatility against
+`r sprintf("%.1f%%", 100 * vol[["Equal weight, five government classes"]])`,
+because it holds `r sprintf("%.0f%%", 100 * us_share)` of its weight, on
+average, in US bonds and so carries little currency: the duration is the same
+and the risk is not, the point of @sec-22-fixed-income-sleeve-theory about
+foreign bonds made in a backtest. The overlay's Sharpe ratio is
+`r sprintf("%.2f", sr[["Duration overlay"]])` against
+`r sprintf("%.2f", sr[["Constant duration"]])` for the constant target, at
+`r sprintf("%.1f", oos_tab$ann_turnover[oos_tab$label == "Duration overlay"] / oos_tab$ann_turnover[oos_tab$label == "Constant duration"])`
+times the turnover; whether that difference is more than one sample is the
+question the in-sample $t$-statistic has answered. Credit as a second exposure
+raises the Sharpe ratio to
+`r sprintf("%.2f", sr[["Constant duration plus credit"]])`, against
+`r sprintf("%.2f", sr[["Equal weight, ten bond classes"]])` for the
+equal-weighted ten classes with the same two exposures, at the price of a
+skewness the table does not show and @sec-10-risk-measures-theory would.
+
+```{r}
+#| label: tbl-22-episodes
+#| tbl-cap: "Cumulative return of each sleeve inside the four episodes of `sim_episodes`, out-of-sample months only. The equity bear market began before the out-of-sample period, so only its last months count."
+#| echo: false
+rets <- dplyr::bind_rows(lapply(names(bt), function(k)
+  dplyr::mutate(dplyr::filter(bt[[k]]$returns, basis == "gross"), key = k))) |>
+  dplyr::left_join(dplyr::distinct(mets, key, strategy, label), by = c("key", "strategy"))
+stopifnot(all(table(rets$label) == bt$ew_gov$meta$n_oos))     # one return per strategy and month
+ep_tab <- dplyr::bind_rows(lapply(seq_len(nrow(sim_episodes)), function(j) {
+  rets |>
+    dplyr::filter(in_episode(date, sim_episodes$episode[j])) |>
+    dplyr::group_by(label) |>
+    dplyr::summarise(ret = prod(1 + return) - 1, months = dplyr::n(), .groups = "drop") |>
+    dplyr::mutate(episode = sim_episodes$label[j])
+}))
+ep_months <- ep_tab |> dplyr::distinct(episode, months)
+ep_tab |>
+  dplyr::mutate(label = factor(label, levels = oos_tab$label)) |>
+  dplyr::arrange(label) |>
+  tidyr::pivot_wider(id_cols = label, names_from = episode, values_from = ret) |>
+  dplyr::mutate(dplyr::across(-label, ~ sprintf("%+.1f%%", 100 * .x))) |>
+  kable(align = "lrrrr")
+```
+
+```{r}
+#| label: episode-facts
+#| include: false
+rs <- ep_tab |> dplyr::filter(episode == "rates shock")
+rs_of <- function(l) rs$ret[rs$label == l]
+stopifnot(all(rs$ret < 0),
+          rs_of("Duration overlay") > rs_of("Constant duration"),
+          rs_of("Constant duration") > rs_of("Equal weight, five government classes"))
+D_rs <- mean(D_path[in_episode(as.Date(names(D_path)), "rates_shock")])
+```
+
+The rates shock is the episode in which duration is the whole story. Every
+bond portfolio lost: the equal-weighted government sleeve
+`r sprintf("%.1f%%", 100 * rs_of("Equal weight, five government classes"))`
+over its `r ep_months$months[ep_months$episode == "rates shock"]` months, the
+constant-duration sleeve
+`r sprintf("%.1f%%", 100 * rs_of("Constant duration"))` with the same duration
+and less currency, and the overlay
+`r sprintf("%.1f%%", 100 * rs_of("Duration overlay"))`. The overlay lost least
+because the curve had flattened before yields rose, so the policy had taken
+the target down to an average of `r sprintf("%.1f", D_rs)` years through the
+episode, as @fig-22-duration shows. That is what a term-spread signal is meant
+to do and did; it is one episode, and the same figure shows the target at its
+upper bound through model years in which nothing followed.
+
+The credit crisis is the opposite case, and the spreads say why.
+
+```{r}
+#| label: tbl-22-spreads
+#| tbl-cap: "What the US curve and the US spreads did across the credit crisis and the rates shock, in basis points from the week before each episode to its last week, with the cumulative return of the US ten-year government, investment-grade and high-yield bonds over the same months."
+#| echo: false
+ep_curve <- dplyr::bind_rows(lapply(c("credit_crisis", "rates_shock"), function(k) {
+  i <- which(in_episode(cv$date, k)); i0 <- min(i) - 1L; i1 <- max(i)
+  m <- in_episode(dates, k)
+  cum <- function(id) prod(1 + as.numeric(Am[m, id])) - 1
+  tibble::tibble(episode = sim_episodes$label[sim_episodes$episode == k],
+                 d_y2  = 1e4 * (Y_us[i1, "y2"] - Y_us[i0, "y2"]),
+                 d_y10 = 1e4 * (Y_us[i1, "y10"] - Y_us[i0, "y10"]),
+                 d_ig  = 1e4 * (cv$US_IG_Spread[i1] - cv$US_IG_Spread[i0]),
+                 d_hy  = 1e4 * (cv$US_HY_Spread[i1] - cv$US_HY_Spread[i0]),
+                 gov10 = cum(id_of("US", 10)), ig10 = cum(id_of("US", 10, "credit", "IG")),
+                 hy10  = cum(id_of("US", 10, "credit", "HY")))
+}))
+ep_curve |>
+  dplyr::mutate(dplyr::across(d_y2:d_hy, ~ sprintf("%+.0f", .x)),
+                dplyr::across(gov10:hy10, ~ sprintf("%+.1f%%", 100 * .x))) |>
+  kable(align = "lrrrrrrr",
+        col.names = c("", "Δ 2y", "Δ 10y", "Δ IG spread", "Δ HY spread",
+                      "gov 10y", "IG 10y", "HY 10y"))
+```
+
+```{r}
+#| label: spread-facts
+#| include: false
+cc <- ep_curve[ep_curve$episode == "credit crisis", ]; rsk <- ep_curve[ep_curve$episode == "rates shock", ]
+stopifnot(cc$d_y10 < 0, cc$d_hy > 0, cc$gov10 > 0, cc$hy10 < 0, rsk$d_y10 > 0, rsk$gov10 < 0)
+```
+
+In the credit crisis the ten-year yield fell by
+`r sprintf("%.0f", -cc$d_y10)` basis points and the high-yield spread widened
+by `r sprintf("%.0f", cc$d_hy)`: the same duration that earned the government
+ten-year `r sprintf("%+.1f%%", 100 * cc$gov10)` cost the high-yield ten-year
+`r sprintf("%+.1f%%", 100 * cc$hy10)` through its spread duration, and the
+sleeve with credit lost where the government sleeve gained. In the rates shock
+the level did the damage and the spreads added to it, so every bond lost
+together: the two exposures of the credit sleeve, in opposite combinations.
+
+The class series the allocation of @sec-15-hierarchical-allocation-theory
+sees, `US_government` and its four siblings, is the equal-weighted ladder, and
+that is the sleeve's benchmark: the allocation decides how much of the
+portfolio is government bonds, and the sleeve's job is a set of exposures
+relative to the ladder, a duration, a position on the curve, a spread
+duration, each written here as a bound on a factor loading. The package can
+nest the sleeve under the allocation itself, through `mult.portfolio.spec()`
+and `add.sub.portfolio()`, which optimize each sleeve on its own rebalancing
+calendar and allocate across the proxy return series; exercise 4 runs it and
+finds the proxies back-filled with equal weights before the first rebalance,
+the trap of @sec-23-rebalancing-implementation. The same loadings are what a
+scenario needs: @sec-965-scenario-analysis shocks the level, the slope and the
+spreads directly and reads off, through @eq-22-exposure, what every sleeve and
+every class does. What the exposures cost to maintain is the subject of
+@sec-23-rebalancing-theory, and whether the overlay's single sample is evidence
+is the subject of @sec-25-backtesting-theory.
+
+## Key Takeaways {.unnumbered}
+
+- A bond's return is carry plus rolldown minus duration times the yield change,
+  @eq-22-return, so a bond portfolio is a set of exposures to the factors that
+  move yields, and two portfolios with the same exposures have the same
+  interest-rate risk whatever bonds they hold [@litterman1991].
+- Three factors describe the curve. The modeled market ships the observable
+  level, slope and curvature of @diebold2006, a rotation of the two-, five- and
+  ten-year yields; the principal components of yield changes recover the same
+  three shapes.
+- A duration target is a `factor_exposure` constraint on the level loading, a
+  second column decides between barbell and bullet, and minimum variance subject
+  to both is still a quadratic program. `B` is bound by position, an exact
+  target can be reported infeasible, and an infeasible one returns `NA` weights
+  without a warning.
+- For a dollar investor a foreign government bond is mostly currency: hedged,
+  the curve factors explain it as well as a US bond; unhedged, a fraction of it.
+  The duration and currency decisions are taken together or not at all
+  [@campbell2010].
+- The duration overlay is the parametric policy of chapter 18 with one
+  characteristic: the sign the literature predicts, a $t$-statistic below two,
+  and out of sample the smallest loss in the rates shock because the curve had
+  flattened first, which is one episode.
+
+## Exercises {.unnumbered}
+
+1. Repeat the duration-five sleeve of @sec-22-fixed-income-sleeve-implementation
+   on hedged returns, subtracting each region's `fx_return` before optimizing.
+   Which bonds does the sleeve hold now, what is its volatility against the
+   unhedged one, and what does the difference say about where the lowest-cost
+   duration is bought?
+2. Refit the overlay of @eq-22-overlay at $\gamma = 2$ and $\gamma = 10$. How
+   does $\hat\theta$ move, and does the bootstrap $t$-statistic move with it?
+   What does that imply about who should run a duration overlay?
+3. Solve a dozen of the windows that failed with `band = 0` above with
+   `optimize_method = c("CVXR", "OSQP")`. Does that backend meet an exact
+   exposure target, and what does `pm_backtest()` do with a window that fails?
+4. Nest the constant-duration sleeve and an equal-weighted credit sleeve under
+   a minimum-variance top level with `mult.portfolio.spec()` and
+   `add.sub.portfolio()`, quarterly rebalancing, sixty months of training. Read
+   the proxy returns with `PortfolioAnalytics:::proxy.mult.portfolio()`: how
+   many months precede the first rebalance, and what weights produced them?

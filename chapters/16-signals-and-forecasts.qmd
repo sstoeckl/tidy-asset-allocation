@@ -1,0 +1,1006 @@
+---
+title: "Signals and Return Forecasts"
+metadata:
+  pagetitle: "Signals and Return Forecasts"
+  description-meta: "Building tactical return signals from momentum, the yield curve and cross-sectional turbulence, testing them in and out of sample with the Campbell-Thompson R-squared and the Clark-West statistic, and pricing a tilt on the policy portfolio after costs, in R."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+Can the excess return on an asset class be forecast, and does a forecast that
+fits the past help an investor who must act on it before the future arrives?
+@welch2008 put the first question to every predictor the literature had
+proposed for the equity premium and found that hardly any of them would have
+helped an investor in real time: the regressions fit in sample and failed out
+of sample. @campbell2008 replied that the same predictors do help, by a small
+but economically meaningful margin, once the forecast is constrained by what
+theory says its sign must be, and between them the two papers fixed the terms
+on which every later claim of predictability is judged: an out-of-sample $R^2$
+against the historical mean, and the certainty-equivalent gain of an investor
+who uses the forecast.
+
+This is the first **tactical** chapter of the book in the sense of
+@sec-03-return-risk-and-the-investor-theory: the inputs are conditioned on
+information available at the time rather than estimated unconditionally, and
+the question is whether the conditioning is worth anything. We first set out
+the predictive regression and its two $R^2$ statistics, the test of one
+forecast against another, and the economic-value criterion; then say which
+signals this universe can carry and build them from the shipped data, momentum
+from the return histories and the term spread, the credit spread and a
+turbulence index from the bond curve factors and the cross-section; then test
+each signal in sample and out of sample, one at a time and combined through an
+elastic net; and finally scale the forecasts into a monthly tilt around the
+equal-weight policy and price it after costs.
+
+The data are the sixteen risky class series of
+@sec-02-notation-and-data-simulated-market, in excess of the Treasury bill for
+the reasons of @sec-03-return-risk-and-the-investor-theory, and the assertion
+that the bill's dates are the return dates is the first of several in this
+chapter that exist because a signal one month out of place produces a
+plausible table.
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)   # sixteen risky classes
+rf <- sim_riskfree_monthly$return                                  # the bill
+Re <- R - rf                                                       # excess returns
+N  <- ncol(Re); dates <- zoo::index(R)
+stopifnot(N == 16L, !anyNA(Re), all(sim_riskfree_monthly$date == dates))
+```
+
+## Predictability, In Sample and Out {#sec-16-signals-and-forecasts-theory}
+
+### The predictive regression
+
+Write $r^e_{t+1}$ for the excess return on one series over month $t+1$ and
+$\boldsymbol{x}_t$ for a vector of $K$ signals observed by the end of month
+$t$. The predictive regression is
+
+$$
+r^e_{t+1} = a + \boldsymbol{b}'\boldsymbol{x}_t + \varepsilon_{t+1},
+$$ {#eq-16-predictive}
+
+and its in-sample $R^2$ is the share of the variance of $r^e$ that the fitted
+values account for over the whole sample,
+
+$$
+R^2 = 1 - \frac{\sum_{t}\hat{\varepsilon}_{t+1}^2}
+               {\sum_{t}\left(r^e_{t+1} - \bar{r}^e\right)^2},
+$$ {#eq-16-r2}
+
+with $\bar{r}^e$ the full-sample mean. Three things about @eq-16-predictive are
+settled before any signal is chosen. The dating is the whole of the
+discipline: $\boldsymbol{x}_t$ must be known when the position for $t+1$ is
+taken, and @sec-16-signals-and-forecasts-implementation asserts that alignment
+in code rather than trusting it. The $R^2$ will be small, because
+@sec-04-descriptive-analysis-theory showed, following @merton1980, that a mean
+is known only to within $\sigma/\sqrt{\tau}$ over $\tau$ years, and a
+conditional mean that moves with $\boldsymbol{x}_t$ is a fraction of a number
+that is itself barely visible: one percent a month is a strong result in this
+literature. And the slope is biased when the signal is persistent and its
+innovations are correlated with the return's, as for every valuation ratio
+and most yields; @stambaugh1999 derived the bias and @cochrane2008 showed that
+the same persistence constrains what the joint system of return and signal can
+say. Inference uses the @newey1987 standard errors of @eq-05-neweywest, and
+with sixteen series and four signals the sixty-four regressions below are a
+multiple-testing problem of the kind @harvey2016 describe, so a $t$-statistic
+of two begins a case rather than ending one.
+
+### The out-of-sample $R^2$
+
+An in-sample fit estimates $a$ and $\boldsymbol{b}$ on the whole history and
+scores the fitted values on the same history. An investor cannot do that. At
+the end of each month $t$ she has the data through $t$, estimates
+@eq-16-predictive on them, and forecasts $\hat{r}^e_{t+1}$; the alternative
+that uses no signal is the historical mean through $t$, $\bar{r}^e_t$, the
+strategic input of @sec-06-expected-returns-theory re-estimated each month.
+@campbell2008 score the two sequences of forecasts against each other over
+the out-of-sample months $t = T_0, \dots, T-1$ by
+
+$$
+R^2_{\text{OS}} = 1 -
+  \frac{\sum_{t=T_0}^{T-1}\left(r^e_{t+1} - \hat{r}^e_{t+1}\right)^2}
+       {\sum_{t=T_0}^{T-1}\left(r^e_{t+1} - \bar{r}^e_t\right)^2},
+$$ {#eq-16-r2os}
+
+which is positive when the signal's forecast errors are smaller than the
+mean's and negative when they are larger. Unlike @eq-16-r2 it has no floor at
+zero, and a negative value is the common case: @welch2008 report it for most
+predictors over most periods, @goyal2024 find on data through 2021 that
+almost nothing proposed since fares better, and @mclean2016 show that the
+cross-sectional predictors which did work decay after publication. The burn-in
+$T_0$ is a choice, and the window can roll or expand; an expanding window uses
+everything the investor knows, and it is what we use. @campbell2008 also
+restricted the forecast by theory, setting a negative forecast of the equity
+premium to zero, and found that the restriction turns most of their negative
+$R^2_{\text{OS}}$ positive; exercise 2 applies it here.
+
+### Testing one forecast against another
+
+Two forecasts of the same series are compared on their squared errors. Write
+$e^0_{t+1} = r^e_{t+1} - \bar{r}^e_t$ for the mean's error, $e^1_{t+1}$ for
+the model's, and $d_{t+1} = (e^0_{t+1})^2 - (e^1_{t+1})^2$ for the loss
+differential. @diebold1995 observed that under the null of equal accuracy $d$
+has mean zero, so the test is a $t$-test on its mean with a standard error that
+allows the losses to be serially correlated and heteroskedastic,
+
+$$
+\text{DM} = \frac{\bar{d}}{\sqrt{\widehat{\operatorname{Var}}(\bar{d})}},
+$$ {#eq-16-dm}
+
+with the variance estimated as in @eq-05-neweywest, asymptotically standard
+normal. When the two models are nested, as a predictive regression and the
+historical mean are, the larger model estimates parameters whose true value is
+zero under the null and pays for them in forecast variance, so its squared
+errors exceed the mean's even when the signal is useless and @eq-16-dm is
+biased against it. @clark2007 correct this by adding back the term the
+estimation noise contributes,
+
+$$
+\text{CW} = \frac{\overline{d_{t+1} + \left(\bar{r}^e_t - \hat{r}^e_{t+1}\right)^2}}
+                 {\sqrt{\widehat{\operatorname{Var}}(\cdot)}},
+$$ {#eq-16-cw}
+
+read against the normal distribution as a one-sided test. It is the statistic
+reported below whenever a signal is set against the mean, with @eq-16-dm
+beside it to show what the correction changes.
+
+### Why a small $R^2$ can matter
+
+An $R^2_{\text{OS}}$ of half a percent looks like nothing, and it is not.
+@kandel1996 showed that the decision of a mean-variance investor responds to a
+predictive relation far weaker than any statistical test would accept, because
+what the investor cares about is not the fit but the position the forecast
+changes. The link is short. Under @eq-03-quadratic-utility an investor with
+risk aversion $\gamma$ facing one risky asset with conditional mean $\mu_t$
+and variance $\sigma^2$ holds $w_t = \mu_t / (\gamma\sigma^2)$ and earns an
+expected excess return of $\mathbb{E}[\mu_t^2]/(\gamma\sigma^2)$. Using the
+unconditional mean $\mu$ instead earns $\mu^2/(\gamma\sigma^2) = S^2/\gamma$,
+with $S = \mu/\sigma$ the Sharpe ratio; the difference is
+$\operatorname{Var}(\mu_t)/(\gamma\sigma^2)$, and
+$\operatorname{Var}(\mu_t)/\sigma^2$ is the $R^2$ of the forecast. So, as
+@campbell2008 write it,
+
+$$
+\Delta\,\mathbb{E}[r^e] \approx \frac{R^2_{\text{OS}}}{\gamma},
+\qquad
+\frac{\Delta\,\mathbb{E}[r^e]}{S^2/\gamma} \approx \frac{R^2_{\text{OS}}}{S^2}.
+$$ {#eq-16-ct}
+
+The proportional gain is the $R^2$ relative to the *squared* Sharpe ratio, and
+monthly Sharpe ratios are small numbers. Take $R^2_{\text{OS}} = 0.5\%$ a
+month, an annual Sharpe ratio of $0.5$ so that
+$S = 0.5/\sqrt{12} = `r sprintf("%.3f", 0.5 / sqrt(12))`$ and
+$S^2 = `r sprintf("%.4f", (0.5 / sqrt(12))^2)`$, and $\gamma = 5$: the
+proportional gain is
+$`r sprintf("%.3f", 0.005)` / `r sprintf("%.4f", (0.5 / sqrt(12))^2)`
+= `r sprintf("%.0f%%", 100 * 0.005 / (0.5 / sqrt(12))^2)`$ of the
+unconditional expected excess return, and in return units
+$0.005 / 5 = `r sprintf("%.0f", 1e4 * 0.005 / 5)`$ basis points a month,
+`r sprintf("%.1f", 100 * 12 * 0.005 / 5)` percentage points a year. That is
+what a predictive $R^2$ no referee would find impressive is worth to an
+investor who acts on it without constraint, and it is why in-sample
+significance and out-of-sample profit are different questions: the first asks
+whether $\boldsymbol{b}$ is distinguishable from zero, the second whether
+acting on $\hat{\boldsymbol{b}}$, estimated with error and passed through a
+position rule and a cost model, beats not acting. @pesaran1995 made the same
+point with switching rules run in real time.
+
+The criterion that answers the second question is the certainty equivalent of
+@sec-03-return-risk-and-the-investor-theory. For a strategy whose realized
+excess returns have mean $\hat{\mu}_p$ and variance $\hat{\sigma}^2_p$ over
+the out-of-sample months,
+
+$$
+\text{CE}_p = \hat{\mu}_p - \frac{\gamma}{2}\,\hat{\sigma}^2_p,
+\qquad
+\Delta = \text{CE}_{\text{forecast}} - \text{CE}_{\text{mean}},
+$$ {#eq-16-cer}
+
+is the riskless excess return the investor would accept in place of each, and
+$\Delta$ is the fee she would pay to switch from the strategy built on the mean
+to the one built on the forecast. It is computed from realized returns, gross
+or net of costs, and it decides @sec-16-signals-and-forecasts-application.
+What it does not do is score the forecast itself, independently of a position
+rule. That measure, the risk-adjusted forecast error that
+@sec-08-estimation-error-application introduced and
+@sec-26-forecast-error-cost-theory derives, expresses a forecast's error as
+the Sharpe ratio it costs [@salcher2026]; whether a forecaster should be
+trained on that loss rather than on squared error is the question of
+@sec-27-decision-aware-forecasting-theory.
+
+### Which signals this universe can carry
+
+The literature's signals fall into three families, and the shipped data
+support two of them.
+
+**Momentum** needs nothing but the return history. @jegadeesh1993 documented
+that stocks which rose over the past three to twelve months continue to rise
+over the next, and the construction that became standard skips the most recent
+month to avoid short-term reversal: the signal at $t$ is the return over months
+$t-11$ to $t-1$,
+
+$$
+\text{mom}_{i,t} = \prod_{k=1}^{11}\left(1 + R_{i,t-k}\right) - 1 .
+$$ {#eq-16-mom}
+
+@moskowitz2012 showed that the sign of an asset's own past twelve-month excess
+return forecasts its next month across fifty-eight futures on equity indices,
+bonds, currencies and commodities, the asset-class level of this book rather
+than the stock level, and @asness2013 found value and momentum premia in every
+class and region they examined, negatively correlated with each other.
+**Value** is the family this universe cannot support: it needs a fundamental,
+a book value or an earnings stream, that the market does not carry, so the
+chapter builds momentum without its partner and the value side waits for
+@sec-21-equity-sleeve-theory.
+
+**Macro state** signals are the family @welch2008 tested: the dividend yield,
+the term spread, the default spread, the short rate, inflation. @fama1989
+showed that the term spread and the default spread forecast the excess returns
+on stocks and bonds together, tracking business conditions, and both are in the
+shipped data. `sim_curve_weekly`, described in
+@sec-02-notation-and-data-simulated-market, carries the level, slope and
+curvature of a @nelson1987 curve per region in the dynamic form of
+@diebold2006, plus an investment-grade and a high-yield credit spread per
+region. In that parametrization the slope factor is the short end minus the
+long end, so the **term spread** of @fama1989 is minus the slope, and the
+**IG spread** is their default spread. These are the same predictors, built
+inside the universe: the bond block was simulated from them, so a signal that
+forecasts the bond and credit series here is forecasting the state that
+generated them, the state @sec-22-fixed-income-sleeve-theory decomposes the
+bond returns on. Whether it forecasts the equity series is the open question.
+
+**Cross-sectional dispersion** is the third family, and it is the one
+@sec-05-factor-models-application already built. The turbulence index of
+@chow1999 and @kritzman2010, the Mahalanobis distance of a month's return
+vector from its trailing mean in @eq-05-turbulence, measures how unusual the
+pattern across the sixteen series is; @stoeckl2022turbulence show that
+dispersion measured within a cross-section forecasts the premia earned on it,
+and @stoeckl2022pu link the same construction to parameter uncertainty and to
+the aggregate premium. It is a signal about the whole market rather than about
+one series, so it enters every regression with the same value and a
+series-specific slope.
+
+The real-world versions of the macro signals are one call away for a reader
+with a network connection: `tidyfinance` serves the @welch2008 predictor file,
+whose `tms` and `dfy` columns are the term and default spreads built below;
+the dates are any range of the predictor file's own, real calendar.
+
+```{r}
+#| label: goyal-welch
+#| eval: false
+gw <- tidyfinance::download_data_macro_predictors(
+  dataset = "macro_predictors_monthly",
+  start_date = "2000-01-01", end_date = "2020-12-31")   # an illustrative range
+gw[, c("date", "tms", "dfy", "dp")]
+```
+
+Nothing below depends on it; every signal is built from the shipped data so
+that the chapter reproduces offline.
+
+## Building and Testing the Signals {#sec-16-signals-and-forecasts-implementation}
+
+### Signals at month end, lagged once
+
+Momentum first. @eq-16-mom is a ratio of two lagged values of the total-return
+index, and the assertion checks it against the product it is meant to be.
+
+```{r}
+#| label: momentum
+P   <- cumprod(1 + R)                                   # total-return index
+mom <- xts::lag.xts(P, 1) / xts::lag.xts(P, 12) - 1     # months t-11 .. t-1; month t skipped
+k <- 100L
+stopifnot(all.equal(as.numeric(mom[k, ]),
+                    unname(apply(1 + zoo::coredata(R)[(k - 11):(k - 1), ], 2, prod) - 1)))
+```
+
+The curve is weekly and the returns are monthly, so each month end takes the
+last weekly observation on or before it, never after. The sign convention is
+then checked against the data rather than assumed: the short rate in the
+@diebold2006 parametrization is level plus slope, so level minus term spread
+must track the bill.
+
+```{r}
+#| label: curve
+cv <- sim_curve_weekly |>
+  dplyr::filter(series %in% c("US_Level", "US_Slope", "US_IG_Spread", "US_HY_Spread")) |>
+  tidyr::pivot_wider(names_from = series, values_from = value) |>
+  dplyr::arrange(date)
+i_last <- findInterval(dates, cv$date)          # last weekly row on or before each month end
+# Weekly dates are six to eight days apart, so the matched week is at most
+# seven days before the month end and never after it.
+stopifnot(all(cv$date[i_last] <= dates), all(dates - cv$date[i_last] < 8))
+
+curve <- xts::xts(cbind(level = cv$US_Level[i_last],
+                        term  = -cv$US_Slope[i_last],           # long minus short, in pp
+                        ig    = 100 * cv$US_IG_Spread[i_last],  # pp
+                        hy    = 100 * cv$US_HY_Spread[i_last]),
+                  order.by = dates)
+
+cor_short <- stats::cor(as.numeric(curve$level - curve$term),
+                        100 * sim_riskfree_monthly$rate_annual)
+stopifnot(cor_short > 0.9)
+round(cor_short, 3)
+```
+
+The correlation between the curve's implied short rate and the bill is
+`r sprintf("%.3f", cor_short)`, and the assertion would have failed the render
+at a sign error. The turbulence index is @sec-05-factor-models-application's
+call, unchanged: a sixty-month trailing window, so the index for month $t$ is
+computed from the moments of months $t-60$ to $t-1$ and the return vector of
+$t$ itself.
+
+```{r}
+#| label: turbulence
+turb <- uncertaintymeasures::OSturbulence(R, rolling = TRUE, roll.obs = 60)$turb
+colnames(turb) <- "turb"
+common <- merge(curve, turb)
+stopifnot(identical(zoo::index(common), dates))
+```
+
+Every signal now sits at the month end it was observed. Shifting the whole
+block forward by one month puts the signal observed at $t$ on the row of the
+return it predicts, $t+1$, and the assertion states that the shift did what it
+was meant to do.
+
+```{r}
+#| label: lag
+common_lag <- xts::lag.xts(common, 1)
+mom_lag    <- xts::lag.xts(mom, 1)
+rev_lag    <- xts::lag.xts(Re, 1)                       # last month's own excess return
+stopifnot(all.equal(as.numeric(common_lag[k + 1, ]), as.numeric(common[k, ])),
+          all.equal(as.numeric(mom_lag[k + 1, ]),    as.numeric(mom[k, ])),
+          is.na(common_lag[1, "term"]))
+
+# For one series: the excess return in month m beside every signal as it stood
+# at the end of m - 1. This is the frame @eq-16-predictive is estimated on.
+pairs_of <- function(s) {
+  data.frame(date = dates, y = as.numeric(Re[, s]),
+             mom = as.numeric(mom_lag[, s]), rev = as.numeric(rev_lag[, s]),
+             zoo::coredata(common_lag))
+}
+first_row <- function(v) min(which(!is.na(pairs_of("US_equity")[[v]])))
+c(momentum = first_row("mom"), curve = first_row("term"), turbulence = first_row("turb"))
+```
+
+The first row carries no signal, the momentum column begins in month
+`r first_row("mom")` and turbulence, which needs sixty months of history, in
+month `r first_row("turb")`.
+
+```{r}
+#| label: fig-16-signals
+#| fig-cap: "The four signals as they stood at each month end. The term spread and the IG spread are read off the US curve in percentage points; turbulence is the sixty-month out-of-sample Mahalanobis distance of chapter 5; momentum is the 12-1 return of `US_equity`, one of sixteen such series."
+#| echo: false
+#| fig-asp: 0.55
+sig_pts <- dplyr::bind_rows(
+  tibble::tibble(date = dates, value = as.numeric(common$term), signal = "term spread (pp)"),
+  tibble::tibble(date = dates, value = as.numeric(common$ig),   signal = "IG spread (pp)"),
+  tibble::tibble(date = dates, value = as.numeric(common$turb), signal = "turbulence"),
+  tibble::tibble(date = dates, value = as.numeric(mom[, "US_equity"]),
+                 signal = "12-1 momentum, US_equity")
+) |>
+  dplyr::filter(!is.na(value)) |>
+  dplyr::mutate(signal = factor(signal, levels = c("term spread (pp)", "IG spread (pp)",
+                                                   "turbulence", "12-1 momentum, US_equity")))
+
+ggplot2::ggplot(sig_pts, ggplot2::aes(date, value)) +
+  ggplot2::geom_hline(yintercept = 0, linewidth = 0.25, colour = tidyaa_colors[["rule"]]) +
+  ggplot2::geom_line(colour = tidyaa_colors[["blue"]], linewidth = 0.45) +
+  ggplot2::facet_wrap(~ signal, scales = "free_y", ncol = 2) +
+  scale_x_model() +
+  ggplot2::labs(y = NULL)
+```
+
+### In sample: sixty-four regressions
+
+Each series is regressed on each of the four signals over the whole sample, one
+signal at a time, with the standard errors of @eq-05-neweywest at six lags as
+in @sec-05-factor-models-implementation.
+
+```{r}
+#| label: insample
+sig4 <- c(mom = "12-1 momentum", term = "term spread", ig = "IG spread", turb = "turbulence")
+
+nw_t <- function(m, j = 2L) {
+  nw <- sandwich::NeweyWest(m, lag = 6, prewhite = FALSE)
+  unname(stats::coef(m)[j] / sqrt(nw[j, j]))
+}
+
+ins <- lapply(colnames(Re), function(s) {
+  d <- pairs_of(s)
+  lapply(names(sig4), function(v) {
+    dd <- d[!is.na(d[[v]]), ]
+    m  <- stats::lm(y ~ x, data = data.frame(y = dd$y, x = dd[[v]]))
+    tibble::tibble(series = s, signal = v, slope = unname(stats::coef(m)[2]),
+                   t = nw_t(m), r2 = summary(m)$r.squared, n = nrow(dd))
+  }) |> dplyr::bind_rows()
+}) |> dplyr::bind_rows()
+
+ins_sum <- ins |>
+  dplyr::group_by(signal) |>
+  dplyr::summarise(positive = sum(slope > 0), t_above_2 = sum(abs(t) > 2),
+                   t_above_3 = sum(abs(t) > 3), median_r2 = median(r2), max_r2 = max(r2))
+ins_sum
+```
+
+```{r}
+#| label: tbl-16-insample
+#| tbl-cap: "In-sample predictive regressions of each series' monthly excess return on each signal, one at a time, over the full sample. Cells are the Newey-West t-statistic of the slope with the R² of @eq-16-r2 in brackets."
+#| echo: false
+ins |>
+  dplyr::mutate(cell = sprintf("%+.2f (%.1f%%)", t, 100 * r2),
+                signal = factor(signal, levels = names(sig4))) |>
+  dplyr::select(series, signal, cell) |>
+  tidyr::pivot_wider(names_from = signal, values_from = cell) |>
+  kable(align = "lrrrr", col.names = c("", unname(sig4)))
+```
+
+```{r}
+#| label: insample-facts
+#| include: false
+at_ins <- function(v, col) ins_sum[[col]][ins_sum$signal == v]
+t_of   <- function(s, v) ins$t[ins$series == s & ins$signal == v]
+best_term <- ins |> dplyr::filter(signal == "term") |> dplyr::slice_max(abs(t), n = 1)
+n_bond <- sum(grepl("_government$|_credit$", colnames(Re)))
+term_bond_pos <- sum(ins$slope[ins$signal == "term" & grepl("_government$|_credit$", ins$series)] > 0)
+mom_eq_neg <- sum(ins$slope[ins$signal == "mom" & grepl("_equity$", ins$series)] < 0)
+n_above <- sort(ins_sum$t_above_2, decreasing = TRUE)
+stopifnot(term_bond_pos == n_bond,
+          at_ins("term", "t_above_2") == n_above[1],      # the strongest column
+          at_ins("ig", "t_above_2") == n_above[2],        # the second
+          at_ins("mom", "t_above_2") == 0L,               # momentum clears two nowhere
+          all(ins$slope[ins$signal == "mom" & grepl("_government$", ins$series)] > 0))
+```
+
+Read @tbl-16-insample by column. The term spread is the strongest signal in
+the table: its slope is positive for `r at_ins("term", "positive")` of the
+sixteen series, among them every one of the `r n_bond` bond and credit
+series, `r at_ins("term", "t_above_2")` of its $t$-statistics exceed two and
+`r {n3 <- at_ins("term", "t_above_3"); if (n3 == 0L) "none exceeds three" else if (n3 == 1L) "one exceeds three" else paste(n3, "exceed three")}`,
+the largest being `r best_term$series` at `r sprintf("%.2f", best_term$t)`.
+That is @fama1989 on
+modeled data: a steep curve forecasts high excess returns on bonds. The IG
+spread is second, with `r at_ins("ig", "t_above_2")` above two, again on the
+credit and bond series where the state was built in. Turbulence clears two on
+`r at_ins("turb", "t_above_2")` series and its median $R^2$ is
+`r sprintf("%.2f%%", 100 * at_ins("turb", "median_r2"))`. Momentum clears two
+nowhere: its slope is negative for
+`r if (mom_eq_neg == 5L) "all five" else paste(mom_eq_neg, "of the five")`
+equity series, positive for the government series, and its largest $R^2$ is
+`r sprintf("%.2f%%", 100 * at_ins("mom", "max_r2"))`. The premium
+@moskowitz2012 document in futures is not in these class indices at a monthly
+horizon; they found it across fifty-eight instruments with a sign rule, not one
+series at a time with a slope. The largest $R^2$ anywhere in the table is
+`r sprintf("%.1f%%", 100 * max(ins$r2))`, which by @eq-16-ct is not a small
+number. The question is whether any of it is available in real time.
+
+### Out of sample: an expanding window from model year 11
+
+The out-of-sample scheme is an expanding window with a burn-in, and
+`rsample::rolling_origin()` describes the same sequence of splits in the
+vocabulary of `tidymodels`, so the count of splits is asserted to match.
+
+```{r}
+#| label: oos-setup
+burn <- 120L
+oos  <- seq.int(burn + 1L, nrow(Re))       # forecast months 121 .. 372
+stopifnot(model_year(dates[oos[1]]) == 11L)   # the register's out-of-sample start
+
+ols_fc <- function(d, v, m) {
+  tr <- which(!is.na(d[[v]]) & seq_len(nrow(d)) < m)          # strictly before m
+  b  <- stats::lm.fit(cbind(1, d[[v]][tr]), d$y[tr])$coefficients
+  unname(b[1] + b[2] * d[[v]][m])
+}
+
+splits <- rsample::rolling_origin(data.frame(m = seq_len(nrow(Re))),
+                                  initial = burn, assess = 1, cumulative = TRUE)
+stopifnot(nrow(splits) == length(oos))
+c(forecast_months = length(oos), first = fmt_model(dates[oos[1]]))
+```
+
+The burn-in is the first `r burn` months; forecasts begin in
+`r fmt_model(dates[oos[1]])` and run to the end of the sample,
+`r length(oos)` months, which are the months the register of
+@sec-25-backtesting-application scores. At each month $m$ in that range the
+regression is fit on every pair dated before $m$ where the signal exists, the
+forecast is made for $m$, and the historical mean of the excess return through
+$m-1$ is recorded beside it.
+
+One signal at a time is what @welch2008 tested and what a practitioner rarely
+does. With seven predictors per series, the four above plus last month's
+return, the high-yield spread and the level of the curve, least squares on
+sixty to three hundred months fits noise, and the remedy is to shrink. The
+elastic net of @zou2005 minimizes the squared error plus a penalty
+$\lambda\left[\alpha\|\boldsymbol{b}\|_1 + (1-\alpha)\|\boldsymbol{b}\|_2^2/2\right]$,
+which at $\alpha = 1/2$ both shrinks coefficients toward zero and sets some
+exactly to zero; @gu2020 use it as the first of their machine-learning
+forecasters for the cross-section of stock returns, and @coqueret2020 give the
+algorithm and its `glmnet` implementation, which we do not reproduce. What
+matters here is the tuning, because it is where the future leaks in: $\lambda$
+is chosen by five-fold cross-validation on contiguous blocks of the training
+window, in time order rather than shuffled, re-tuned once a year, and the
+coefficients are refit every month on the data through $m-1$. Two values of
+$\lambda$ are kept, the one that minimizes cross-validated error and the most
+penalized one within a standard error of it, because the choice turns out to
+matter.
+
+```{r}
+#| label: enet
+en_vars <- c("mom", "rev", "term", "ig", "hy", "level", "turb")
+
+enet_fc <- function(d) {
+  ok  <- stats::complete.cases(d[, en_vars])
+  lam <- c(NA_real_, NA_real_)
+  t(vapply(oos, function(m) {
+    tr <- which(ok & seq_len(nrow(d)) < m)
+    X  <- as.matrix(d[tr, en_vars]); y <- d$y[tr]
+    if ((m - oos[1]) %% 12L == 0L) {                      # re-tune once a year
+      fold <- ceiling(seq_along(tr) / (length(tr) / 5))   # five contiguous blocks
+      cvf  <- glmnet::cv.glmnet(X, y, alpha = 0.5, foldid = fold)
+      lam <<- c(cvf$lambda.min, cvf$lambda.1se)
+    }
+    fit <- glmnet::glmnet(X, y, alpha = 0.5)
+    as.numeric(stats::predict(fit, newx = as.matrix(d[m, en_vars]), s = lam))
+  }, numeric(2)))
+}
+```
+
+The loop below produces, for every series and every out-of-sample month, the
+historical mean, the four single-signal forecasts, their equal-weighted
+combination, which @rapach2010 showed is more stable than any of its parts,
+and the two elastic-net forecasts.
+
+```{r}
+#| label: forecasts
+fc <- lapply(colnames(Re), function(s) {
+  d <- pairs_of(s)
+  out <- data.frame(date = dates[oos], series = s, y = d$y[oos],
+                    mean = vapply(oos, function(m) mean(d$y[seq_len(m - 1L)]), numeric(1)))
+  for (v in names(sig4)) out[[v]] <- vapply(oos, function(m) ols_fc(d, v, m), numeric(1))
+  out$comb <- rowMeans(out[, names(sig4)])
+  en <- enet_fc(d); out$enet_min <- en[, 1]; out$enet_1se <- en[, 2]
+  out
+}) |> dplyr::bind_rows()
+stopifnot(nrow(fc) == N * length(oos), !anyNA(fc))
+```
+
+@eq-16-r2os, @eq-16-cw and @eq-16-dm are then three short functions.
+
+```{r}
+#| label: oos-stats
+models <- c(names(sig4), "comb", "enet_min", "enet_1se")
+model_label <- c(sig4, comb = "combination",
+                 enet_min = "elastic net, lambda.min", enet_1se = "elastic net, lambda.1se")
+
+r2_os <- function(y, f, f0) 1 - sum((y - f)^2) / sum((y - f0)^2)
+cw_t  <- function(y, f, f0) nw_t(stats::lm(I((y - f0)^2 - (y - f)^2 + (f0 - f)^2) ~ 1), 1L)
+dm_t  <- function(y, f, f0) nw_t(stats::lm(I((y - f0)^2 - (y - f)^2) ~ 1), 1L)
+
+oos_tbl <- fc |>
+  tidyr::pivot_longer(dplyr::all_of(models), names_to = "model", values_to = "f") |>
+  dplyr::group_by(series, model) |>
+  dplyr::summarise(r2os = r2_os(y, f, mean), cw = cw_t(y, f, mean), dm = dm_t(y, f, mean),
+                   .groups = "drop") |>
+  dplyr::mutate(model = factor(model, levels = models))
+
+oos_sum <- oos_tbl |>
+  dplyr::group_by(model) |>
+  dplyr::summarise(positive = sum(r2os > 0), median_r2os = median(r2os), best = max(r2os),
+                   cw_above = sum(cw > 1.645), dm_above = sum(dm > 1.645))
+```
+
+```{r}
+#| label: tbl-16-oos-summary
+#| tbl-cap: "Out-of-sample R² of @eq-16-r2os against the expanding historical mean, summarized across the sixteen series over every forecast month after the burn-in. The last two columns count the series on which the forecast beats the mean at the one-sided five percent level, by the Clark-West statistic of @eq-16-cw and by the uncorrected Diebold-Mariano statistic of @eq-16-dm."
+#| echo: false
+oos_sum |>
+  dplyr::transmute(model = unname(model_label[as.character(model)]),
+                   positive = sprintf("%d of %d", positive, N),
+                   median_r2os = sprintf("%+.2f%%", 100 * median_r2os),
+                   best = sprintf("%+.2f%%", 100 * best),
+                   cw_above = cw_above, dm_above = dm_above) |>
+  kable(align = "lrrrrr",
+        col.names = c("", "R²OS > 0", "median R²OS", "best R²OS", "CW > 1.645", "DM > 1.645"))
+```
+
+```{r}
+#| label: oos-facts
+#| include: false
+at_oos <- function(mdl, col) oos_sum[[col]][oos_sum$model == mdl]
+term_best <- oos_tbl |> dplyr::filter(model == "term") |> dplyr::slice_max(r2os, n = 1)
+turb_worst <- oos_tbl |> dplyr::filter(model == "turb") |> dplyr::slice_min(r2os, n = 1)
+single_med <- oos_sum$median_r2os[oos_sum$model %in% names(sig4)]
+stopifnot(at_oos("term", "positive") == max(oos_sum$positive),          # the term spread survives
+          at_oos("term", "positive") > at_oos("enet_1se", "positive"),   # the net stays short of it
+          at_oos("enet_1se", "positive") > at_oos("enet_min", "positive"),
+          at_oos("enet_1se", "median_r2os") > at_oos("enet_min", "median_r2os"),
+          dplyr::between(at_oos("comb", "median_r2os"), min(single_med), max(single_med)))
+```
+
+```{r}
+#| label: fig-16-oos
+#| fig-cap: "Out-of-sample R² by series and forecast, from one data frame. Series are ordered by the term spread's value. Anything left of the vertical line lost to the historical mean over the same months."
+#| echo: false
+#| fig-asp: 0.7
+ord <- oos_tbl |> dplyr::filter(model == "term") |> dplyr::arrange(r2os) |> dplyr::pull(series)
+oos_tbl |>
+  dplyr::mutate(series = factor(series, levels = ord),
+                model = factor(unname(model_label[as.character(model)]),
+                               levels = unname(model_label))) |>
+  ggplot2::ggplot(ggplot2::aes(100 * r2os, series, colour = model)) +
+  ggplot2::geom_vline(xintercept = 0, colour = tidyaa_colors[["ink"]], linewidth = 0.4) +
+  ggplot2::geom_point(size = 2.2, alpha = 0.9) +
+  scale_colour_tidyaa() +
+  ggplot2::guides(colour = ggplot2::guide_legend(nrow = 2)) +
+  ggplot2::labs(x = "out-of-sample R², percent", y = NULL)
+```
+
+Three findings, in decreasing order of comfort.
+
+The term spread survives. Its $R^2_{\text{OS}}$ is positive on
+`r at_oos("term", "positive")` of the sixteen series, its median is
+`r sprintf("%+.2f%%", 100 * at_oos("term", "median_r2os"))`, and it beats the
+mean by the Clark-West test on `r at_oos("term", "cw_above")` of them, with
+`r term_best$series` at `r sprintf("%+.1f%%", 100 * term_best$r2os)`. The
+uncorrected statistic of @eq-16-dm finds `r at_oos("term", "dm_above")`, which
+is the nesting bias of @clark2007 in one column: the regression carries two
+estimated parameters whose noise the mean does not pay for, and without the
+correction that noise is scored against the signal. The IG spread, second in
+sample, keeps a positive $R^2_{\text{OS}}$ on `r at_oos("ig", "positive")`
+series and turbulence on `r at_oos("turb", "positive")`; the in-sample fit of
+the first was concentrated in credit and of the second in a few crisis months,
+and an expanding window estimated before those months cannot see either.
+Turbulence's worst case is `r turb_worst$series` at
+`r sprintf("%+.1f%%", 100 * turb_worst$r2os)`.
+
+The combination helps and does not rescue. Averaging the four forecasts, the
+rule of @rapach2010, is positive on `r at_oos("comb", "positive")` series with
+a median of `r sprintf("%+.2f%%", 100 * at_oos("comb", "median_r2os"))`,
+between its best and its worst constituent, which is what an average does.
+
+The elastic net loses. At the cross-validated minimum it beats the mean on
+`r at_oos("enet_min", "positive")` series with a median $R^2_{\text{OS}}$ of
+`r sprintf("%+.2f%%", 100 * at_oos("enet_min", "median_r2os"))`; at the more
+penalized `lambda.1se` the median rises to
+`r sprintf("%+.2f%%", 100 * at_oos("enet_1se", "median_r2os"))` and the count
+to `r at_oos("enet_1se", "positive")`, still short of the single term spread.
+This is what @gu2020 report for the same model on the cross-section of stocks,
+where the elastic net is the weakest of their forecasters and its gains come
+from thousands of stocks and hundreds of signals, not from seven signals on
+sixteen series. The more the model is allowed to fit, the more it fits the
+burn-in's noise, and the rule that shrinks hardest is the one that comes
+closest to the mean it is trying to beat. The lesson of
+@sec-08-estimation-error-theory, that the cost of an input is set by how well
+it can be estimated, applies to a conditional mean as it applied to an
+unconditional one.
+
+## The Economic Value of a Tilt {#sec-16-signals-and-forecasts-application}
+
+### A tilt around the policy
+
+The strategic policy is the equal-weight portfolio of @eq-08-ew, built through
+the package's own `equal.weight()` as in
+@sec-08-estimation-error-implementation. It is the anchor because it estimates
+nothing, so that every difference between it and the tilted portfolio is
+attributable to the forecast, and because the constrained minimum-variance
+portfolio of @sec-09-mean-variance-implementation holds most of its weight in
+one series and leaves no room to tilt.
+
+```{r}
+#| label: policy
+base_spec <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only")
+w_policy <- extractWeights(equal.weight(Re, base_spec))[colnames(Re)]
+stopifnot(all.equal(unname(w_policy), rep(1 / N, N)))
+```
+
+The tilt converts a forecast into a weight in three steps. The forecast for
+month $t+1$ is divided by the series' trailing sixty-month volatility, both
+known at $t$, so that a forecast of one percent means something different on a
+government bond than on an equity market; the cross-sectional mean is removed,
+because under full investment only a relative view can be expressed; and the
+result is scaled by $\kappa$ and clipped to a band of $\pm\delta$ around the
+policy weight,
+
+$$
+s_{i,t} = \frac{\hat{r}^e_{i,t+1}}{\hat{\sigma}_{i,t}}
+        - \frac{1}{N}\sum_{j=1}^{N}\frac{\hat{r}^e_{j,t+1}}{\hat{\sigma}_{j,t}},
+\qquad
+w_{i,t} = w^{\text{policy}}_i + \operatorname{clip}\!\left(\kappa\,s_{i,t},\,-\delta,\,\delta\right),
+$$ {#eq-16-tilt}
+
+re-centered so that the weights sum to one. With $\delta = 1/(2N)$ no weight
+can fall below zero or above three halves of the policy weight, and $\kappa$
+is set so that a forecast Sharpe ratio of one half a year fills the band. The
+weights for month $t+1$ are set at the end of month $t$ from forecasts made at
+$t$, which is the dating @eq-16-predictive was built on.
+
+```{r}
+#| label: tilt
+vol60 <- zoo::rollapply(Re, 60, stats::sd, align = "right", fill = NA)
+band  <- 0.5 / N
+kappa <- band / (0.5 / sqrt(12))              # a forecast Sharpe ratio of 0.5 a year fills the band
+
+tilt_weights <- function(model) {
+  F <- fc |> dplyr::select(date, series, f = dplyr::all_of(model)) |>
+    tidyr::pivot_wider(names_from = series, values_from = f)
+  Fm <- as.matrix(F[, colnames(Re)])
+  stopifnot(identical(colnames(Fm), colnames(Re)), nrow(Fm) == length(oos))
+  W <- t(vapply(seq_len(nrow(Fm)), function(i) {
+    m  <- oos[i]
+    s  <- Fm[i, ] / as.numeric(vol60[m - 1L, ])       # forecast in volatility units, known at m - 1
+    s  <- s - mean(s)                                  # relative view
+    tl <- pmin(pmax(kappa * s, -band), band)
+    w  <- w_policy + tl - mean(tl)
+    w  <- pmax(w, 0); w / sum(w)
+  }, numeric(N)))
+  dimnames(W) <- list(as.character(dates[oos]), colnames(Re))
+  stopifnot(all(abs(rowSums(W) - 1) < 1e-12), all(W >= 0))
+  W
+}
+
+W_policy <- matrix(1 / N, length(oos), N, dimnames = list(as.character(dates[oos]), colnames(Re)))
+W_term   <- tilt_weights("term")
+c(mean_abs_tilt = mean(abs(W_term - 1 / N)),
+  share_at_band = mean(abs(abs(W_term - 1 / N) - band) < 1e-9))
+```
+
+The term-spread tilt moves the average weight by
+`r sprintf("%.1f", 100 * mean(abs(W_term - 1 / N)))` percentage points
+against a band of `r sprintf("%.1f", 100 * band)`, and the band binds on
+`r {sh <- mean(abs(abs(W_term - 1 / N) - band) < 1e-9); if (sh == 0) "none" else sprintf("%.0f%%", 100 * sh)}`
+of the weights. The forecasts are modest and so is the tilt.
+
+::: {.callout-note}
+## `applyFUN()` and `trailingFUN()` do not roll anything
+
+The two exported utilities whose names suggest they were written for this
+chapter were not. `applyFUN(R, weights, FUN)` evaluates one risk or return
+function, by name, for a weight vector or for every row of a weight matrix on
+the *whole* of `R`; it is the helper behind `chart.Scatter()`, which uses it
+to place random portfolios on the risk-return plane. `trailingFUN(R, weights,
+n, FUN, FUNargs)` evaluates `FUN` once on the last `n + 1` rows of `R`, not
+the last `n`, and returns one number. Neither produces a time series. Rolling
+estimation in this book is `zoo::rollapply()`, as in
+@sec-05-factor-models-application and the `vol60` line above, or the explicit
+loop of `enet_fc()`. Both are run here so that the behavior is measured
+rather than described.
+:::
+
+```{r}
+#| label: applyfun
+# applyFUN: one metric, many static weight vectors, the full return history.
+applyFUN(Re, weights = rbind(policy = w_policy, average_tilt = colMeans(W_term)),
+         FUN = "StdDev")
+
+# trailingFUN: FUN once, on the last n + 1 rows. n = 11 gives twelve months.
+x  <- Re[, "US_equity"]
+tf <- trailingFUN(x, weights = NULL, n = 11, FUN = "mean", FUNargs = list())
+stopifnot(all.equal(tf, mean(utils::tail(as.numeric(x), 12))))
+c(trailingFUN_n11 = tf,
+  mean_last_12 = mean(utils::tail(as.numeric(x), 12)),
+  mean_last_11 = mean(utils::tail(as.numeric(x), 11)))
+```
+
+### Rebalancing, turnover and costs
+
+The portfolio is rebalanced monthly. Its accounting is written out rather than
+handed to `Return.portfolio()`, because that function back-fills equal weights
+before the first supplied weight vector, the trap
+@sec-23-rebalancing-implementation documents, and because the drifted weights
+are needed for the cost. By the end of month $t+1$ each weight has drifted to
+$w^{-}_{i,t+1} = w_{i,t}(1 + R_{i,t+1}) / (1 + r_{p,t+1})$; the trade back to
+the target has the turnover of @eq-23-turnover and costs what @eq-23-net
+charges, at the per-class one-way rates of `pm_costs_default()` that
+@sec-23-rebalancing-application uses on the register, mapped to each series by
+its class suffix.
+
+```{r}
+#| label: accounting
+cost_rate <- pm_costs_default()[sub(".*_", "", colnames(Re))]
+stopifnot(!anyNA(cost_rate)); names(cost_rate) <- colnames(Re)
+
+run_path <- function(W) {
+  Rm <- zoo::coredata(R)[oos, colnames(Re), drop = FALSE]
+  stopifnot(identical(colnames(W), colnames(Re)), nrow(W) == nrow(Rm))
+  r       <- rowSums(W * Rm)                                  # month t+1, weights set at t
+  drifted <- W * (1 + Rm) / (1 + r)                            # weights before the trade
+  trade   <- abs(W[-1, , drop = FALSE] - drifted[-nrow(W), , drop = FALSE])
+  tibble::tibble(date = dates[oos], gross = r,
+                 turnover = c(rowSums(trade) / 2, 0),
+                 cost     = c(as.numeric(trade %*% cost_rate), 0)) |>
+    dplyr::mutate(net = gross - cost)
+}
+
+# Sharpe ratio as the register computes it: compounded, in excess of the bill.
+sharpe_realized <- function(r, rf) {
+  n <- length(r)
+  (prod(1 + r)^(12 / n) - prod(1 + rf)^(12 / n)) / (stats::sd(r) * sqrt(12))
+}
+gamma <- 5
+summarise_path <- function(p, label) {
+  rf_o <- rf[oos]
+  ce <- function(r) { e <- r - rf_o; 12 * mean(e) - gamma / 2 * 12 * stats::var(e) }
+  tibble::tibble(
+    portfolio    = label,
+    ret          = prod(1 + p$gross)^(12 / nrow(p)) - 1,
+    vol          = stats::sd(p$gross) * sqrt(12),
+    sharpe_gross = sharpe_realized(p$gross, rf_o),
+    turnover     = 12 * mean(p$turnover),
+    cost_drag    = 12 * mean(p$cost),
+    sharpe_net   = sharpe_realized(p$net, rf_o),
+    max_dd       = as.numeric(PerformanceAnalytics::maxDrawdown(xts::xts(p$net, order.by = p$date))),
+    ce_net       = ce(p$net))
+}
+
+tilts <- c(mom = "momentum", term = "term spread", comb = "combination",
+           enet_min = "elastic net, lambda.min", enet_1se = "elastic net, lambda.1se")
+paths <- c(list(policy = run_path(W_policy)),
+           lapply(names(tilts), function(k) run_path(tilt_weights(k))) |> setNames(names(tilts)))
+res <- dplyr::bind_rows(Map(summarise_path, paths, c("equal weight (policy)", unname(tilts)))) |>
+  dplyr::mutate(ce_gain = ce_net - ce_net[1])
+```
+
+```{r}
+#| label: tilt-facts
+#| include: false
+g <- function(k, col) res[[col]][res$portfolio == c(policy = "equal weight (policy)", tilts)[[k]]]
+se_sr <- sqrt((1 + (g("policy", "sharpe_net") / sqrt(12))^2 / 2) / length(oos)) * sqrt(12)
+paid  <- names(tilts)[vapply(names(tilts), function(k) g(k, "ce_gain") > 0, logical(1))]
+stopifnot(g("term", "ce_gain") == max(res$ce_gain),           # the term spread pays most
+          sum(res$ce_gain > 10e-4) == 1L,                      # and alone by more than ten basis points
+          g("term", "max_dd") < g("policy", "max_dd"),
+          g("mom", "ce_gain") < 0, g("enet_min", "ce_gain") < 0,
+          g("term", "sharpe_net") - g("policy", "sharpe_net") < se_sr)
+```
+
+```{r}
+#| label: fig-16-relative
+#| fig-cap: "Cumulative log return of each tilt relative to the policy, net of costs, from one data frame. A rising line is a tilt that is ahead of equal weighting at that date."
+#| echo: false
+#| fig-asp: 0.55
+rel <- lapply(names(tilts), function(k) {
+  tibble::tibble(date = paths[[k]]$date, kind = tilts[[k]],
+                 value = cumsum(log1p(paths[[k]]$net)) - cumsum(log1p(paths$policy$net)))
+}) |> dplyr::bind_rows() |>
+  dplyr::mutate(kind = factor(kind, levels = unname(tilts)))
+
+ggplot2::ggplot(rel, ggplot2::aes(date, value, colour = kind)) +
+  ggplot2::geom_hline(yintercept = 0, colour = tidyaa_colors[["ink"]], linewidth = 0.4) +
+  ggplot2::geom_line(linewidth = 0.6) +
+  scale_colour_tidyaa() +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  scale_x_model() +
+  ggplot2::labs(y = "cumulative log return relative to the policy, net")
+```
+
+```{r}
+#| label: tbl-16-tilt
+#| tbl-cap: "The equal-weight policy and five tilts on it, rebalanced monthly over the out-of-sample months. Returns annualized; the Sharpe ratio is compounded and in excess of the bill; turnover is annual; the cost drag is annual return lost to trading at the per-class rates of chapter 23; the drawdown and the certainty-equivalent gain of @eq-16-cer at gamma = 5 are net of costs."
+#| echo: false
+res |>
+  dplyr::transmute(portfolio,
+                   ret = sprintf("%.2f%%", 100 * ret), vol = sprintf("%.2f%%", 100 * vol),
+                   sharpe_gross = sprintf("%.3f", sharpe_gross),
+                   turnover = sprintf("%.0f%%", 100 * turnover),
+                   cost_drag = sprintf("%.0f bp", 1e4 * cost_drag),
+                   sharpe_net = sprintf("%.3f", sharpe_net),
+                   max_dd = sprintf("%.1f%%", 100 * max_dd),
+                   ce_gain = sprintf("%+.0f bp", 1e4 * ce_gain)) |>
+  kable(align = "lrrrrrrrr",
+        col.names = c("", "return", "volatility", "Sharpe, gross", "turnover", "cost drag",
+                      "Sharpe, net", "max drawdown", "CE gain, net"))
+```
+
+### Reading the result
+
+Of the five forecasts, `r length(paid)` leave the investor better off after
+costs, and only one of them by more than a few basis points: the term spread,
+the one signal that survived @tbl-16-oos-summary. Its tilt earns a net Sharpe
+ratio of `r sprintf("%.3f", g("term", "sharpe_net"))` against the policy's
+`r sprintf("%.3f", g("policy", "sharpe_net"))`, a certainty-equivalent gain of
+`r sprintf("%.0f", 1e4 * g("term", "ce_gain"))` basis points a year at
+$\gamma = 5$, with a slightly shallower drawdown and turnover of
+`r sprintf("%.0f%%", 100 * g("term", "turnover"))` against
+`r sprintf("%.0f%%", 100 * g("policy", "turnover"))`, which the per-class
+rates price at `r sprintf("%.0f", 1e4 * g("term", "cost_drag"))` basis points
+a year. The combination is a wash at
+`r sprintf("%+.0f", 1e4 * g("comb", "ce_gain"))` basis points. Momentum loses
+`r sprintf("%.0f", -1e4 * g("mom", "ce_gain"))` basis points, and the
+least-penalized elastic net turns the portfolio over
+`r sprintf("%.0f%%", 100 * g("enet_min", "turnover"))` a year, almost
+`r sprintf("%.0f", g("enet_min", "turnover") / g("policy", "turnover"))`
+times the policy's, to lose
+`r sprintf("%.0f", -1e4 * g("enet_min", "ce_gain"))` net. A model that fits
+noise trades on it, and @sec-23-rebalancing-application shows the same
+monotone relation between how much a strategy estimates and how much it pays
+to trade.
+
+The gain that exists is small against its own uncertainty. The standard error
+of an annualized Sharpe ratio estimated over `r length(oos)` months is, by
+the formula of @lo2002 under independence, about `r sprintf("%.2f", se_sr)`;
+the term tilt's advantage of
+`r sprintf("%.3f", g("term", "sharpe_net") - g("policy", "sharpe_net"))` is
+well inside it, and the paired test of @sec-25-backtesting-application, which
+exploits the correlation of the two series, would be sharper but not by enough
+to turn this into evidence. The honest reading is the one @campbell2008 gave
+for the equity premium: the signal that theory motivates, the term structure
+that @fama1989 tied to business conditions, is worth a little to an investor
+who uses it with restraint, and the signals that data alone motivate are worth
+nothing after costs. @sharpe1987 described tactical allocation as the
+strategic policy re-solved with current information; on this universe the
+re-solving is worth a few tens of basis points where the information is real
+and costs about as much where it is not.
+
+Two things this chapter did not do are done elsewhere. It built the forecasts
+from data; a view that comes from an opinion and must become a return vector
+before an optimizer can use it is the subject of
+@sec-17-expressing-views-theory. And it scaled each forecast into a weight by
+a rule chosen by hand, @eq-16-tilt; @sec-18-parametric-policies-theory skips
+the forecast and estimates the map from signal to weight on the investor's
+objective directly, in the manner of @brandt2009, while
+@sec-19-regimes-theory lets the whole policy switch with a detected state
+rather than tilt with a continuous signal. Whether any of the three should be
+judged on squared forecast error at all is the question
+@sec-26-forecast-error-cost-theory takes up.
+
+## Key Takeaways {.unnumbered}
+
+- A predictive regression is judged out of sample, against the historical
+  mean, by the $R^2_{\text{OS}}$ of @eq-16-r2os, and against that nested
+  benchmark by the Clark-West correction of @eq-16-cw to the Diebold-Mariano
+  test, because the mean does not pay the estimation noise a regression does
+  [@welch2008; @campbell2008; @diebold1995; @clark2007].
+- A small $R^2$ is not a small effect. By @eq-16-ct the proportional gain to a
+  mean-variance investor is $R^2_{\text{OS}} / S^2$, so half a percent a month
+  against an annual Sharpe ratio of one half is a quarter of the expected
+  excess return [@kandel1996].
+- This universe supports momentum from returns, the term and credit spreads
+  from `sim_curve_weekly`, and turbulence from the cross-section; it does not
+  support value, which needs fundamentals it does not carry.
+- Of four signals on sixteen series, the term spread is the only one with
+  out-of-sample evidence, positive on `r at_oos("term", "positive")` series and
+  significant on `r at_oos("term", "cw_above")`; momentum, the IG spread and
+  turbulence lose to the mean out of sample, and a regularized seven-signal
+  model loses on `r N - at_oos("enet_1se", "positive")` to
+  `r N - at_oos("enet_min", "positive")` of the sixteen, the more of them the
+  less it shrinks [@gu2020].
+- A tilt of at most half the policy weight pays after costs on the term
+  spread, by `r sprintf("%.0f", 1e4 * g("term", "ce_gain"))` basis points a
+  year of certainty equivalent, inside the sampling error of the Sharpe ratio;
+  the combination earns a few basis points, and momentum and the elastic net
+  trade more and lose.
+- `applyFUN()` scores static weight vectors on the full history and
+  `trailingFUN()` evaluates a function once on the last `n + 1` rows. Neither
+  rolls; rolling estimation is `zoo::rollapply()` or an explicit loop.
+
+## Exercises {.unnumbered}
+
+1. The curve signals above are the US term spread and the US IG spread for
+   every series. Replace them, for each non-US series, with the term spread
+   and IG spread of the series' own region, keeping the US ones for
+   `GLOBAL_commodity`, and recompute the term-spread points of @fig-16-oos.
+   Does a local curve forecast a local bond better than the US curve does?
+2. @campbell2008 set a forecast of the equity premium to zero whenever the
+   regression produces a negative one. Apply the restriction to the
+   term-spread forecasts of the five equity series and recompute their
+   $R^2_{\text{OS}}$ and Clark-West statistics. Which series does the
+   restriction help, and what does the answer say about the sign of the
+   estimated slope in those months?
+3. The tilt of @eq-16-tilt fills its band at a forecast Sharpe ratio of one
+   half a year. Double $\kappa$ and halve it, and recompute @tbl-16-tilt for
+   the term-spread and momentum tilts. Does the certainty-equivalent gain
+   scale with $\kappa$, and which tilt is hurt more by a larger $\kappa$?
+4. The tilt expresses only a relative view. For `US_equity` alone, implement
+   the timing rule of @campbell2008, $w_t = \hat{r}^e_{t+1} / (\gamma\hat{\sigma}^2_t)$
+   with the balance in the bill and the weight confined to $[0, 1.5]$, using
+   the term-spread forecast and $\gamma = 5$, and compare its certainty
+   equivalent with a constant weight of one. Does the absolute view earn what
+   @eq-16-ct predicts from the series' $R^2_{\text{OS}}$?

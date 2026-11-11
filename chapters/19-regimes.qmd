@@ -1,0 +1,1088 @@
+---
+title: "Regime-Dependent Allocation"
+metadata:
+  pagetitle: "Regime-Dependent Allocation"
+  description-meta: "Regime-switching asset allocation in R: the Hamilton filter and a two-state hidden Markov model written inline, a turbulence threshold, regime.portfolios() in PortfolioAnalytics, and an out-of-sample test of detected against dated regimes."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+What if the right portfolio depends on the state of the world? @hamilton1989
+gave that question its statistical form, a series whose parameters switch with
+an unobserved Markov chain, and @ang2002a carried the form into portfolio
+choice, with an international investor who faces a normal regime and a bear
+regime of lower means, higher volatilities and higher correlations. The
+descriptive chapters supplied the reason to ask. In
+@sec-04-descriptive-analysis-application the tails of this market arrived as a
+handful of episodes in which correlations rose, and in
+@sec-14-risk-based-allocation-application the effective number of bets fell in
+the same months.
+
+This is a **tactical** chapter in the sense of
+@sec-03-return-risk-and-the-investor-theory: the allocation is conditioned on a
+state inferred at the time, and deviates from a policy estimated without one.
+We first state the regime-switching model, the filter that infers its state
+and the mixture moments an investor faces one month ahead; then date the
+regimes of the modeled market with hindsight, detect them without it in two
+ways, a turbulence threshold and a two-state hidden Markov model, and show what
+`PortfolioAnalytics` offers for switching between portfolio specifications; and
+finally ask whether a regime-switching allocation is ahead of a static one out
+of sample once the regime has to be detected rather than dated.
+
+The data are the sixteen risky class series of
+@sec-02-notation-and-data-simulated-market, in excess of the Treasury bill for
+the reasons of @sec-03-return-risk-and-the-investor-theory.
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)   # sixteen risky classes
+rf <- sim_riskfree_monthly$return                                  # the bill
+Re <- R - rf                                                       # excess returns
+N  <- ncol(Re); dates <- zoo::index(R); X <- zoo::coredata(Re)
+ep <- sim_episodes                                                 # the four named episodes
+stopifnot(N == 16L, !anyNA(Re), all(sim_riskfree_monthly$date == dates))
+```
+
+## Regimes, Filters, and Mixtures {#sec-19-regimes-theory}
+
+### The regime-switching model
+
+Let $s_t \in \{1, \dots, K\}$ be an unobserved state and $\boldsymbol{r}_t$ the
+vector of excess returns. In the model of @hamilton1989, applied to returns,
+
+$$
+\boldsymbol{r}_t \mid s_t = s \;\sim\; \mathcal{N}(\boldsymbol{\mu}_s, \boldsymbol{\Sigma}_s),
+\qquad
+\Pr(s_{t+1} = j \mid s_t = i) = p_{ij},
+$$ {#eq-19-model}
+
+with the $p_{ij}$ collected in a transition matrix $\boldsymbol{P}$ whose rows
+sum to one. A regime lasts $1/(1 - p_{ss})$ periods on average, and the chain
+spends a long-run share $\bar{\pi}_s$ of its time in state $s$, where
+$\bar{\boldsymbol{\pi}}'\boldsymbol{P} = \bar{\boldsymbol{\pi}}'$. @turner1989
+fitted a two-state version to excess stock returns, with a mean and a variance
+that both switch, and @ang2012 survey what the model has been used for since.
+
+### The Hamilton filter
+
+The state is never observed, so everything rests on the probability of each
+state given the returns seen so far. Write $\boldsymbol{\xi}_{t|\tau}$ for the
+vector with elements $\Pr(s_t = j \mid \boldsymbol{r}_1, \dots, \boldsymbol{r}_\tau)$
+and $\boldsymbol{\eta}_t$ for the vector of regime densities
+$f(\boldsymbol{r}_t \mid s_t = j)$. The filter of @hamilton1989 alternates two
+steps. The prediction step moves the probabilities one period through the
+chain,
+
+$$
+\boldsymbol{\xi}_{t+1|t} = \boldsymbol{P}'\boldsymbol{\xi}_{t|t},
+$$ {#eq-19-predict}
+
+and the update step reweights them by how well each regime explains the new
+observation,
+
+$$
+\boldsymbol{\xi}_{t|t}
+= \frac{\boldsymbol{\xi}_{t|t-1} \odot \boldsymbol{\eta}_t}
+       {\boldsymbol{\iota}'\left(\boldsymbol{\xi}_{t|t-1} \odot \boldsymbol{\eta}_t\right)},
+$$ {#eq-19-update}
+
+where $\odot$ is the elementwise product. The denominator is the density of
+$\boldsymbol{r}_t$ given the past, so the sum of its logarithms is the
+log-likelihood. It is maximized by the EM algorithm of @dempster1977, which for
+a hidden Markov chain is the procedure of @baum1970 and was adapted to
+regime-switching models by @hamilton1990: given state probabilities, the means,
+variances and transition frequencies are weighted sample moments; given those,
+the probabilities are recomputed.
+
+The probabilities EM needs use the whole sample. They are the **smoothed**
+probabilities $\boldsymbol{\xi}_{t|T}$, obtained from the **filtered** ones by
+the backward recursion of @kim1994,
+
+$$
+\boldsymbol{\xi}_{t|T}
+= \boldsymbol{\xi}_{t|t} \odot
+  \left[\boldsymbol{P}\left(\boldsymbol{\xi}_{t+1|T} \oslash \boldsymbol{\xi}_{t+1|t}\right)\right],
+$$ {#eq-19-smooth}
+
+with $\oslash$ elementwise division. The difference between
+$\boldsymbol{\xi}_{t|t}$ and $\boldsymbol{\xi}_{t|T}$ is the subject of this
+chapter.
+
+### One-step-ahead moments as a mixture
+
+An investor standing at $t$ does not know $s_{t+1}$. With
+$\boldsymbol{\pi} = \boldsymbol{\xi}_{t+1|t}$, next month's return is a mixture
+of the regime distributions, with mean and covariance
+
+$$
+\bar{\boldsymbol{\mu}} = \sum_{s} \pi_s \boldsymbol{\mu}_s,
+\qquad
+\bar{\boldsymbol{\Sigma}} = \sum_{s} \pi_s \boldsymbol{\Sigma}_s
+  + \sum_{s} \pi_s \left(\boldsymbol{\mu}_s - \bar{\boldsymbol{\mu}}\right)
+                   \left(\boldsymbol{\mu}_s - \bar{\boldsymbol{\mu}}\right)'.
+$$ {#eq-19-mixture}
+
+The covariance is not the average of the regime covariances. The second sum,
+the between-regime term, is the risk of not knowing which regime next month
+belongs to, and it is largest for the assets whose means differ most across
+regimes. A mixture of normals is also not normal. For a single series whose
+regimes share a mean, the variance is $\bar{\sigma}^2 = \sum_s \pi_s \sigma_s^2$
+and the excess kurtosis is
+
+$$
+\bar{K} = 3\left(\frac{\sum_s \pi_s \sigma_s^4}{\left(\sum_s \pi_s \sigma_s^2\right)^2} - 1\right) \;\geq\; 0,
+$$ {#eq-19-kurtosis}
+
+strictly positive whenever the regime variances differ, and skewness appears as
+soon as the low-mean regime is also the high-variance one [@timmermann2000].
+Regimes therefore produce the fat tails and the asymmetry of
+@sec-04-descriptive-analysis-application from Gaussian ingredients, which
+@ryden1998 found sufficient for most stylized facts of daily returns. They
+produce them jointly, because all assets change regime together: the
+co-moments that @sec-11-higher-moments-theory carries as tensors are here the
+by-product of two covariance matrices, and @ang2002 find that a
+regime-switching model reproduces the higher correlations of falling markets
+documented by @longin2001 better than the alternatives they test.
+
+### Two ways to use the state
+
+Given $\boldsymbol{\pi}$ there are two rules. The first treats @eq-19-mixture
+as the inputs of @sec-09-mean-variance-theory and holds the tangency portfolio
+of @eq-09-tangency computed from $\bar{\boldsymbol{\mu}}$ and
+$\bar{\boldsymbol{\Sigma}}$; its weights move continuously with the
+probabilities. The second holds one of $K$ portfolios, each built for one
+regime, and switches when the most probable regime changes,
+
+$$
+\boldsymbol{w}_t = \boldsymbol{w}^{(\hat{s}_{t+1})},
+\qquad
+\hat{s}_{t+1} = \arg\max_s \, \pi_s .
+$$ {#eq-19-switch}
+
+The two agree when one probability is one and differ in between, where the
+mixture rule holds a compromise and the switching rule a bet. @clarke1998
+showed for two states how a state-dependent mix enlarges the opportunity set of
+a static one. @ang2002a solve the dynamic problem of an investor with constant
+relative risk aversion and find the cost of ignoring regimes small for an
+all-equity investor and substantial once a risk-free asset can be held, because
+the bear regime is then a reason to leave the market; @ang2004 turn that into a
+mean-variance rule and report that it outperforms static allocations out of
+sample. @guidolin2007 need four regimes to describe stocks and bonds jointly,
+@guidolin2008 add preferences over skewness and kurtosis, and @tu2010 finds
+that a Bayesian investor who ignores regimes gives up more than two percent a
+year in certainty-equivalent terms. The out-of-sample evidence on simple
+switching rules in @bulla2011 and @nystrup2015, both of which leave equities
+for safer assets on a filtered state, is favorable.
+
+All of these condition on a state estimated from the data, and the estimate is
+where the difficulty lies.
+
+### Dating and detecting
+
+A regime can be established in two ways that are easily confused. **Dating**
+assigns each month to a regime with the whole sample in view: by a rule that
+locates peaks and troughs, as in @pagan2003, by naming episodes after the fact,
+or by the smoothed probabilities of @eq-19-smooth. **Detecting** assigns month
+$t$ using only what was known at $t$: the filtered probabilities of
+@eq-19-update, computed with parameters that were themselves estimated on data
+through $t$. A turning point needs observations on both sides to be
+recognized, so detection lags dating, and @chauvet2008 measure that lag for
+business-cycle turning points in months.
+
+A backtest of a regime strategy has three places to leak. Smoothed
+probabilities at $t$ contain returns after $t$. Filtered probabilities computed
+with full-sample parameters contain them less visibly, because the parameters
+that describe the stress regime were learned from the very months the filter
+then appears to recognize. And the regime definition itself, the number of
+states and the series they are fitted to, is usually settled after looking at
+the sample. The first two are coding errors of the kind
+@sec-16-signals-and-forecasts-implementation guards against by lagging and
+asserting, and we assert them away below. The third is the design problem of
+@sec-25-backtesting-application and cannot be asserted away.
+
+### Turbulence as a model-free detector
+
+A regime model has parameters to estimate before it says anything. The
+turbulence index of @eq-05-turbulence has none beyond a trailing mean and
+covariance matrix: it measures how unusual this month's return vector is by
+the standards of the recent past. @chow1999 used it to separate a calm from a
+turbulent subsample and blended the two covariance matrices according to the
+probability of, and the aversion to, each regime, which is the first sum of
+@eq-19-mixture with $\boldsymbol{\pi}$ chosen by the investor. @kritzman2010
+documented that turbulence is persistent and that risk is poorly rewarded
+while it lasts, the two properties a detector needs, and @kritzman2012 fitted
+hidden Markov models to turbulence and to macroeconomic series and reported
+out-of-sample gains from tilting on the filtered state. A threshold on the
+index is the simplest detector there is: stress when $d_t$ exceeds a quantile
+of its own past.
+
+## Implementation {#sec-19-regimes-implementation}
+
+### Regimes dated with hindsight
+
+`sim_episodes` names four stress episodes, and `in_episode()` places each month
+inside or outside them. The moments of the sixteen classes in each state are
+one grouped computation.
+
+```{r}
+#| label: dated
+state <- rep("remaining months", nrow(Re))
+for (k in ep$episode) state[in_episode(dates, k)] <- ep$label[ep$episode == k]
+in_any <- state != "remaining months"
+stopifnot(sum(in_any) == sum(vapply(ep$episode, function(k) sum(in_episode(dates, k)), integer(1))))
+
+block_mean <- function(Z, suffix) 12 * mean(Z[, grepl(suffix, colnames(Z)), drop = FALSE])
+dated <- lapply(c(ep$label, "remaining months"), function(s) {
+  Z <- X[state == s, , drop = FALSE]; C <- stats::cor(Z)
+  tibble::tibble(state = s, months = nrow(Z),
+                 equity = block_mean(Z, "_equity$"), government = block_mean(Z, "_government$"),
+                 credit = block_mean(Z, "_credit$"),
+                 vol = mean(apply(Z, 2, stats::sd)) * sqrt(12),
+                 correlation = mean(C[upper.tri(C)]))
+}) |> dplyr::bind_rows()
+```
+
+```{r}
+#| label: tbl-19-dated
+#| tbl-cap: "The sixteen classes inside each dated episode and in the remaining months. Mean excess returns are annualized averages over the five equity, government and credit series; volatility is the average annualized volatility of the sixteen; correlation is their average pairwise correlation. A description with hindsight, not an estimate."
+#| echo: false
+dated |>
+  dplyr::mutate(dplyr::across(c(equity, government, credit, vol), ~ sprintf("%+.1f%%", 100 * .x)),
+                vol = sub("^[+]", "", vol), correlation = sprintf("%.2f", correlation)) |>
+  kable(align = "lrrrrrr",
+        col.names = c("", "months", "equity", "government", "credit", "volatility", "correlation"))
+```
+
+```{r}
+#| label: dated-facts
+#| include: false
+dv <- function(s, col) dated[[col]][dated$state == s]
+gov_up <- sum(dated$government[dated$state != "remaining months"] > 0)
+stopifnot(all(dated$equity[dated$state != "remaining months"] < 0),
+          dv("rates shock", "government") < 0)
+```
+
+Equities lose in all four episodes. Government bonds gain in `r gov_up` of
+them and lose `r sprintf("%.0f%%", -100 * dv("rates shock", "government"))` a
+year in the fourth, the rates shock, so the four are not one stress regime
+observed four times, which is the point
+@sec-04-descriptive-analysis-application made from cumulative returns. Average
+correlation is `r sprintf("%.2f", dv("remaining months", "correlation"))` in
+the remaining months and between
+`r sprintf("%.2f", min(dated$correlation[1:4]))` and
+`r sprintf("%.2f", max(dated$correlation[1:4]))` inside the episodes. The
+caution of that chapter applies with more force here. A covariance matrix of
+sixteen series has `r N * (N + 1) / 2` distinct entries, the liquidity shock
+has `r dv("liquidity shock", "months")` months, and a correlation matrix from
+`r dv("liquidity shock", "months")` observations has rank
+`r dv("liquidity shock", "months") - 1L`; measured correlation also rises
+mechanically with volatility [@forbes2002]. @tbl-19-dated describes; it cannot
+be optimized on.
+
+### A detected regime: the turbulence threshold
+
+The index is the one of @sec-05-factor-models-application, from the same call.
+Before thresholding it we check what a value is made of: the package returns a
+monotone transform of @eq-05-turbulence, $\sqrt{d_t}/N$, computed from month
+$t$ and the sixty months before it.
+
+```{r}
+#| label: turbulence
+turb <- uncertaintymeasures::OSturbulence(R, rolling = TRUE, roll.obs = 60)$turb
+tb   <- as.numeric(turb)
+stopifnot(length(tb) == nrow(R), all(zoo::index(turb) == dates))
+
+first_oos <- 121L                                    # the register's first out-of-sample month
+past <- zoo::coredata(R)[(first_oos - 60L):(first_oos - 1L), ]
+d    <- stats::mahalanobis(zoo::coredata(R)[first_oos, ], colMeans(past), stats::cov(past))
+stopifnot(all.equal(tb[first_oos], sqrt(d) / N))
+```
+
+A month is flagged when the index exceeds the 75th percentile of its own
+history, the convention of @kritzman2010, with the percentile computed on an
+expanding window that ends the month before. The flag for month $t$ is known
+at the end of month $t$ and decides the portfolio held in $t + 1$.
+
+```{r}
+#| label: turbulence-flag
+turb_flag <- function(tb, q = 0.75, burn = 24L) {
+  threshold <- vapply(seq_along(tb), function(t) {
+    past <- tb[seq_len(t - 1L)]; past <- past[!is.na(past)]
+    if (length(past) < burn) NA_real_ else stats::quantile(past, q, names = FALSE)
+  }, numeric(1))
+  tb > threshold
+}
+flag_turb <- turb_flag(tb)
+
+# No look-ahead: reverse everything after `cut`, and the flags through `cut` must not move.
+cut    <- first_oos + 119L
+tb_alt <- replace(tb, (cut + 1L):length(tb), rev(tb[(cut + 1L):length(tb)]))
+stopifnot(identical(turb_flag(tb_alt)[seq_len(cut)], flag_turb[seq_len(cut)]),
+          !identical(turb_flag(tb_alt), flag_turb))
+```
+
+### A detected regime: a two-state hidden Markov model
+
+@eq-19-model on all sixteen classes with two states has
+`r 2 * N + N * (N + 1) + 2` parameters, two mean vectors, two covariance
+matrices and two transition probabilities, against `r nrow(Re)` months. We fit
+it instead to one summary series, the equal-weighted excess return of the
+sixteen, where the same model has six. No hidden-Markov package is needed: the
+filter of @eq-19-predict and @eq-19-update is a loop, the smoother of
+@eq-19-smooth another, and EM alternates them with weighted moments.
+
+```{r}
+#| label: hmm
+hamilton <- function(y, th) {
+  n <- length(y); filt <- pred <- matrix(NA_real_, n, 2); loglik <- 0
+  dens <- cbind(stats::dnorm(y, th$mu[1], th$sigma[1]), stats::dnorm(y, th$mu[2], th$sigma[2]))
+  xi <- c(0.5, 0.5)                                  # prior for the first month
+  for (t in seq_len(n)) {
+    pred[t, ] <- xi                                  # xi_{t|t-1}
+    joint     <- xi * dens[t, ]
+    loglik    <- loglik + log(sum(joint))
+    filt[t, ] <- joint / sum(joint)                  # the update step
+    xi        <- as.numeric(filt[t, ] %*% th$P)      # the prediction step
+  }
+  list(filtered = filt, predicted = pred, loglik = loglik)
+}
+
+kim <- function(h, P) {                              # smoothed probabilities
+  sm <- h$filtered
+  for (t in (nrow(sm) - 1L):1L)
+    sm[t, ] <- h$filtered[t, ] * as.numeric(P %*% (sm[t + 1L, ] / h$predicted[t + 1L, ]))
+  sm
+}
+
+fit_hmm <- function(y, max_iter = 200L, tol = 1e-6) {
+  far <- abs(y - stats::median(y)); hi <- far > stats::quantile(far, 0.8)
+  th  <- list(mu = c(mean(y[!hi]), mean(y[hi])), sigma = c(stats::sd(y[!hi]), stats::sd(y[hi])),
+              P = rbind(c(0.95, 0.05), c(0.10, 0.90)))
+  floor_sd <- stats::sd(y) / 4; ll_old <- -Inf; n <- length(y)
+  for (iter in seq_len(max_iter)) {
+    h  <- hamilton(y, th); sm <- kim(h, th$P)                                # E-step
+    J  <- (t(h$filtered[-n, ]) %*% (sm[-1L, ] / h$predicted[-1L, ])) * th$P  # expected transitions
+    th$P     <- J / rowSums(J)                                               # M-step
+    th$mu    <- colSums(sm * y) / colSums(sm)
+    th$sigma <- pmax(sqrt(colSums(sm * outer(y, th$mu, "-")^2) / colSums(sm)), floor_sd)
+    if (h$loglik - ll_old < tol) break
+    ll_old <- h$loglik
+  }
+  o <- order(th$sigma)                               # state 2 is the high-volatility state
+  list(mu = th$mu[o], sigma = th$sigma[o], P = th$P[o, o], loglik = h$loglik, iter = iter)
+}
+
+y        <- rowMeans(X)                              # equal-weighted excess return
+fit_full <- fit_hmm(y)
+smoothed <- kim(hamilton(y, fit_full), fit_full$P)[, 2]
+round(c(mu = 12 * fit_full$mu, sigma = sqrt(12) * fit_full$sigma, stay = diag(fit_full$P)), 3)
+```
+
+The volatility floor is there because the likelihood of a Gaussian mixture is
+unbounded when one state collapses onto a single observation. On the full
+sample the two states differ in volatility,
+`r sprintf("%.1f%%", 100 * sqrt(12) * fit_full$sigma[1])` against
+`r sprintf("%.1f%%", 100 * sqrt(12) * fit_full$sigma[2])` a year, and hardly in
+mean; the high-volatility state lasts
+`r sprintf("%.0f", 1 / (1 - fit_full$P[2, 2]))` months on average and the other
+`r sprintf("%.0f", 1 / (1 - fit_full$P[1, 1]))`.
+
+::: {.callout-note collapse="true"}
+## Worked: the mixture moments of the summary series
+
+```{r}
+#| label: mixture-scalar
+P_hat   <- fit_full$P
+pi_bar  <- c(P_hat[2, 1], P_hat[1, 2]) / (P_hat[1, 2] + P_hat[2, 1])     # long-run state shares
+stopifnot(all.equal(as.numeric(pi_bar %*% P_hat), pi_bar))
+sg      <- 100 * fit_full$sigma                                          # percent a month
+within  <- sum(pi_bar * sg^2)
+between <- sum(pi_bar * (100 * fit_full$mu - sum(pi_bar * 100 * fit_full$mu))^2)
+kurt    <- 3 * (sum(pi_bar * sg^4) / within^2 - 1)
+sample  <- c(kurtosis = as.numeric(PerformanceAnalytics::kurtosis(y, method = "excess")),
+             skewness = as.numeric(PerformanceAnalytics::skewness(y)))
+c(mixture_vol = sqrt(within + between), sample_vol = 100 * stats::sd(y),
+  mixture_kurtosis = kurt, sample)
+```
+
+With long-run shares $\bar{\boldsymbol{\pi}} = (`r sprintf("%.2f", pi_bar[1])`,
+`r sprintf("%.2f", pi_bar[2])`)$ and regime volatilities of
+$\sigma_1 = `r sprintf("%.2f", sg[1])`$ and
+$\sigma_2 = `r sprintf("%.2f", sg[2])`$ percent a month, the scalar version of
+@eq-19-mixture gives
+
+$$
+\bar{\sigma}^2
+= \underbrace{`r sprintf("%.2f", pi_bar[1])` \times `r sprintf("%.2f", sg[1])`^2
+  + `r sprintf("%.2f", pi_bar[2])` \times `r sprintf("%.2f", sg[2])`^2}_{\text{within}}
+  + \underbrace{`r sprintf("%.4f", between)`}_{\text{between}}
+= `r sprintf("%.2f", within + between)` ,
+$$
+
+a volatility of `r sprintf("%.2f", sqrt(within + between))` percent a month
+against `r sprintf("%.2f", 100 * stats::sd(y))` in the sample, and
+@eq-19-kurtosis gives
+
+$$
+\bar{K} = 3\left(\frac{`r sprintf("%.2f", pi_bar[1])` \times `r sprintf("%.2f", sg[1])`^4
+                       + `r sprintf("%.2f", pi_bar[2])` \times `r sprintf("%.2f", sg[2])`^4}
+                      {`r sprintf("%.2f", within)`^2} - 1\right)
+        = `r sprintf("%.2f", kurt)` .
+$$
+
+Two Gaussian regimes account for an excess kurtosis of
+`r sprintf("%.1f", kurt)` of the `r sprintf("%.1f", sample[["kurtosis"]])` in
+the sample. They account for none of its skewness of
+`r sprintf("%.2f", sample[["skewness"]])`: the fitted regime means are almost
+equal, so the between-regime term is
+`r sprintf("%.3f%%", 100 * between / (within + between))` of the variance.
+What this model has found is a volatility regime rather than a bear market.
+:::
+
+Those estimates used every month. In real time the parameters are re-estimated
+each December on an expanding window, the filter is run with them through each
+month of the following year, and nothing after month $t$ enters the
+probability for $t$.
+
+```{r}
+#| label: hmm-realtime
+hmm_realtime <- function(y, start) {
+  refit <- seq(start, length(y), by = 12L)
+  fits  <- lapply(refit, function(e) fit_hmm(y[seq_len(e)]))
+  prob  <- t(vapply(start:length(y), function(t) {
+    th <- fits[[max(which(refit <= t))]]             # the latest fit, on data through its own date
+    xi <- hamilton(y[seq_len(t)], th)$filtered[t, ]
+    c(filtered = xi[2], predicted = as.numeric(xi %*% th$P)[2])
+  }, numeric(2)))
+  list(refit = refit, fits = fits, month = start:length(y), prob = prob)
+}
+rt <- hmm_realtime(y, start = first_oos - 1L)
+
+# No look-ahead: the same procedure on a truncated sample returns the same probabilities.
+cut_h <- first_oos + 23L
+stopifnot(all.equal(hmm_realtime(y[seq_len(cut_h)], first_oos - 1L)$prob,
+                    rt$prob[rt$month <= cut_h, ]))
+```
+
+```{r}
+#| label: detection
+live     <- rt$month                                 # months in which both detectors exist
+flag_hmm <- rep(NA, length(y)); flag_hmm[live] <- rt$prob[, "filtered"] > 0.5
+detect <- lapply(seq_len(nrow(ep)), function(i) {
+  m   <- intersect(which(in_episode(dates, ep$episode[i])), live)
+  lag <- function(f) if (any(f[m])) which(f[m])[1] - 1L else NA_integer_
+  tibble::tibble(episode = ep$label[i], months = length(m),
+                 turb_lag = lag(flag_turb), turb_share = mean(flag_turb[m]),
+                 hmm_lag  = lag(flag_hmm),  hmm_share  = mean(flag_hmm[m]),
+                 smoothed_share = mean(smoothed[m] > 0.5))
+}) |> dplyr::bind_rows()
+calm_live <- setdiff(live, which(in_any))
+false_alarm <- c(turbulence = mean(flag_turb[calm_live]), hmm = mean(flag_hmm[calm_live]),
+                 smoothed = mean(smoothed[calm_live] > 0.5))
+```
+
+```{r}
+#| label: fig-19-probabilities
+#| fig-cap: "Probability of the high-volatility state of the equal-weighted return. The smoothed line uses the full sample and its parameters; the filtered line uses, at each month, only data through that month and parameters re-estimated each December. Ticks along the bottom are months flagged by the turbulence threshold; the shaded bands are the four dated episodes."
+#| echo: false
+#| fig-asp: 0.5
+prob_frame <- dplyr::bind_rows(
+  tibble::tibble(date = dates, value = smoothed, kind = "smoothed, full sample"),
+  tibble::tibble(date = dates[live], value = rt$prob[, "filtered"], kind = "filtered, real time"),
+  tibble::tibble(date = dates[which(flag_turb)], value = -0.06, kind = "turbulence flag"))
+
+ggplot2::ggplot(dplyr::filter(prob_frame, kind != "turbulence flag"),
+                ggplot2::aes(date, value)) +
+  ggplot2::geom_rect(data = ep, inherit.aes = FALSE,
+                     ggplot2::aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf),
+                     fill = tidyaa_colors[["rule"]], alpha = 0.7) +
+  ggplot2::geom_line(ggplot2::aes(colour = kind), linewidth = 0.5) +
+  ggplot2::geom_point(data = dplyr::filter(prob_frame, kind == "turbulence flag"),
+                      shape = 124, size = 2, colour = tidyaa_colors[["ink"]]) +
+  ggplot2::scale_colour_manual(values = c(`smoothed, full sample` = tidyaa_colors[["ink"]],
+                                          `filtered, real time` = tidyaa_colors[["broken"]])) +
+  scale_x_model() +
+  ggplot2::labs(y = "probability of the high-volatility state")
+```
+
+```{r}
+#| label: tbl-19-detection
+#| tbl-cap: "Detection of the four dated episodes from the first month both detectors exist. The lag is the number of months from the episode's first such month to the first flag; the share is the fraction of its months flagged. The last column is the smoothed probability, which uses the full sample."
+#| echo: false
+detect |>
+  dplyr::mutate(dplyr::across(c(turb_lag, hmm_lag), ~ ifelse(is.na(.x), "never", as.character(.x))),
+                dplyr::across(dplyr::ends_with("share"), ~ sprintf("%.0f%%", 100 * .x))) |>
+  kable(align = "lrrrrrr",
+        col.names = c("", "months", "turbulence: lag", "flagged", "filtered HMM: lag", "flagged",
+                      "smoothed: flagged"))
+```
+
+```{r}
+#| label: detection-facts
+#| include: false
+at_cap  <- sum(vapply(rt$fits, function(f) f$iter, numeric(1)) >= 200)
+before  <- live[live < min(which(in_episode(dates, "credit_crisis")))]
+dt <- function(e, col) detect[[col]][detect$episode == e]
+stopifnot(mean(flag_hmm[before]) > 5 * mean(smoothed[before] > 0.5) + 0.1)
+```
+
+@fig-19-probabilities and @tbl-19-detection are the chapter's argument in
+small. With hindsight the model is clean: the smoothed probability is above
+one half in `r sprintf("%.0f%%", 100 * dt("credit crisis", "smoothed_share"))`
+of the credit-crisis months and in
+`r sprintf("%.0f%%", 100 * false_alarm[["smoothed"]])` of the months outside
+any episode. In real time it is not. Before the credit crisis the sample
+contains no high-volatility regime to learn from, so the second state is
+fitted to whatever divides a calm sample: EM stops at its iteration limit in
+`r at_cap` of the `r length(rt$fits)` refits, and the filtered probability is
+above one half in `r sprintf("%.0f%%", 100 * mean(flag_hmm[before]))` of the
+months before that crisis against
+`r sprintf("%.0f%%", 100 * mean(smoothed[before] > 0.5))` for the smoothed
+one. A regime cannot be detected by a model that has not yet seen it. Once it
+has, the filter recognizes the liquidity shock
+`r dt("liquidity shock", "hmm_lag")` month after it begins and the rates shock
+after `r dt("rates shock", "hmm_lag")`; the turbulence threshold, which needs
+no stress history, flags the credit crisis in its first month and the other
+two after `r dt("liquidity shock", "turb_lag")` and
+`r dt("rates shock", "turb_lag")`. Neither sees the equity bear market as a
+whole, a slow decline with bonds rising that is unusual in direction and not in
+size. Outside the episodes the threshold flags
+`r sprintf("%.0f%%", 100 * false_alarm[["turbulence"]])` of months and the
+filter `r sprintf("%.0f%%", 100 * false_alarm[["hmm"]])`.
+
+### Regime portfolios in `PortfolioAnalytics`
+
+`PortfolioAnalytics` ships the machinery for the switching rule.
+`combine.portfolios()` turns a list of specifications into one
+`portfolio.list` object; `regime.portfolios()` attaches a regime series to
+such a list; and `optimize.portfolio.rebalancing()` then solves, at each
+rebalancing date, the specification the regime selects. Our two
+specifications are a calm portfolio, the long-only tangency of @eq-09-tangency,
+and a stress portfolio, long-only minimum variance.
+
+```{r}
+#| label: specs
+#| warning: false
+win <- 60L
+base_spec <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only")
+calm_spec   <- base_spec |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk", name = "StdDev")
+stress_spec <- base_spec |> add.objective(type = "risk", name = "StdDev")
+
+both <- combine.portfolios(list(calm_spec, stress_spec))
+opt_both <- optimize.portfolio(Re[(first_oos - win):(first_oos - 1L), ], both,
+                               optimize_method = "ROI", maxSR = TRUE)
+w_both <- extractWeights(opt_both)
+class(opt_both)
+round(w_both[, colSums(w_both) > 0.02], 3)
+```
+
+Handed to `optimize.portfolio()` directly, a `portfolio.list` is solved
+specification by specification and `extractWeights()` returns a matrix with a
+row for each. The backtest needs both portfolios at every month. The stress
+portfolio comes from `optimize.portfolio.rebalancing()` on a sixty-month
+window, set up as in @sec-25-backtesting-implementation. The calm one is
+computed as the single quadratic program of
+@sec-08-estimation-error-implementation, because `maxSR = TRUE` under `ROI` is
+a one-dimensional search that solves a quadratic program at every step, and
+the package run below confirms that the two routes agree.
+
+```{r}
+#| label: two-portfolios
+#| warning: false
+reb <- (first_oos - 1L):(nrow(Re) - 1L)     # weights are set at the end of these months
+oos <- reb + 1L                             # and earn the returns of these
+
+# Long-only tangency: min y'Sy subject to y'mu = 1, y >= 0, then w = y / sum(y).
+tan_qp <- function(mu, S) {
+  n <- length(mu)
+  if (max(mu) <= 0) return(setNames(rep(NA_real_, n), names(mu)))
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(mu * 1e2, diag(n)), bvec = c(1, rep(0, n)), meq = 1)
+  y <- pmax(sol$solution, 0)
+  setNames(y / sum(y), names(mu))
+}
+W_calm <- t(vapply(reb, function(t) {
+  Z <- X[(t - win + 1L):t, ]; tan_qp(colMeans(Z), stats::cov(Z))
+}, numeric(N)))
+
+bt_stress <- optimize.portfolio.rebalancing(
+  Re[(first_oos - win):nrow(Re), ], stress_spec, optimize_method = "ROI",
+  rebalance_on = "months", training_period = win, rolling_window = win - 1L)
+W_stress <- extractWeights(bt_stress)
+W_stress <- zoo::coredata(W_stress)[match(dates[reb], zoo::index(W_stress)), colnames(Re)]
+
+dimnames(W_calm) <- list(as.character(dates[reb]), colnames(Re))
+rownames(W_stress) <- rownames(W_calm)
+stopifnot(!anyNA(W_calm), !anyNA(W_stress))
+```
+
+The regime object is built from the turbulence flags, coded 1 for calm and 2
+for stress, and run over a short stretch that begins with the credit crisis.
+
+```{r}
+#| label: regime-run
+#| warning: false
+regime_turb <- xts::xts(ifelse(flag_turb, 2L, 1L), order.by = dates)[!is.na(flag_turb)]
+reg_spec    <- regime.portfolios(regime_turb, both)
+
+demo <- min(which(in_episode(dates, "credit_crisis"))) + 0:17
+bt_demo <- optimize.portfolio.rebalancing(
+  Re[(demo[1] - win + 1L):max(demo), ], reg_spec, optimize_method = "ROI",
+  rebalance_on = "months", training_period = win, rolling_window = win - 1L, maxSR = TRUE)
+W_demo <- extractWeights(bt_demo)
+used   <- vapply(bt_demo$opt_rebalancing, function(o) o$regime, numeric(1))
+
+by_hand <- W_calm[as.character(dates[demo]), ]
+by_hand[used == 2, ] <- W_stress[as.character(dates[demo]), ][used == 2, ]
+stopifnot(all(zoo::index(W_demo) == dates[demo]),
+          all(used == as.numeric(regime_turb[dates[demo]])),   # the regime of the rebalancing date itself
+          used[1] == 2,
+          max(abs(zoo::coredata(W_demo) - by_hand)) < 1e-6)
+table(specification = used)
+```
+
+The assertions say what the package did: at every date it read the regime of
+that date, solved the matching specification on the trailing window, and
+returned the weights we obtain by picking rows from the two separate runs.
+Switching in the package is row selection. What it does around that is worth
+measuring before it is trusted.
+
+```{r}
+#| label: quirks
+#| warning: false
+pick <- function(regime, t, specs = both) {     # the specification a regime series selects at month t
+  o <- try(optimize.portfolio(Re[(t - win + 1L):t, ], regime.portfolios(regime, specs),
+                              optimize_method = "ROI"), silent = TRUE)
+  if (inherits(o, "try-error")) NULL else o
+}
+t_stress <- demo[1]; t_calm <- max(which(!flag_turb[seq_len(demo[1])]))
+shifted  <- xts::xts(zoo::coredata(regime_turb), order.by = zoo::index(regime_turb) + 1)
+half     <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "weight_sum", min_sum = 0.5, max_sum = 0.5) |>
+  add.constraint(type = "box", min = 0, max = 0.2) |>
+  add.objective(type = "risk", name = "StdDev")
+
+quirk <- list(
+  coded_01_stress = pick(regime_turb - 1L, t_stress)$regime,     # 1: the calm specification
+  coded_01_calm   = is.null(pick(regime_turb - 1L, t_calm)),     # TRUE: index zero, the solve fails
+  dates_shifted   = pick(shifted, t_stress)$regime,              # 1, with a warning
+  third_value     = inherits(try(regime.portfolios(replace(regime_turb, 1, 3L), both),
+                                 silent = TRUE), "try-error"),
+  half_invested   = sum(extractWeights(pick(regime_turb, t_stress,
+                                            combine.portfolios(list(calm_spec, half))))),
+  stats_labels    = lengths(extractStats(bt_demo)),
+  measure_labels  = vapply(extractObjectiveMeasures(bt_demo), nrow, integer(1)))
+stopifnot(identical(quirk$coded_01_stress, 1), quirk$coded_01_calm,
+          identical(quirk$dates_shifted, 1), as.numeric(regime_turb[dates[t_stress]]) == 2,
+          quirk$third_value, abs(quirk$half_invested - 0.5) < 1e-8,
+          quirk$stats_labels[["regime.1"]] == sum(used == 2),
+          quirk$measure_labels[["regime.1"]] == sum(used == 1))
+str(quirk, give.attr = FALSE)
+```
+
+::: {.callout-note}
+## What `regime.portfolios()` does with the regime series
+
+Each line is one of the measurements above.
+
+- **The regime is a list index.** `optimize.portfolio()` selects
+  `portfolio.list[[regime]]`, so the series must be coded 1, 2, … in the order
+  of the list. A series coded 0 and 1 passes the constructor. A stress month,
+  coded 1, then receives the calm specification without a message, and a calm
+  month, coded 0, fails and leaves a row of `NA` in the weights.
+- **The lookup is contemporaneous.** The regime is read at the last date of
+  the estimation window, the rebalancing date. The series must hold at each
+  date what was known on that date; a hand-dated series is used unlagged, and
+  a regime dated with hindsight enters the backtest with nothing to mark it.
+- **Dates must match exactly.** When the rebalancing date is missing from the
+  regime index, here because the index is a day off, the first specification
+  is used and the only trace is a warning.
+- **Every value needs a specification and every specification a value.** The
+  constructor counts distinct values and refuses a series with a third value,
+  with an `NA`, or one that never visits a regime.
+- **Only the assets must agree.** Constraints and objectives may differ: a
+  stress specification confined to half the budget, with the rest in the
+  bill, returns weights that sum to `r sprintf("%.1f", quirk$half_invested)`.
+- **Arguments in `...` reach every specification.** `maxSR = TRUE` is passed
+  to the stress specification too, which has no return objective; its weights
+  are unaffected and a warning is raised at each stress date.
+- **`extractWeights()` returns one `xts`**, a row per rebalancing date,
+  whichever specification produced it, and the regime used is in
+  `$opt_rebalancing[[i]]$regime`. `extractObjectiveMeasures()` and
+  `extractStats()` return lists by regime and label them differently: the
+  first sorts the regimes, the second numbers them in order of first
+  appearance, so that here its `regime.1` holds the
+  `r quirk$stats_labels[["regime.1"]]` stress dates.
+:::
+
+## Detected Against Dated Regimes, Out of Sample {#sec-19-regimes-application}
+
+### The strategies and their accounting
+
+From observation `r first_oos`, the first month of model year
+`r model_year(dates[first_oos])` and the start of the register of
+@sec-25-backtesting-application, we run the static policy, which holds the
+calm portfolio throughout, and four alternatives; the stress portfolio held
+throughout is reported beside them as a second static row. Three switch to the stress
+portfolio by @eq-19-switch: on the dated episodes, using the label of the
+month the return is earned in, which no investor had and which is the
+infeasible upper bound; on the turbulence flag of the rebalancing month; and
+on the predicted probability of @eq-19-predict from the real-time filter. The
+fourth holds the tangency portfolio of the mixture moments of @eq-19-mixture.
+For it the regime moments of the sixteen classes are sample moments weighted
+by the smoothed probabilities of each December's fit, on the expanding sample
+because a sixty-month window need not contain a stress month at all.
+
+```{r}
+#| label: strategies
+#| warning: false
+p_stress <- rep(NA_real_, length(y)); p_stress[rt$month] <- rt$prob[, "predicted"]
+stress_by <- list(dated      = in_any[oos],          # the month ahead: hindsight
+                  turbulence = flag_turb[reb],       # known at the rebalancing date
+                  hmm        = p_stress[reb] > 0.5)
+stopifnot(!anyNA(unlist(stress_by)))
+switch_W <- function(s) { W <- W_calm; W[s, ] <- W_stress[s, ]; W }
+
+regime_moments <- function(k) {                      # weighted moments of the sixteen at refit k
+  e  <- rt$refit[k]; th <- rt$fits[[k]]
+  sm <- kim(hamilton(y[seq_len(e)], th), th$P)
+  list(m = lapply(1:2, function(s) stats::cov.wt(X[seq_len(e), ], wt = sm[, s] / sum(sm[, s]),
+                                                 method = "ML")),
+       share = colMeans(sm), n_eff = colSums(sm),
+       all = stats::cov.wt(X[seq_len(e), ], method = "ML"))
+}
+mixture <- function(m, p) {                          # the mixture moments
+  mu <- p[1] * m[[1]]$center + p[2] * m[[2]]$center
+  S  <- p[1] * (m[[1]]$cov + tcrossprod(m[[1]]$center - mu)) +
+        p[2] * (m[[2]]$cov + tcrossprod(m[[2]]$center - mu))
+  list(mu = mu, S = S)
+}
+rm_k <- lapply(seq_along(rt$refit), regime_moments)
+
+# At the sample's own state shares the mixture is the sample: the law of total covariance.
+chk <- mixture(rm_k[[1]]$m, rm_k[[1]]$share)
+stopifnot(all.equal(chk$mu, rm_k[[1]]$all$center), all.equal(chk$S, rm_k[[1]]$all$cov))
+
+mix_at <- function(t) mixture(rm_k[[max(which(rt$refit <= t))]]$m, c(1 - p_stress[t], p_stress[t]))
+W_mix  <- t(vapply(reb, function(t) { m <- mix_at(t); tan_qp(m$mu, m$S) }, numeric(N)))
+dimnames(W_mix) <- dimnames(W_calm)
+stopifnot(!anyNA(W_mix))
+
+# The same portfolio from the package, with the mixture moments supplied through momentFUN.
+make_moments <- function(mu, S) {
+  force(mu); force(S)
+  function(R, portfolio, ...) list(mu = mu, sigma = S, m3 = NULL, m4 = NULL, mean = mu, var = S)
+}
+m1    <- mix_at(reb[1])
+w_pkg <- extractWeights(optimize.portfolio(Re, calm_spec, optimize_method = "ROI", maxSR = TRUE,
+                                           momentFUN = make_moments(m1$mu, m1$S)))
+stopifnot(max(abs(w_pkg[colnames(Re)] - W_mix[1, ])) < 1e-4)
+```
+
+The accounting is that of the register: weights set at the end of month $t$
+earn the returns of $t + 1$, drift, and are traded back at the turnover of
+@eq-23-turnover and the cost of @eq-23-net, at the per-class rates of
+`pm_costs_default()` from @sec-23-rebalancing-application. A switch is a
+trade like any other, so its cost is in the same column.
+
+```{r}
+#| label: accounting
+cost_rate <- pm_costs_default()[sub(".*_", "", colnames(R))]
+stopifnot(!anyNA(cost_rate)); names(cost_rate) <- colnames(R)
+
+run_path <- function(W) {
+  stopifnot(identical(colnames(W), colnames(R)), nrow(W) == length(oos))
+  Rm    <- zoo::coredata(R)[oos, ]
+  gross <- rowSums(W * Rm)                                       # month t+1, weights set at t
+  held  <- rbind(0, (W * (1 + Rm) / (1 + gross))[-nrow(W), ])    # drifted weights; flat before the first trade
+  trade <- abs(W - held)
+  tibble::tibble(date = dates[oos], gross = gross, turnover = rowSums(trade) / 2,
+                 cost = as.numeric(trade %*% cost_rate)) |>
+    dplyr::mutate(net = gross - cost)
+}
+sharpe_of <- function(r) {                                       # as the register: compounded, over the bill
+  n <- length(r)
+  (prod(1 + r)^(12 / n) - prod(1 + rf[oos])^(12 / n)) / (stats::sd(r) * sqrt(12))
+}
+performance <- function(path) {
+  x <- xts::xts(path$gross, order.by = path$date)
+  tibble::tibble(vol = stats::sd(path$gross) * sqrt(12), sharpe = sharpe_of(path$gross),
+                 es = as.numeric(PerformanceAnalytics::ES(x, p = 0.95, method = "historical",
+                                                          invert = FALSE)),
+                 drawdown = as.numeric(PerformanceAnalytics::maxDrawdown(x)),
+                 turnover = 12 * mean(path$turnover), cost = 12 * mean(path$cost),
+                 sharpe_net = sharpe_of(path$net))
+}
+# Difference of two Sharpe ratios in standard errors (Jobson-Korkie, as corrected by Memmel).
+z_against <- function(p, q) {
+  a <- p$gross - rf[oos]; b <- q$gross - rf[oos]
+  s <- c(mean(a) / stats::sd(a), mean(b) / stats::sd(b)); rho <- stats::cor(a, b)
+  (s[1] - s[2]) / sqrt((2 - 2 * rho + (s[1]^2 + s[2]^2 - 2 * s[1] * s[2] * rho^2) / 2) / length(a))
+}
+
+label <- c(static = "static: calm portfolio", stress = "static: stress portfolio",
+           dated = "switching, dated (infeasible)", turbulence = "switching, turbulence",
+           hmm = "switching, filtered HMM", mixture = "mixture mean-variance")
+weights <- c(list(static = W_calm, stress = W_stress), lapply(stress_by, switch_W),
+             list(mixture = W_mix))
+stopifnot(identical(names(weights), names(label)))
+paths <- lapply(weights, run_path)
+share <- c(static = 0, stress = 1, vapply(stress_by, mean, numeric(1)), mixture = NA)
+
+perf <- dplyr::bind_rows(lapply(paths, performance), .id = "key") |>
+  dplyr::mutate(
+    z = vapply(paths, z_against, numeric(1), q = paths$static),
+    stress_share = share[key],
+    same_mix = vapply(stress_share, function(s) {    # the constant mix with the same time in stress
+      if (is.na(s)) NA_real_ else sharpe_of(run_path(s * W_stress + (1 - s) * W_calm)$gross)
+    }, numeric(1)))
+```
+
+```{r}
+#| label: fig-19-cumulative
+#| fig-cap: "Cumulative return of the six strategies, gross of costs, from the first out-of-sample month. The shaded bands are the dated episodes."
+#| echo: false
+#| fig-asp: 0.55
+cum <- lapply(names(paths), function(k) {
+  tibble::tibble(date = paths[[k]]$date, value = cumprod(1 + paths[[k]]$gross) - 1, kind = label[[k]])
+}) |> dplyr::bind_rows() |>
+  dplyr::mutate(kind = factor(kind, levels = unname(label)))
+
+ggplot2::ggplot(cum, ggplot2::aes(date, value)) +
+  ggplot2::geom_rect(data = dplyr::mutate(ep, start = pmax(start, min(cum$date))),
+                     inherit.aes = FALSE,
+                     ggplot2::aes(xmin = start, xmax = end, ymin = -Inf, ymax = Inf),
+                     fill = tidyaa_colors[["rule"]], alpha = 0.7) +
+  ggplot2::geom_line(ggplot2::aes(colour = kind), linewidth = 0.55) +
+  scale_colour_tidyaa() +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  scale_x_model() +
+  ggplot2::labs(y = "cumulative return")
+```
+
+```{r}
+#| label: tbl-19-performance
+#| tbl-cap: "Six strategies on the sixteen classes, monthly, over the register's out-of-sample months. Volatility, Sharpe ratio, historical 95% expected shortfall and maximum drawdown are gross of costs; z is the difference from the static policy's Sharpe ratio in standard errors; cost is the annual return lost to trading; the last two columns give the share of months in the stress portfolio and the Sharpe ratio of the constant mix of the two portfolios with that share."
+#| echo: false
+fmt_pct <- function(x, d = 1) ifelse(is.na(x), "", sprintf(paste0("%.", d, "f%%"), 100 * x))
+perf |>
+  dplyr::transmute(strategy = label[key], vol = fmt_pct(vol), sharpe = sprintf("%.3f", sharpe),
+                   z = ifelse(key == "static", "", sprintf("%+.2f", z)),
+                   es = fmt_pct(es), drawdown = fmt_pct(drawdown), turnover = fmt_pct(turnover, 0),
+                   cost = sprintf("%.0f bp", 1e4 * cost), sharpe_net = sprintf("%.3f", sharpe_net),
+                   stress_share = fmt_pct(stress_share, 0),
+                   same_mix = ifelse(is.na(same_mix), "", sprintf("%.3f", same_mix))) |>
+  kable(align = "lrrrrrrrrrr",
+        col.names = c("", "volatility", "Sharpe", "z", "ES 95%", "max drawdown", "turnover", "cost",
+                      "Sharpe, net", "in stress", "same mix"))
+```
+
+```{r}
+#| label: performance-facts
+#| include: false
+register <- utils::read.csv("output/tables/oos-sweep.csv") |>
+  dplyr::filter(universe == "classes", window == win, frequency == "months", basis == "gross")
+reg_sr <- function(s) register$sharpe[match(s, register$strategy)]
+pv <- function(k, col) perf[[col]][perf$key == k]
+se_static <- sqrt((1 + (pv("static", "sharpe") / sqrt(12))^2 / 2) / length(oos)) * sqrt(12)
+advantage <- pv("dated", "sharpe") - pv("static", "sharpe")
+kept      <- function(k) (pv(k, "sharpe") - pv("static", "sharpe")) / advantage
+timing    <- function(k) pv(k, "sharpe") - pv(k, "same_mix")
+detected  <- c("turbulence", "hmm")
+pre_cc    <- oos < min(which(in_episode(dates, "credit_crisis")))
+hmm_pre   <- mean(stress_by$hmm[pre_cc]); hmm_post <- mean(stress_by$hmm[!pre_cc])
+stopifnot(pv("hmm", "sharpe") < pv("static", "sharpe"), pv("turbulence", "sharpe") > pv("static", "sharpe"),
+          abs(pv("static", "sharpe") - reg_sr("max_sharpe")) < 0.005,
+          abs(pv("stress", "sharpe") - reg_sr("min_variance")) < 0.005,
+          advantage > 0, timing("dated") > 0,
+          all(vapply(detected, function(k) pv("stress", "sharpe") > pv(k, "sharpe"), logical(1))),
+          all(abs(perf$z[perf$key %in% detected]) < 1.96),
+          timing("turbulence") < timing("dated"), timing("hmm") < timing("dated"))
+```
+
+### Reading the result
+
+The two static rows are checks before they are results. The static policy's
+Sharpe ratio of `r sprintf("%.3f", pv("static", "sharpe"))` is the register's
+`r sprintf("%.3f", reg_sr("max_sharpe"))` for the maximum-Sharpe strategy at
+this window, and the stress portfolio's
+`r sprintf("%.3f", pv("stress", "sharpe"))` is its
+`r sprintf("%.3f", reg_sr("min_variance"))` for minimum variance, both read
+from `output/tables/oos-sweep.csv`; the accounting here is the register's.
+
+With the regimes dated, switching works. The infeasible strategy raises the
+Sharpe ratio from `r sprintf("%.3f", pv("static", "sharpe"))` to
+`r sprintf("%.3f", pv("dated", "sharpe"))` and cuts the maximum drawdown from
+`r sprintf("%.1f%%", 100 * pv("static", "drawdown"))` to
+`r sprintf("%.1f%%", 100 * pv("dated", "drawdown"))` while spending
+`r sprintf("%.0f%%", 100 * pv("dated", "stress_share"))` of the months in the
+stress portfolio. The constant mix with the same share earns
+`r sprintf("%.3f", pv("dated", "same_mix"))`, so
+`r sprintf("%.2f", timing("dated"))` of the gain is timing and the rest is
+holding some of a portfolio that the register already ranks above the calm
+one.
+
+That last column is what the detected strategies have to be read against. The
+turbulence switch reaches `r sprintf("%.3f", pv("turbulence", "sharpe"))`,
+which keeps `r sprintf("%.0f%%", 100 * kept("turbulence"))` of the dated
+strategy's advantage over the static policy, and it is
+`r sprintf("%+.2f", timing("turbulence"))` against its own constant mix: the
+flag chooses its months no better than a fixed blend would, at
+`r sprintf("%.0f%%", 100 * pv("turbulence", "turnover"))` turnover and
+`r sprintf("%.0f", 1e4 * pv("turbulence", "cost"))` basis points a year in
+costs against `r sprintf("%.0f", 1e4 * pv("static", "cost"))` for the static
+policy. The filtered model reaches
+`r sprintf("%.3f", pv("hmm", "sharpe"))`, below the static policy, and it is
+in the stress portfolio in `r sprintf("%.0f%%", 100 * pv("hmm", "stress_share"))`
+of all months against `r sprintf("%.0f%%", 100 * pv("dated", "stress_share"))`
+for the dated regimes: in `r sprintf("%.0f%%", 100 * hmm_pre)` of the months
+before the credit crisis, where the smoothed probability of
+@fig-19-probabilities marks almost nothing, and in
+`r sprintf("%.0f%%", 100 * hmm_post)` of the months from the crisis on, most
+of them the model years of elevated volatility that follow it. The constant
+mix with its share earns `r sprintf("%.3f", pv("hmm", "same_mix"))`, so its
+timing is worth `r sprintf("%+.2f", timing("hmm"))`, against
+`r sprintf("%+.2f", timing("dated"))` for the dated regimes. The mixture rule,
+at `r sprintf("%.3f", pv("mixture", "sharpe"))`, is
+`r if (pv("mixture", "sharpe") < pv("static", "sharpe")) "below" else "above"`
+the static policy: its regime covariance matrices are estimated from as few
+as `r sprintf("%.0f", min(vapply(rm_k, function(r) min(r$n_eff), numeric(1))))`
+effective months, and @eq-19-mixture passes that error to the optimizer.
+
+None of this is distinguishable from sampling error. By @eq-25-se the
+standard error of the static policy's Sharpe ratio over `r length(oos)` months
+is `r sprintf("%.2f", se_static)`; the paired statistic in the z column, which
+uses the correlation between the two return series [@memmel2003], is
+`r sprintf("%+.2f", pv("turbulence", "z"))` for the turbulence switch and
+`r sprintf("%+.2f", pv("hmm", "z"))` for the filtered model, and
+`r sprintf("%+.2f", pv("dated", "z"))` for the strategy that knew the dates.
+And one row needs no detector at all: the stress portfolio held throughout has
+a Sharpe ratio of `r sprintf("%.3f", pv("stress", "sharpe"))`, above both
+detected strategies. On this market the question of when to hold the
+minimum-variance portfolio matters less than the question of whether to.
+
+```{r}
+#| label: tbl-19-episodes
+#| tbl-cap: "Cumulative gross return of each strategy inside each dated episode, over the episode's out-of-sample months."
+#| echo: false
+episode_ret <- lapply(names(paths), function(k) {
+  tibble::tibble(key = k, episode = ep$label,
+                 months = vapply(ep$episode, function(e) sum(in_episode(paths[[k]]$date, e)), integer(1)),
+                 ret = vapply(ep$episode, function(e)
+                   prod(1 + paths[[k]]$gross[in_episode(paths[[k]]$date, e)]) - 1, numeric(1)))
+}) |> dplyr::bind_rows()
+
+episode_tab <- episode_ret |>
+  dplyr::mutate(strategy = label[key], episode = sprintf("%s (%d months)", episode, months),
+                ret = sprintf("%+.1f%%", 100 * ret)) |>
+  dplyr::select(strategy, episode, ret) |>
+  tidyr::pivot_wider(names_from = episode, values_from = ret)
+kable(episode_tab, align = "lrrrr", col.names = c("", names(episode_tab)[-1]))
+```
+
+```{r}
+#| label: episode-facts
+#| include: false
+er <- function(k, e) episode_ret$ret[episode_ret$key == k & episode_ret$episode == e]
+cc_oos    <- in_episode(dates[oos], "credit_crisis")
+enter_hmm <- which(stress_by$hmm[cc_oos])[1]                 # first crisis month held in the stress portfolio
+lost_first <- prod(1 + paths$static$gross[cc_oos][seq_len(enter_hmm - 1L)]) - 1
+stopifnot(enter_hmm == dt("credit crisis", "hmm_lag") + 2L, lost_first < 0,
+          er("stress", "credit crisis") > er("static", "credit crisis"),
+          er("stress", "rates shock") < 0, er("dated", "rates shock") < 0,
+          all(vapply(detected, function(k) er(k, "rates shock") < er("stress", "rates shock"), logical(1))))
+```
+
+@tbl-19-episodes shows where each number comes from. In the credit crisis the
+static policy loses `r sprintf("%.1f%%", -100 * er("static", "credit crisis"))`
+and the stress portfolio
+`r sprintf("%.1f%%", -100 * er("stress", "credit crisis"))`. The turbulence
+switch, flagged in the first month, captures most of the difference at
+`r sprintf("%+.1f%%", 100 * er("turbulence", "credit crisis"))`. The filtered
+model, at `r sprintf("%+.1f%%", 100 * er("hmm", "credit crisis"))`, captures
+almost none of it: it flags the crisis one month after it begins, the switch
+takes effect the month after that, and by then the static policy had already
+lost `r sprintf("%.1f%%", -100 * lost_first)`, against
+`r sprintf("%.1f%%", -100 * er("static", "credit crisis"))` for the episode
+as a whole.
+That is the episode a two-state model is built for, and a lag of two months
+was enough to miss it. In the rates shock there
+is nothing to capture: the stress portfolio is mostly government bonds, it
+loses `r sprintf("%.1f%%", -100 * er("stress", "rates shock"))`, and the
+investor who knew every date loses the same. The detected strategies lose
+more, `r sprintf("%.1f%%", -100 * er("turbulence", "rates shock"))` and
+`r sprintf("%.1f%%", -100 * er("hmm", "rates shock"))`, because they enter and
+leave during it. A stress portfolio is a hedge against the stress that
+resembles the past, and @tbl-19-dated had already said that the fourth episode
+does not.
+
+Three limits on that conclusion. One path of `r length(oos)` months contains
+`r sum(episode_ret$months[episode_ret$key == "static"] > 0)` episodes, and the
+ranking of the detectors rests on them. The threshold, the summary series,
+the number of states and the two portfolios were each chosen once and not
+searched over, which is why the exercises vary them rather than the chapter.
+And the stress portfolio is a model too: what to do when the regime model
+itself may be wrong, rather than only its state, is the question of
+@sec-28-robustness-theory.
+
+## Key Takeaways {.unnumbered}
+
+- A regime-switching model is @eq-19-model plus a filter. The prediction and
+  update steps of @eq-19-predict and @eq-19-update give the probability of
+  each state from data through $t$; the smoother of @eq-19-smooth gives it
+  from the whole sample, and only the first is available to an investor
+  [@hamilton1989; @kim1994].
+- One month ahead the investor faces the mixture moments of @eq-19-mixture.
+  The covariance contains a between-regime term, and a mixture of Gaussian
+  regimes has fat tails by @eq-19-kurtosis; the two-state model of the
+  equal-weighted return accounts for about half of its excess kurtosis and
+  none of its skewness.
+- Dating and detecting are different operations. Smoothed probabilities and
+  full-sample parameters both carry the future into a backtest, and before the
+  first stress regime has occurred a two-state model has nothing to detect it
+  with.
+- `regime.portfolios()` switches between specifications by a regime series
+  and is equivalent to selecting rows from separate rebalancing runs. It reads
+  the regime of the rebalancing date itself, uses the regime value as a list
+  index, and checks neither the coding nor the timing of the series.
+- On this market the infeasible dated switch is well ahead of the static
+  policy; the turbulence switch keeps a small part of that by point estimate,
+  the filtered model none, neither is distinguishable from the static policy
+  by a paired test, and holding the stress portfolio throughout has a higher
+  Sharpe ratio than either detector. In the rates shock no version of
+  the switch helps, because the stress portfolio was built for a different
+  stress.
+
+## Exercises {.unnumbered}
+
+1. The turbulence flag uses the 75th percentile. Recompute the switching
+   strategy with the 50th and the 90th, and report for each the share of
+   months in the stress portfolio, the Sharpe ratio, and the Sharpe ratio of
+   the constant mix with the same share. Which threshold, if any, times its
+   months?
+2. `regime.portfolios()` reads the regime of the rebalancing date. Feed the
+   dated episodes to the switch in that way, so that the portfolio for month
+   $t + 1$ is chosen by the label of month $t$, and compare with the
+   infeasible row of @tbl-19-performance. How much of the dated advantage is
+   lost to a delay of one month, and in which episode?
+3. Simulate 100,000 months from a two-state chain with annual regime
+   volatilities of 6% and 14%, equal means, and probabilities of staying of
+   0.98 and 0.93. Compare the sample excess kurtosis with @eq-19-kurtosis, and
+   compute the first-order autocorrelation of the squared returns. Which
+   property of @sec-04-descriptive-analysis-application does the persistence
+   of the chain add to the fat tails?
+4. Replace the stress portfolio by one that puts half the budget in the bill:
+   half of the minimum-variance weights, which in `PortfolioAnalytics` is a
+   `weight_sum` constraint of 0.5. Recompute the dated switch and its return
+   inside each episode. Does leaving the market help in the rates shock where
+   moving to bonds did not?

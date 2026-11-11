@@ -1,0 +1,944 @@
+---
+title: "The Equity Sleeve"
+metadata:
+  pagetitle: "The Equity Sleeve"
+  description-meta: "Filling an equity budget in R: the capitalization-weighted benchmark rebuilt from its instruments, size and momentum sorts, a factor covariance for 123 names, a minimum-variance sleeve under a tracking-error budget, and whether selection survives the allocation above it."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+
+ann_ret <- function(x, p = 12) prod(1 + x)^(p / length(x)) - 1
+ann_vol <- function(x, p = 12) stats::sd(x) * sqrt(p)
+```
+
+An equity sleeve arrives with two things fixed from above: a budget, and a
+benchmark it will be measured against. Which stocks should fill it, and is
+whatever the selection earns still visible once the sleeve is one line of the
+allocation that set the budget? @fama1992 and @fama1993 showed that the
+cross-section of stock returns lines up with a few observable characteristics,
+which is what makes selection by sorting a method rather than a habit, and
+@treynor1973 showed how a portfolio selected for its alpha is to be combined
+with the passive portfolio it departs from, so the two questions have been one
+question since. This is the first chapter of the book to work *inside* a class
+rather than across classes: the granularity axis of
+@sec-03-return-risk-and-the-investor-theory made concrete, on the
+`r sum(sim_assets$asset_class == "equity")` equities behind the five equity
+series that Parts III to V allocated as single numbers.
+
+We first set out the sleeve's benchmark and mandate, the arithmetic that
+carries its active return into the total portfolio, the sorts this market can
+run, and the estimation problem that so many names create; then we rebuild the
+benchmark from its instruments, measure equal against capitalization
+weighting, sort on size and momentum, race a factor covariance against
+shrinkage, and build a minimum-variance sleeve under a tracking-error budget,
+directly and as a sub-portfolio; then we fill the equity budget of the policy
+of @sec-15-hierarchical-allocation-application three ways and ask what the
+total portfolio noticed. On the horizon axis a permanent tilt toward a
+characteristic is strategic and a signal re-read every month, such as
+momentum, is tactical. The sleeve built here is **strategic**: it conditions on
+nothing but a rolling covariance estimate and the benchmark's weights.
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)   # 16 risky classes
+rf <- sim_riskfree_monthly$return                                  # the bill
+eq <- sim_assets[sim_assets$asset_class == "equity", ]             # the equity instruments
+A  <- as_xts_pm(sim_asset_returns_monthly[sim_asset_returns_monthly$asset %in% eq$asset_id, ],
+                date, asset, return)[, eq$asset_id]
+region  <- setNames(eq$region, eq$asset_id)
+regions <- c("US", "EU", "UK", "CH", "JP")
+d <- zoo::index(A)
+X <- zoo::coredata(A)
+stopifnot(identical(d, zoo::index(R)), !anyNA(A), setequal(regions, unique(region)),
+          ncol(A) == nrow(eq))
+c(instruments = ncol(A), months = nrow(A))
+```
+
+## Selection Inside a Budget {#sec-21-equity-sleeve-theory}
+
+### The benchmark, the mandate, and the arithmetic of a sleeve
+
+The sleeve's benchmark is the class series it sits inside: the
+capitalization-weighted regional equity index of
+@sec-02-notation-and-data-simulated-market, which
+@sec-15-hierarchical-allocation-theory handed down as the policy's investable
+proxy. Write $\boldsymbol{b}$ for the benchmark's weights over the $N$ names of
+the region, $\boldsymbol{v}$ for the sleeve's, and $\boldsymbol{x} =
+\boldsymbol{v} - \boldsymbol{b}$ for the active weights of @eq-24-active. The
+mandate is the one @sec-24-benchmarks-and-active-risk-theory wrote down: as
+much active return as a tracking-error budget $\tau$ buys,
+$\sqrt{\boldsymbol{x}'\boldsymbol{\Sigma}\boldsymbol{x}} \leq \tau$, scored by
+the information ratio of @eq-24-ir.
+
+The sleeve holds a share $\omega$ of the total portfolio and the policy holds
+the same share in the benchmark. With every other line of the policy held as
+it is,
+
+$$
+r^{P}_t - r^{B}_t = \omega\,(r^{S}_t - r^{b}_t),
+\qquad
+\alpha_P = \omega\,\alpha_S,
+\qquad
+\text{TE}_P = \omega\,\text{TE}_S,
+\qquad
+\text{IR}_P = \text{IR}_S ,
+$$ {#eq-21-omega}
+
+where $r^{S}$ and $r^{b}$ are the sleeve's return and its benchmark's. The
+budget scales active return and tracking error alike and leaves the
+information ratio alone: selection skill is not diluted by the allocation
+above it, only its weight in the outcome is. How much the total portfolio's
+Sharpe ratio can gain is the result of @treynor1973. With the sleeve's excess
+return regressed on the benchmark's, $\alpha$ the intercept and
+$\sigma_\varepsilon$ the residual volatility, the optimal combination of
+active sleeve and passive portfolio reaches
+
+$$
+\text{SR}^2_{P} = \text{SR}^2_{B} + \left(\frac{\alpha}{\sigma_\varepsilon}\right)^2 ,
+$$ {#eq-21-treynor-black}
+
+the second term being the appraisal ratio of
+@sec-24-benchmarks-and-active-risk-theory. An appraisal ratio of one quarter
+added to a policy Sharpe ratio of three quarters gives
+$\sqrt{0.75^2 + 0.25^2} = `r sprintf("%.3f", sqrt(0.75^2 + 0.25^2))`$, a
+ceiling reached only if $\omega$ is chosen for it rather than set by the
+policy. The application checks both: whether the sleeve earned an information
+ratio at all, and how much of it a fixed budget let through.
+
+### Selection by characteristic
+
+A sort ranks the names on a characteristic known at the start of the month
+and holds the favored group. Size was the first [@banz1981; @fama1992],
+momentum the most durable [@jegadeesh1993], value the one that completes the
+standard set [@fama1993; @asness2013]. Building the factors as tradable
+portfolios is the subject of @scheuch2023 and is not reproduced here. Size and
+momentum need capitalizations and past returns, which ship; value needs a
+fundamental, and the modeled market carries none, so no value sort can be
+built on it, and @asness2013 is the account of what it would add, a premium
+negatively correlated with momentum in every market they study. @fama2012
+find the premia local rather than global, and
+@sec-05-factor-models-implementation found why on this market: a global size
+sort in a five-region universe sorts on region. Every sort below is therefore
+run within a region and averaged across the five, as @griffin2002 recommends;
+@sec-18-parametric-policies-implementation estimates the same two
+characteristics as a parametric policy with standard errors.
+
+What a sleeve buys with many names is breadth. The fundamental law of
+@grinold1989, @eq-24-law, puts the attainable information ratio at
+$\text{IC}\sqrt{\text{BR}}\cdot\text{TC}$: a monthly sort over one region's
+names takes several hundred independent decisions a year where the
+sixteen-class allocator of @sec-24-benchmarks-and-active-risk-theory takes
+sixteen, so the same information ratio needs a far smaller information
+coefficient [@grinold2000], less what the long-only constraint takes back
+[@clarke2002].
+
+### Equal weighting is an active bet
+
+The simplest alternative to the benchmark holds every name at $1/N$. Its
+active weights are $1/N - b_i$, long every name smaller than average and short
+every larger one, rebalanced against drift every month: a size tilt and a
+contrarian rule at once, and @plyakha2021 find both parts matter. @demiguel2009
+is the reason the rule is taken seriously; @sec-24-benchmarks-and-active-risk-application
+showed that as a *benchmark* it embeds a permanent bet against the largest
+market. Inside a sleeve it is a bet against the largest names, and the question
+is whether it pays.
+
+### The covariance matrix of a sleeve
+
+Everything the sleeve optimizes needs $\boldsymbol{\Sigma}$ over its names,
+and @eq-07-rank settles what the sample estimate can deliver: with
+$N = `r ncol(A)`$, any window shorter than `r ncol(A) + 1L` months gives a
+singular matrix, and @sec-07-covariance-matrix-theory showed that a minimizer
+handed one finds the portfolios it believes are riskless and holds them. A
+sleeve over the full universe therefore *needs* one of the repairs of
+@sec-07-covariance-matrix-implementation before it can be optimized at all.
+Shrinkage [@ledoit2003; @ledoit2004] pulls the sample matrix toward a
+well-conditioned target; the alternative is to assert a structure. With $k$
+statistical factors extracted from the returns themselves,
+
+$$
+\hat{\boldsymbol{\Sigma}}_k = \boldsymbol{B}\boldsymbol{B}' + \boldsymbol{D},
+$$ {#eq-21-factor-cov}
+
+where $\boldsymbol{B}$ is $N \times k$, the first $k$ principal components
+scaled by their volatilities, and $\boldsymbol{D}$ the diagonal matrix of
+residual variances: $N(k+1)$ parameters in place of $N(N+1)/2$, and full rank
+whatever $T$ is because $\boldsymbol{D}$ is positive. @connor1993 justify
+principal components as the factors and give a test for $k$; @bai2002 give the
+criteria for choosing $k$ that are now standard. Which repair is better is
+settled out of sample, as @sec-07-covariance-matrix-application settled it.
+
+Within one region, with $N$ between `r min(table(region))` and
+`r max(table(region))`, the matrix is estimable but a ten-year window gives
+about three observations per parameter, and shrinkage still keeps the weights
+from reading noise. The practical form of a concentrated sleeve is a
+cardinality limit, at most $K$ names, which
+@sec-12-constraints-implementation showed to be a mixed-integer program
+[@bienstock1996] that the package honors only on its linear paths; the convex
+substitute is a cap per name, itself a shrinkage of $\boldsymbol{\Sigma}$ by
+@jagannathan2003. The tracking-error budget has a closed-form reading for a
+minimum-variance sleeve: the Lagrangian of variance subject to
+$\boldsymbol{x}'\boldsymbol{\Sigma}\boldsymbol{x} \leq \tau^2$ is, up to a
+constant and a positive scale, the one-parameter family
+
+$$
+\boldsymbol{v}(\theta) = \arg\min_{\boldsymbol{v}}\;
+  \boldsymbol{v}'\boldsymbol{\Sigma}\boldsymbol{v}
+  - 2\theta\,\boldsymbol{b}'\boldsymbol{\Sigma}\boldsymbol{v},
+\qquad \theta = \frac{\lambda}{1+\lambda} \in [0, 1),
+$$ {#eq-21-family}
+
+so that without further constraints $\boldsymbol{v}(\theta) = \theta\boldsymbol{b}
++ (1-\theta)\boldsymbol{v}_{\text{mv}}$: the budget picks a blend of the
+benchmark and the minimum-variance portfolio. Under a box the blend is no
+longer linear, but @eq-21-family is still one quadratic program per $\theta$,
+and a root search finds the $\theta$ that spends the budget exactly, which
+spares the rolling loop a cone solver several hundred times. @roll1992 is the
+standing warning: the family does not ask whether the benchmark is efficient.
+
+## Implementation {#sec-21-equity-sleeve-implementation}
+
+### The benchmark, rebuilt from its instruments
+
+The class series are capitalization weighted on the *previous* week's
+capitalization, weekly, and compounded to months, the one-period lag
+@sec-05-factor-models-implementation imposed on its market proxy. Rebuilding
+them from the instruments is the check that the benchmark is one the sleeve
+could have held.
+
+```{r}
+#| label: benchmark
+cap_w <- sim_marketcap_weekly[sim_marketcap_weekly$asset %in% eq$asset_id, ] |>
+  tidyr::pivot_wider(names_from = asset, values_from = market_cap) |>
+  dplyr::arrange(date)
+Aw <- as_xts_pm(sim_asset_returns_weekly[sim_asset_returns_weekly$asset %in% eq$asset_id, ],
+                date, asset, return)[, eq$asset_id]
+wk   <- zoo::index(Aw)
+prev <- match(wk, cap_w$date) - 1L                 # the week before each return week
+stopifnot(!anyNA(prev), all(prev >= 1L))
+cap_prev <- as.matrix(cap_w[prev, eq$asset_id])
+stopifnot(!anyNA(cap_prev))
+month_of <- findInterval(wk, d, left.open = TRUE) + 1L   # every week lies in the month it compounds into
+stopifnot(all(month_of %in% seq_along(d)))
+
+rebuilt <- sapply(regions, function(g) {
+  j <- names(region)[region == g]
+  w <- cap_prev[, j] / rowSums(cap_prev[, j])
+  tapply(rowSums(w * zoo::coredata(Aw[, j])), month_of, function(x) prod(1 + x) - 1)
+})
+shipped <- zoo::coredata(R[, paste0(regions, "_equity")])
+gap <- max(abs(rebuilt - shipped))
+stopifnot(gap < 1e-12)
+c(months = nrow(rebuilt), weeks = length(wk), largest_gap = gap)
+```
+
+The five series reproduce to `r sprintf("%.0e", gap)`. For the monthly work
+that follows, the benchmark weight for month $t$ is the last capitalization
+observed before $t$ began, indexed by name.
+
+```{r}
+#| label: cap-month
+Cap <- as.matrix(cap_w[findInterval(c(wk[1] - 1, d[-length(d)]), cap_w$date), eq$asset_id])
+stopifnot(!anyNA(Cap), nrow(Cap) == nrow(X), identical(colnames(Cap), colnames(X)))
+bench_w <- function(t, j) Cap[t, j] / sum(Cap[t, j])      # the benchmark's weights for month t
+
+conc <- dplyr::bind_rows(lapply(regions, function(g) {
+  j  <- names(region)[region == g]
+  Wb <- Cap[, j] / rowSums(Cap[, j])
+  tibble::tibble(region = g, names = length(j),
+    ratio = mean(apply(Cap[, j], 1, max) / apply(Cap[, j], 1, min)),
+    top5  = mean(apply(Wb, 1, function(w) sum(sort(w, decreasing = TRUE)[1:5]))),
+    eff   = mean(1 / rowSums(Wb^2)),
+    largest = max(Wb))
+}))
+```
+
+```{r}
+#| label: tbl-21-concentration
+#| tbl-cap: "How concentrated each regional benchmark is, averaged over the 372 month-starts. The ratio is the largest capitalization to the smallest; effective names is the reciprocal Herfindahl of the weights, as in chapter 9; the last column is the largest single weight any name reaches."
+#| echo: false
+conc |>
+  dplyr::mutate(ratio = sprintf("%.0f", ratio), top5 = sprintf("%.0f%%", 100 * top5),
+                eff = sprintf("%.1f", eff), largest = sprintf("%.0f%%", 100 * largest)) |>
+  kable(align = "lrrrrr",
+        col.names = c("region", "names", "largest / smallest", "top five share",
+                      "effective names", "largest weight"))
+```
+
+Capitalization weighting is itself concentrated: the United States index holds
+`r conc$names[conc$region == "US"]` names and behaves like
+`r sprintf("%.1f", conc$eff[conc$region == "US"])` of them, the Swiss index
+holds `r conc$names[conc$region == "CH"]` and behaves like
+`r sprintf("%.1f", conc$eff[conc$region == "CH"])`.
+
+### Equal against capitalization weighting
+
+```{r}
+#| label: ew-cw
+ew_cw <- dplyr::bind_rows(lapply(regions, function(g) {
+  j  <- names(region)[region == g]
+  cw <- as.numeric(R[, paste0(g, "_equity")])        # the shipped benchmark
+  ew <- rowMeans(X[, j])                              # one over N, rebalanced monthly
+  tibble::tibble(region = g, cw_ret = ann_ret(cw), ew_ret = ann_ret(ew),
+                 cw_vol = ann_vol(cw), ew_vol = ann_vol(ew),
+                 te = ann_vol(ew - cw), ir = mean(ew - cw) / stats::sd(ew - cw) * sqrt(12))
+}))
+stopifnot(all(ew_cw$ew_ret > ew_cw$cw_ret))          # the argument below relies on it
+```
+
+```{r}
+#| label: tbl-21-ew-cw
+#| tbl-cap: "Equal against capitalization weighting inside each regional sleeve, full sample. Returns compounded and annualized; the tracking error is that of the equally weighted sleeve against the shipped benchmark."
+#| echo: false
+ew_cw |>
+  dplyr::mutate(gap = ew_ret - cw_ret) |>
+  dplyr::mutate(dplyr::across(c(cw_ret, ew_ret, cw_vol, ew_vol, te), ~ sprintf("%.2f%%", 100 * .x)),
+                gap = sprintf("%+.1f pp", 100 * gap), ir = sprintf("%.2f", ir)) |>
+  dplyr::select(region, cw_ret, ew_ret, gap, cw_vol, ew_vol, te, ir) |>
+  kable(align = "lrrrrrrr",
+        col.names = c("region", "cap return", "equal return", "gap", "cap vol",
+                      "equal vol", "tracking error", "IR"))
+```
+
+Equal weighting earns more than its benchmark in every region, by
+`r sprintf("%.1f", 100 * min(ew_cw$ew_ret - ew_cw$cw_ret))` to
+`r sprintf("%.1f", 100 * max(ew_cw$ew_ret - ew_cw$cw_ret))` percentage points
+a year, at a tracking error of `r sprintf("%.1f%%", 100 * min(ew_cw$te))` to
+`r sprintf("%.1f%%", 100 * max(ew_cw$te))`, larger than most mandates allow.
+The information ratios run from `r sprintf("%.2f", min(ew_cw$ir))` to
+`r sprintf("%.2f", max(ew_cw$ir))`; by @eq-24-se their standard error over
+`r nrow(X)` months is about
+`r sprintf("%.2f", sqrt((1 + (mean(ew_cw$ir) / sqrt(12))^2 / 2) / nrow(X)) * sqrt(12))`,
+so the smaller ones are not distinguishable from zero and the larger ones
+barely are. Whether the gap is a size premium or the rebalancing of
+@plyakha2021 is what the sorts separate.
+
+### Sorting on size and momentum
+
+Size is the benchmark weight itself; momentum is the return over months
+$t-12$ to $t-2$, skipping the most recent month as @jegadeesh1993 do. Both are
+sorted into terciles within each region and the five spreads are averaged.
+The long-short spread is the favored tercile minus the opposite one; the
+long-only spread, which a sleeve can hold, is the favored tercile minus the
+equally weighted region. Standard errors are those of @newey1987 at six lags,
+the call @sec-05-factor-models-implementation uses.
+
+```{r}
+#| label: sorts
+mom <- matrix(NA_real_, nrow(X), ncol(X), dimnames = dimnames(X))
+for (t in 13:nrow(X)) mom[t, ] <- apply(1 + X[(t - 12):(t - 2), ], 2, prod) - 1
+
+sort_spread <- function(signal, favored) {        # favored tercile: 1 lowest, 3 highest
+  t(vapply(seq_len(nrow(X)), function(t) {
+    if (anyNA(signal[t, ])) return(c(long_short = NA_real_, long_only = NA_real_))
+    legs <- vapply(regions, function(g) {
+      j <- names(region)[region == g]; q <- dplyr::ntile(signal[t, j], 3)
+      c(fav = mean(X[t, j][q == favored]), opp = mean(X[t, j][q == 4 - favored]),
+        all = mean(X[t, j]))
+    }, numeric(3))
+    m <- rowMeans(legs)                             # each region counts once
+    c(long_short = m[["fav"]] - m[["opp"]], long_only = m[["fav"]] - m[["all"]])
+  }, numeric(2)))
+}
+nw <- function(x) {
+  x <- x[!is.na(x)]; m <- stats::lm(x ~ 1)
+  c(mean = 12 * mean(x), t = unname(stats::coef(m)) /
+      sqrt(sandwich::NeweyWest(m, lag = 6, prewhite = FALSE)[1, 1]), months = length(x))
+}
+size_s <- sort_spread(Cap, favored = 1)             # small minus big
+mom_s  <- sort_spread(mom, favored = 3)             # winners minus losers
+sorts  <- tibble::tibble(
+  sort = rep(c("size, small minus big", "momentum, winners minus losers"), each = 2),
+  leg  = rep(c("long-short", "long-only"), 2)) |>
+  dplyr::bind_cols(dplyr::bind_rows(lapply(list(size_s[, 1], size_s[, 2], mom_s[, 1], mom_s[, 2]),
+                                           function(x) as.list(nw(x)))))
+```
+
+```{r}
+#| label: tbl-21-sorts
+#| tbl-cap: "Tercile sorts within region, averaged across the five regions. Means annualized; t-statistics with Newey-West standard errors at six lags."
+#| echo: false
+sorts |>
+  dplyr::mutate(mean = sprintf("%+.2f%%", 100 * mean), t = sprintf("%.2f", t)) |>
+  kable(align = "llrrr", col.names = c("sort", "leg", "mean", "t", "months"))
+```
+
+```{r}
+#| label: sorts-verdict
+#| include: false
+size_t <- sorts$t[sorts$sort == "size, small minus big" & sorts$leg == "long-short"]
+mom_t  <- sorts$t[sorts$sort == "momentum, winners minus losers" & sorts$leg == "long-short"]
+stopifnot(size_t > 2, abs(mom_t) < 2)
+```
+
+Size is there and momentum is not. Small names earn
+`r sprintf("%.1f", 100 * sorts$mean[1])` percentage points a year more than
+large ones within their region, at $t = `r sprintf("%.1f", size_t)`$, and the
+long-only version a sleeve could hold keeps
+`r sprintf("%.1f", 100 * sorts$mean[2])` points of it at
+$t = `r sprintf("%.1f", sorts$t[2])`$; this is the gap of @tbl-21-ew-cw seen
+from the characteristic's side, and @sec-18-parametric-policies-implementation
+recovers the same sign with a standard error on the coefficient. The momentum
+spread is `r sprintf("%+.1f", 100 * sorts$mean[3])` points at
+$t = `r sprintf("%.2f", mom_t)`$. The absence is a property of the modeled
+data rather than of the strategy: each instrument's idiosyncratic component is
+drawn independently period by period, as
+@sec-02-notation-and-data-simulated-market describes, so a name's own past
+return carries no information about its own future return, and cross-sectional
+momentum, which lives in exactly that autocorrelation, cannot exist here by
+construction. A real market has it [@jegadeesh1993; @fama2012]; this one tests
+the machinery, and a reader who wants the premium should run the same code on
+the real-data sleeves of @sec-02-notation-and-data-real-data.
+
+### A covariance matrix for one hundred and twenty-three names
+
+`statistical.factor.model()` fits @eq-21-factor-cov by principal components and
+`extractCovariance()` assembles the matrix. On the full sample it runs; on the
+ten-year window it is needed for, it does not.
+
+```{r}
+#| label: factor-models
+fm  <- lapply(1:3, function(k) statistical.factor.model(A, k = k))
+S_k <- lapply(fm, extractCovariance)
+share <- stats::prcomp(X)$sdev^2; share <- share / sum(share)      # variance by component
+
+factor_covs <- function(X, ks = 1:3) {             # eq-21-factor-cov for several k at once
+  pc <- stats::prcomp(X)
+  lapply(ks, function(k) {
+    B <- pc$rotation[, seq_len(k), drop = FALSE]; f <- X %*% B
+    e <- X - f %*% t(B); e <- sweep(e, 2, colMeans(e))
+    B %*% stats::cov(f) %*% t(B) + diag(colSums(e^2) / (nrow(X) - k - 1L))
+  })
+}
+stopifnot(all(mapply(function(a, b) max(abs(a - b)) < 1e-12, factor_covs(X), S_k)))
+refused <- tryCatch(statistical.factor.model(A[1:120, ], k = 3), error = conditionMessage)
+c(first_component = share[1], next_two = sum(share[2:3]), refused = refused)
+```
+
+::: {.callout-important}
+## `statistical.factor.model()` refuses the case it exists for
+
+The function stops whenever $T < N$, which
+@sec-07-covariance-matrix-implementation recorded and which is exactly the
+window on which @eq-21-factor-cov is needed: principal components need enough
+components, not enough columns. `factor_covs()` is the body of the function
+without the check, and the assertion above shows that it returns the package's
+matrix wherever the package returns one.
+:::
+
+The first component carries `r sprintf("%.0f%%", 100 * share[1])` of the
+variance and the next two `r sprintf("%.0f%%", 100 * sum(share[2:3]))`
+together. The race is the one `R/ch05-estimator-race.R` ran for
+@sec-07-covariance-matrix-application: minimum variance, long only, on a
+rolling window of one hundred and twenty months, held one month, from the
+register's first out-of-sample month. The sample matrix is singular on every
+window by @eq-07-rank, and `quadprog` refuses it rather than inverting noise.
+
+```{r}
+#| label: race
+min_var <- function(S) {                           # long only, fully invested
+  n <- ncol(S)
+  sol <- try(quadprog::solve.QP(2 * S, rep(0, n), cbind(rep(1, n), diag(n)),
+                                c(1, rep(0, n)), meq = 1), silent = TRUE)
+  if (inherits(sol, "try-error")) return(NULL)
+  w <- pmax(sol$solution, 0); w / sum(w)
+}
+shrunk <- function(X) {                            # corpcor's matrix, stripped to a plain one
+  S <- corpcor::cov.shrink(X, verbose = FALSE)
+  matrix(as.numeric(S), ncol(X), ncol(X), dimnames = list(colnames(X), colnames(X)))
+}
+N   <- ncol(X)
+W   <- 120L
+oos <- seq.int(W + 1L, nrow(X))                     # the register's out-of-sample months
+stopifnot(oos[1] == 121L)
+sample_refused <- is.null(min_var(stats::cov(X[seq_len(W), ])))
+
+paths <- lapply(oos, function(t) {
+  Xw <- X[(t - W):(t - 1L), ]
+  c(list(shrunk = min_var(shrunk(Xw))),
+    setNames(lapply(factor_covs(Xw), min_var), paste("factor, k =", 1:3)))
+})
+score <- function(r, rf_oos) {                      # the register's definitions
+  n <- length(r)
+  c(ann_return = prod(1 + r)^(12 / n) - 1, ann_vol = stats::sd(r) * sqrt(12),
+    sharpe = (prod(1 + r)^(12 / n) - prod(1 + rf_oos)^(12 / n)) / (stats::sd(r) * sqrt(12)))
+}
+race <- dplyr::bind_rows(lapply(names(paths[[1]]), function(nm) {
+  Wm <- t(vapply(paths, function(p) p[[nm]], numeric(N)))
+  r  <- rowSums(Wm * X[oos, ])
+  tibble::tibble(estimator = nm, !!!as.list(score(r, rf[oos])),
+                 eff_names = mean(1 / rowSums(Wm^2)), held = mean(rowSums(Wm > 1e-6)))
+}))
+race <- dplyr::bind_rows(race, tibble::tibble(estimator = "equal weight",
+                                              !!!as.list(score(rowMeans(X[oos, ]), rf[oos])),
+                                              eff_names = N, held = N))
+```
+
+```{r}
+#| label: race-check
+#| include: false
+# the same loop, scored on the race's months, must reproduce its shrinkage row
+reg <- readRDS("output/tables/ch05-estimator-race.rds")
+first_reg <- nrow(X) - reg$periods[1] + 1L
+r_shr <- rowSums(t(vapply(paths, function(p) p$shrunk, numeric(N))) * X[oos, ])[oos >= first_reg]
+stopifnot(sample_refused,
+          reg$failed[reg$estimator == "sample" & reg$window == W] == reg$periods[1],
+          abs(stats::sd(r_shr) * sqrt(12) - reg$ann_vol[reg$estimator == "shrunk" & reg$window == W]) < 1e-6)
+lowest_vol <- race$estimator[which.min(race$ann_vol)]
+stopifnot(grepl("factor", lowest_vol), race$estimator[which.max(race$sharpe)] == "shrunk")
+```
+
+```{r}
+#| label: tbl-21-race
+#| tbl-cap: "Minimum variance on 123 equities, estimated on a rolling 120-month window and held one month, from observation 121. The sample matrix produced no portfolio on any window. Effective names is the average reciprocal Herfindahl; held counts weights above a millionth."
+#| echo: false
+race |>
+  dplyr::mutate(dplyr::across(c(ann_return, ann_vol), ~ sprintf("%.2f%%", 100 * .x)),
+                sharpe = sprintf("%.3f", sharpe), eff_names = sprintf("%.1f", eff_names),
+                held = sprintf("%.0f", held)) |>
+  kable(align = "lrrrrr",
+        col.names = c("estimator", "return", "volatility", "Sharpe", "effective names", "held"))
+```
+
+Scored on the months the register's race covers, the shrinkage row reproduces
+@sec-07-covariance-matrix-application's to six decimals, which the hidden
+chunk asserts. The factor matrices give the lowest realized volatility,
+`r sprintf("%.1f%%", 100 * min(race$ann_vol))` for `r lowest_vol` against
+`r sprintf("%.1f%%", 100 * race$ann_vol[race$estimator == "shrunk"])` for
+shrinkage and `r sprintf("%.1f%%", 100 * race$ann_vol[race$estimator == "equal weight"])`
+for equal weighting; the shrinkage matrix gives the highest Sharpe ratio,
+`r sprintf("%.2f", race$sharpe[race$estimator == "shrunk"])` against
+`r sprintf("%.2f", race$sharpe[race$estimator == lowest_vol])`. Which repair is
+better depends on which number the mandate scores.
+
+### The selected sleeve
+
+The sleeve is built for the United States as of the first out-of-sample month,
+with the shrinkage moments of @sec-07-covariance-matrix-implementation passed
+through `momentFUN`.
+
+```{r}
+#| label: us-setup
+us   <- names(region)[region == "US"]
+t1   <- oos[1]
+A_us <- A[(t1 - W):(t1 - 1L), us]                   # the window before t1
+S_us <- shrunk(zoo::coredata(A_us)); b_us <- bench_w(t1, us)
+shrinkage_moments <- function(R, portfolio) {
+  S <- shrunk(zoo::coredata(R))
+  list(mu = colMeans(R), sigma = S, m3 = NULL, m4 = NULL, mean = colMeans(R), var = S)
+}
+base_us <- portfolio.spec(us) |>
+  add.constraint("full_investment") |> add.constraint("long_only")
+w_mv <- extractWeights(optimize.portfolio(A_us, base_us |> add.objective(type = "risk", name = "var"),
+                                          optimize_method = "ROI", momentFUN = shrinkage_moments))
+p_vol <- function(w, S = S_us) sqrt(12 * as.numeric(t(w) %*% S %*% w))
+c(held = sum(w_mv > 1e-6), largest = max(w_mv), vol = p_vol(w_mv), benchmark_vol = p_vol(b_us))
+```
+
+Unconstrained, minimum variance holds `r sum(w_mv > 1e-6)` of the
+`r length(us)` names and puts `r sprintf("%.0f%%", 100 * max(w_mv))` in one of
+them. A mandate limits that, and the two ways of writing the limit behave
+differently in the package.
+
+::: {.callout-important}
+## A position limit is honored on the ES path and dropped on the variance path
+
+```{r}
+#| label: position-limit
+K <- 10L
+spec_K <- base_us |> add.constraint(type = "position_limit", max_pos = K)
+w_K_var <- extractWeights(optimize.portfolio(A_us, spec_K |> add.objective(type = "risk", name = "var"),
+                                             optimize_method = "ROI", momentFUN = shrinkage_moments))
+w_K_es  <- extractWeights(optimize.portfolio(A_us, spec_K |> add.objective(type = "risk", name = "ES"),
+                                             optimize_method = "ROI"))
+stopifnot(sum(w_K_es > 1e-6) <= K, isTRUE(all.equal(w_K_var, w_mv)))
+c(limit = K, held_variance = sum(w_K_var > 1e-6), held_ES = sum(w_K_es > 1e-6))
+```
+
+Under a variance objective `ROI` has no integer formulation, so the limit of
+`r K` names is read and discarded: `r sum(w_K_var > 1e-6)` names come back,
+identical to the unconstrained solution, as
+@sec-12-constraints-implementation measured on the sixteen classes. Under a
+minimum-ES objective the same constraint goes to `Rglpk` as a mixed-integer
+linear program and is honored. A concentrated minimum-*variance* sleeve has no
+exact solver in the package; @chang2000's screening heuristic is the practical
+route, and the convex substitute used below is a cap per name.
+:::
+
+The cap is ten percent, or the benchmark's own weight where that is larger,
+since the largest American name reaches
+`r sprintf("%.0f%%", 100 * conc$largest[conc$region == "US"])` of its index
+and a flat ten percent would force an underweight of that size whatever the
+budget said. The budget is four percent a year, the figure
+@sec-24-benchmarks-and-active-risk-implementation spent, and it enters through
+@eq-21-family, because the package cannot express it, for the reasons that
+chapter's callout gives; the cone solver built there solves the same problem
+once, and the family solves it several hundred times.
+
+```{r}
+#| label: select-sleeve
+te_of <- function(w, b, S) sqrt(12 * as.numeric(t(w - b) %*% S %*% (w - b)))
+sleeve_family <- function(S, b, cap) {               # eq-21-family under a box
+  n <- length(b); Sb <- as.numeric(S %*% b)
+  Amat <- cbind(rep(1, n), diag(n), -diag(n)); bvec <- c(1, rep(0, n), -cap)
+  function(theta) {
+    w <- quadprog::solve.QP(2 * S, 2 * theta * Sb, Amat, bvec, meq = 1)$solution
+    w <- pmax(w, 0); setNames(w / sum(w), names(b))
+  }
+}
+select_sleeve <- function(S, b, tau, cap = pmax(0.10, b)) {
+  f  <- sleeve_family(S, b, cap)
+  w0 <- f(0)
+  if (te_of(w0, b, S) <= tau) return(w0)             # the budget is slack
+  theta <- stats::uniroot(function(th) te_of(f(th), b, S) - tau, c(0, 1), tol = 1e-9)$root
+  f(theta)
+}
+tau   <- 0.04
+w_sel <- select_sleeve(S_us, b_us, tau)
+stopifnot(abs(te_of(w_sel, b_us, S_us) - tau) < 1e-6, all(w_sel <= pmax(0.10, b_us) + 1e-8))
+c(held = sum(w_sel > 1e-6), largest = max(w_sel), tracking_error = te_of(w_sel, b_us, S_us),
+  vol = p_vol(w_sel), active_share = sum(abs(w_sel - b_us)) / 2)
+```
+
+The sleeve holds `r sum(w_sel > 1e-6)` names, spends the budget exactly, and
+has an estimated volatility of
+`r sprintf("%.1f%%", 100 * p_vol(w_sel))` against the benchmark's
+`r sprintf("%.1f%%", 100 * p_vol(b_us))` and the unconstrained minimum's
+`r sprintf("%.1f%%", 100 * p_vol(w_mv))`: the budget bought
+`r sprintf("%.0f%%", 100 * (p_vol(b_us) - p_vol(w_sel)) / (p_vol(b_us) - p_vol(w_mv)))`
+of the distance between the two, which is @eq-21-family read as a blend.
+
+### The sleeve as a sub-portfolio
+
+`mult.portfolio.spec()` is the package's structure for a sleeve the allocation
+layer can consume, and @sec-15-hierarchical-allocation-implementation
+established what it does and which arguments have to be set for it to run.
+Each regional sleeve becomes a sub-portfolio, minimum variance under the cap,
+re-estimated yearly on the trailing window; the top level allocates across the
+five proxies.
+
+```{r}
+#| label: sub-portfolio
+#| warning: false
+sleeve_spec <- function(a) portfolio.spec(a) |>
+  add.constraint("full_investment") |>
+  add.constraint(type = "box", min = 0, max = 0.10) |>
+  add.objective(type = "risk", name = "var")
+top <- portfolio.spec(regions) |>
+  add.constraint("full_investment") |> add.constraint("long_only") |>
+  add.objective(type = "risk", name = "var")
+
+mp <- mult.portfolio.spec(top)
+for (g in regions)
+  mp <- add.sub.portfolio(mp, sleeve_spec(names(region)[region == g]), optimize_method = "ROI",
+                          rebalance_on = "years", training_period = W, trailing_periods = W - 1L,
+                          momentFUN = shrinkage_moments)      # passed through to the rolling solver
+o_mp <- optimize.portfolio(A, mp, optimize_method = "ROI", trace = TRUE)
+top_w <- setNames(as.numeric(o_mp$weights), regions)   # returned as proxy.1 .. proxy.5, in order added
+stopifnot(length(top_w) == length(regions), abs(sum(top_w) - 1) < 1e-8, nrow(o_mp$R) == nrow(A))
+round(top_w, 4)
+```
+
+Three things carry over from @sec-15-hierarchical-allocation-implementation:
+`trailing_periods` is the window less one, because the rolling solver counts
+the end point; the proxies in `o_mp$R` have `r nrow(o_mp$R)` rows, the first
+`r W` back-filled with a drifting equal-weight sleeve nobody chose; the weights
+come back as `proxy.1` to `proxy.5` in the order added. One is new:
+`momentFUN` passes through the dots of `add.sub.portfolio()`, so a sleeve can
+carry its own covariance estimator into the structure. It cannot carry the
+tracking-error budget, so the two stages of the application are run by hand.
+
+## Selection Under the Allocation Above It {#sec-21-equity-sleeve-application}
+
+The allocation above the sleeve is the policy of
+@sec-15-hierarchical-allocation-application: a tangency portfolio inside the
+equity sleeve, minimum variance inside the bond sleeves, a tangency portfolio
+across the sleeves, all on the full sample. It is recomputed here so that the
+number it hands down is computed rather than quoted.
+
+```{r}
+#| label: policy
+Re <- R - rf; S16 <- stats::cov(Re); mu16 <- colMeans(Re)
+qp <- function(S, a) {       # min w'Sw s.t. a'w = 1, w >= 0, rescaled: a = 1 gives GMV, a = mu the tangency
+  n <- ncol(S)
+  w <- quadprog::solve.QP(2 * S, rep(0, n), cbind(a, diag(n)), c(1, rep(0, n)), meq = 1)$solution
+  w <- pmax(w, 0); setNames(w / sum(w), colnames(S))
+}
+kind <- sub(".*_", "", colnames(Re)); sl <- split(colnames(Re), kind)
+v <- lapply(names(sl), function(k) {
+  a <- sl[[k]]; if (length(a) == 1L) return(setNames(1, a))
+  qp(S16[a, a], if (k == "equity") mu16[a] else rep(1, length(a)))
+}); names(v) <- names(sl)
+sr     <- sapply(v, function(x) as.numeric(Re[, names(x)] %*% x))
+budget <- qp(stats::cov(sr), colMeans(sr))
+policy <- unlist(lapply(names(v), function(k) budget[[k]] * v[[k]]))[colnames(R)]
+stopifnot(!anyNA(policy), abs(sum(policy) - 1) < 1e-10)
+
+omega    <- budget[["equity"]]
+eq_split <- v$equity[v$equity > 1e-6]; eq_split <- eq_split / sum(eq_split)
+stopifnot(max(abs(policy[names(eq_split)] - omega * eq_split)) < 1e-10)
+round(c(equity_budget = omega, eq_split), 4)
+```
+
+The equity budget is $\omega = `r sprintf("%.1f%%", 100 * omega)`$, split
+`r sprintf("%.0f%%", 100 * eq_split[["US_equity"]])` United States and
+`r sprintf("%.0f%%", 100 * eq_split[["EU_equity"]])` Europe; the other three
+equity series receive nothing. We fill it three ways, holding every other line
+of the policy at its weight: with the benchmark itself, with the equally
+weighted sleeve, and with the selected sleeve, re-estimated monthly on the
+trailing `r W` months in each region. Costs are the
+`r sprintf("%.0f", 1e4 * pm_costs_default()[["equity"]])` basis points per
+unit traded of `pm_costs_default()`, charged on each sleeve's monthly trades
+against its drifted weights as @eq-23-net charges them; the benchmark pays
+for tracking its own capitalization weights, which on this market move by
+more than returns explain. Rebalancing the policy's class weights costs the
+same under all three and is not charged.
+
+```{r}
+#| label: fill
+rate <- pm_costs_default()[["equity"]]
+path <- function(Wm, Xj, gross = rowSums(Wm * Xj)) {   # weights set at each month start
+  drifted <- Wm * (1 + Xj) / (1 + rowSums(Wm * Xj))
+  trade   <- rbind(0, abs(Wm[-1, , drop = FALSE] - drifted[-nrow(Wm), , drop = FALSE]))
+  tibble::tibble(gross = gross, cost = rate * rowSums(trade), turnover = rowSums(trade) / 2)
+}
+fill <- lapply(names(eq_split), function(cls) {
+  j  <- names(region)[region == sub("_equity$", "", cls)]
+  Xj <- X[oos, j]
+  W_b   <- t(vapply(oos, function(t) bench_w(t, j), numeric(length(j))))
+  W_ew  <- matrix(1 / length(j), length(oos), length(j))
+  W_sel <- t(vapply(oos, function(t)
+    select_sleeve(shrunk(X[(t - W):(t - 1L), j]), bench_w(t, j), tau), numeric(length(j))))
+  list(benchmark      = path(W_b, Xj, gross = as.numeric(R[oos, cls])),  # the shipped series
+       `equal weight` = path(W_ew, Xj),
+       selected       = path(W_sel, Xj))
+})
+names(fill) <- names(eq_split)
+fillers <- names(fill[[1]])
+
+sleeve_of <- function(f, what)                    # the equity sleeve: both regions at the policy's split
+  rowSums(vapply(names(fill), function(cls) eq_split[[cls]] * fill[[cls]][[f]][[what]],
+                 numeric(length(oos))))
+Rm       <- zoo::coredata(R)[oos, ]
+rest     <- setdiff(colnames(R), names(eq_split))
+r_rest   <- as.numeric(Rm[, rest] %*% policy[rest])
+r_policy <- as.numeric(Rm %*% policy)
+r_bench  <- as.numeric(Rm[, names(eq_split)] %*% eq_split)      # the sleeve's benchmark
+totals <- lapply(fillers, function(f) {
+  s <- sleeve_of(f, "gross"); k <- sleeve_of(f, "cost")
+  list(sleeve = s, total = r_rest + omega * s, total_net = r_rest + omega * (s - k),
+       turnover = mean(sleeve_of(f, "turnover")) * 12)
+})
+names(totals) <- fillers
+stopifnot(isTRUE(all.equal(totals$benchmark$total, r_policy)))
+```
+
+```{r}
+#| label: omega-check
+# eq-21-omega in the numbers: the total's active return is omega times the sleeve's, month by month
+for (f in fillers)
+  stopifnot(isTRUE(all.equal(totals[[f]]$total - r_policy, omega * (totals[[f]]$sleeve - r_bench))))
+ir <- function(a) mean(a) / stats::sd(a) * sqrt(12)
+te <- function(a) stats::sd(a) * sqrt(12)
+round(c(sleeve_TE = te(totals$selected$sleeve - r_bench), total_TE = te(totals$selected$total - r_policy),
+        ratio = te(totals$selected$total - r_policy) / te(totals$selected$sleeve - r_bench), omega = omega,
+        sleeve_IR = ir(totals$selected$sleeve - r_bench), total_IR = ir(totals$selected$total - r_policy)), 4)
+```
+
+The ratio of the two tracking errors is $\omega$ to four decimals and the two
+information ratios coincide: @eq-21-omega in the data rather than on the page.
+
+```{r}
+#| label: scores
+mdd <- function(r) PerformanceAnalytics::maxDrawdown(xts::xts(r, order.by = d[oos]))
+row_of <- function(level, basis, f, r, ref) tibble::tibble(
+  level = level, basis = basis, filler = f, !!!as.list(score(r, rf[oos])),
+  te = te(r - ref), ir = ir(r - ref), mdd = mdd(r))
+scores <- dplyr::bind_rows(lapply(fillers, function(f) dplyr::bind_rows(
+  row_of("sleeve", "gross", f, totals[[f]]$sleeve, r_bench),
+  row_of("total",  "gross", f, totals[[f]]$total, r_policy),
+  row_of("total",  "net",   f, totals[[f]]$total_net, r_policy))))
+se_ir <- function(a) sqrt((1 + (mean(a) / stats::sd(a))^2 / 2) / length(a)) * sqrt(12)   # eq-24-se
+```
+
+```{r}
+#| label: tbl-21-fill
+#| tbl-cap: "The equity budget filled three ways, out of sample from observation 121. The sleeve rows are the two-region equity sleeve against its benchmark; the total rows are the whole policy with that sleeve in it, against the policy. Sharpe ratios as the register defines them; tracking error and information ratio annualized; drawdown is the maximum."
+#| echo: false
+scores |>
+  dplyr::mutate(dplyr::across(c(ann_return, ann_vol, te, mdd), ~ sprintf("%.2f%%", 100 * .x)),
+                sharpe = sprintf("%.3f", sharpe),
+                ir = ifelse(filler == "benchmark", "", sprintf("%+.2f", ir)),
+                te = ifelse(filler == "benchmark", "", te)) |>
+  dplyr::select(level, basis, filler, ann_return, ann_vol, sharpe, te, ir, mdd) |>
+  kable(align = "lllrrrrrr",
+        col.names = c("level", "basis", "sleeve", "return", "volatility", "Sharpe",
+                      "TE", "IR", "max drawdown"))
+```
+
+```{r}
+#| label: fill-verdict
+#| include: false
+g_ <- function(level, basis, f, col) scores[[col]][scores$level == level & scores$basis == basis & scores$filler == f]
+sl_ir  <- vapply(fillers, function(f) g_("sleeve", "gross", f, "ir"), numeric(1))
+sl_vol <- vapply(fillers, function(f) g_("sleeve", "gross", f, "ann_vol"), numeric(1))
+sl_sr  <- vapply(fillers, function(f) g_("sleeve", "gross", f, "sharpe"), numeric(1))
+tot    <- function(col, basis = "gross") vapply(fillers, function(f) g_("total", basis, f, col), numeric(1))
+se_ew  <- se_ir(totals$`equal weight`$sleeve - r_bench)
+se_sel <- se_ir(totals$selected$sleeve - r_bench)
+stopifnot(abs(sl_ir[["equal weight"]] / se_ew) < 2, abs(sl_ir[["selected"]] / se_sel) < 2,
+          sl_vol[["selected"]] < sl_vol[["benchmark"]],
+          tot("ann_vol")[["selected"]] < tot("ann_vol")[["benchmark"]])
+# two Sharpe ratios on the same months: Jobson and Korkie's test with Memmel's correction, monthly units
+sr_m <- function(r) mean(r - rf[oos]) / stats::sd(r - rf[oos])
+memmel_z <- function(r1, r0) {
+  s1 <- sr_m(r1); s0 <- sr_m(r0); rho <- stats::cor(r1 - rf[oos], r0 - rf[oos])
+  (s1 - s0) / sqrt((2 - 2 * rho + (s1^2 + s0^2 - 2 * s1 * s0 * rho^2) / 2) / length(oos))
+}
+z_tot   <- vapply(c("equal weight", "selected"), function(f) memmel_z(totals[[f]]$total, r_policy), numeric(1))
+rho_tot <- vapply(c("equal weight", "selected"), function(f) stats::cor(totals[[f]]$total, r_policy), numeric(1))
+dd_trough <- d[oos][which.min(cumprod(1 + r_policy) / cummax(cumprod(1 + r_policy)))]
+trough_ep <- sim_episodes$label[vapply(sim_episodes$episode, function(e) in_episode(dd_trough, e), logical(1))]
+stopifnot(length(trough_ep) == 1L)
+```
+
+Read the sleeve rows first. Equal weighting earns an information ratio of
+`r sprintf("%+.2f", sl_ir[["equal weight"]])` against the benchmark over
+`r length(oos)` months, with a standard error by @eq-24-se of
+`r sprintf("%.2f", se_ew)`; the selected sleeve earns
+`r sprintf("%+.2f", sl_ir[["selected"]])` with a standard error of
+`r sprintf("%.2f", se_sel)`. Neither is two standard errors from zero, which
+@sec-24-benchmarks-and-active-risk-application said in advance about any
+ratio of this size at this length. What the selected sleeve did deliver is
+what it was built for: a volatility of
+`r sprintf("%.1f%%", 100 * sl_vol[["selected"]])` against the benchmark's
+`r sprintf("%.1f%%", 100 * sl_vol[["benchmark"]])`, a realized tracking error
+of `r sprintf("%.1f%%", 100 * g_("sleeve", "gross", "selected", "te"))` against
+the four percent budgeted, and a Sharpe ratio of
+`r sprintf("%.2f", sl_sr[["selected"]])` against
+`r sprintf("%.2f", sl_sr[["benchmark"]])`.
+
+Now the total rows. With the benchmark in the sleeve the total portfolio is
+the policy, at a Sharpe ratio of `r sprintf("%.3f", tot("sharpe")[["benchmark"]])`;
+with the equally weighted sleeve it reaches
+`r sprintf("%.3f", tot("sharpe")[["equal weight"]])`, with the selected sleeve
+`r sprintf("%.3f", tot("sharpe")[["selected"]])`, and the net rows sit within a
+hundredth of the gross ones because the sleeves turn over
+`r sprintf("%.0f%%", 100 * totals$selected$turnover)` and
+`r sprintf("%.0f%%", 100 * totals[["equal weight"]]$turnover)` a year at ten
+basis points, against the `r sprintf("%.0f%%", 100 * totals$benchmark$turnover)`
+the benchmark itself needs to track its weights. The two sleeves get there by
+different routes. Equal weighting adds return,
+`r sprintf("%.2f%%", 100 * tot("ann_return")[["equal weight"]])` against
+`r sprintf("%.2f%%", 100 * tot("ann_return")[["benchmark"]])`, at the policy's
+volatility; the selected sleeve adds nothing to return and takes the total's
+volatility from `r sprintf("%.2f%%", 100 * tot("ann_vol")[["benchmark"]])` to
+`r sprintf("%.2f%%", 100 * tot("ann_vol")[["selected"]])`, because $\omega$
+times a sleeve
+`r sprintf("%.1f", 100 * (sl_vol[["benchmark"]] - sl_vol[["selected"]]))` points
+less volatile than its benchmark is a policy about half a point less volatile.
+Its departures reach the policy at a tracking error of
+`r sprintf("%.1f%%", 100 * g_("total", "gross", "selected", "te"))`, against
+`r sprintf("%.1f%%", 100 * g_("total", "gross", "equal weight", "te"))` for
+the equally weighted sleeve.
+
+Against sampling error, none of this is established. The two totals are
+correlated with the policy at `r sprintf("%.3f", min(rho_tot))` or more, and
+the test for a difference between two Sharpe ratios of @jobson1981 with the
+correction of @memmel2003 uses that correlation; even so it gives
+$z = `r sprintf("%.2f", z_tot[["equal weight"]])`$ for the equally weighted
+total and $z = `r sprintf("%.2f", z_tot[["selected"]])`$ for the selected one,
+nearer the conventional threshold than the information ratios but on the same
+side of it. Selection survived the allocation in the sense @eq-21-omega
+allows: the information ratio is intact, active return and tracking error
+arrive scaled by $\omega$, and what the total portfolio registers most clearly
+is the sleeve's variance rather than its alpha, which `r length(oos)` months
+cannot distinguish from zero. The policy's largest drawdown bottoms in
+`r fmt_model(dd_trough)`, inside the `r trough_ep`, and the maximum drawdowns
+of the three totals lie within
+`r sprintf("%.1f", 100 * (max(tot("mdd")) - min(tot("mdd"))))` percentage
+points of one another.
+
+```{r}
+#| label: fig-21-active
+#| fig-cap: "Cumulative active return of the equally weighted and the selected sleeve, at the sleeve level against the benchmark and at the total level against the policy, out of sample. One frame, two panels; the lower panel is the upper one multiplied by the equity budget, which is eq-21-omega drawn."
+#| echo: false
+#| fig-asp: 0.62
+active <- dplyr::bind_rows(lapply(c("equal weight", "selected"), function(f) dplyr::bind_rows(
+  tibble::tibble(date = d[oos], sleeve = f, kind = "sleeve against benchmark",
+                 value = cumsum(totals[[f]]$sleeve - r_bench)),
+  tibble::tibble(date = d[oos], sleeve = f, kind = "total against policy",
+                 value = cumsum(totals[[f]]$total - r_policy)))))
+stopifnot(nrow(active) == 4L * length(oos))
+
+ggplot2::ggplot(active, ggplot2::aes(date, value, colour = sleeve)) +
+  ggplot2::geom_hline(yintercept = 0, linewidth = 0.25, colour = tidyaa_colors[["rule"]]) +
+  ggplot2::geom_line(linewidth = 0.6) +
+  ggplot2::facet_wrap(~ kind, ncol = 1, scales = "free_y") +
+  scale_colour_tidyaa() +
+  scale_x_model() +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  ggplot2::labs(y = "cumulative active return", colour = NULL)
+```
+
+@fig-21-active is the chapter in one picture: two panels of the same shape
+and different scales, because the total's active return is the sleeve's times
+$\omega$ month by month. The sleeve manager's record is the upper panel; the
+investor who owns the policy lives in the lower one, where the breadth
+@eq-24-law promised has been divided by the budget
+@sec-15-hierarchical-allocation-application set. That is the arithmetic a
+sleeve is hired under, and @sec-22-fixed-income-sleeve-theory meets it with a
+duration in place of a characteristic. Whether a sleeve's information ratio is
+real is a question for @eq-24-se and the register of
+@sec-25-backtesting-application; what reaches the total is a question for
+$\omega$, and @sec-23-rebalancing-application prices the trading it costs.
+
+## Key Takeaways {.unnumbered}
+
+- A sleeve's benchmark is the class series it sits inside, which reproduces
+  from the instruments to machine precision with a one-week lag on the
+  capitalization weights, and the sleeve is judged against it under a
+  tracking-error budget [@grinold2000; @roll1992].
+- Inside an allocation a sleeve's active return and tracking error scale by
+  its budget $\omega$ and its information ratio does not, by @eq-21-omega;
+  @eq-21-treynor-black bounds what the total Sharpe ratio can gain
+  [@treynor1973].
+- On this market the size sort is present and momentum is absent by
+  construction, because each name's idiosyncratic component is drawn
+  independently; value cannot be built for want of fundamentals. Equal
+  weighting is a size tilt and a contrarian rule at once [@plyakha2021].
+- One hundred and twenty-three names make the sample covariance singular on
+  any window shorter than one hundred and twenty-four months; the sleeve needs
+  shrinkage or the factor structure of @eq-21-factor-cov. Out of sample the
+  factor matrices give the lowest volatility and the shrinkage matrix the
+  highest Sharpe ratio [@ledoit2004; @bai2002].
+- A cardinality limit is dropped silently on the variance path and honored on
+  the ES path; a cap per name is the convex substitute. The tracking-error
+  budget is the one-parameter family @eq-21-family, and a sub-portfolio in
+  `mult.portfolio.spec()` can carry its own covariance estimator but not the
+  budget.
+
+## Exercises {.unnumbered}
+
+1. Repeat the United States sleeve of @sec-21-equity-sleeve-implementation
+   with tracking-error budgets of two, four and eight percent, re-estimated
+   monthly as in the application. Report realized tracking error, information
+   ratio and volatility for each, and say whether the realized tracking error
+   stays inside the budget and why it might not.
+2. Change the momentum signal to the return over months $t-6$ to $t-2$, sort
+   into quintiles, and recompute @tbl-21-sorts. Does momentum appear at any
+   horizon or granularity on this market, and what would its appearance have
+   to mean given how the instruments are modeled?
+3. The equally weighted sleeve rebalances monthly. Rebalance it annually
+   instead, compute its turnover and net Sharpe ratio against the monthly
+   version, and attribute the difference between the two to the size tilt and
+   to the rebalancing, in the manner of @plyakha2021.
+4. Estimate the appraisal ratio of the equally weighted United States sleeve
+   against its benchmark and the sleeve weight $\omega^{*}$ that
+   @eq-21-treynor-black would assign it. Compare $\omega^{*}$ with the policy's
+   equity budget and explain what the comparison does and does not say.

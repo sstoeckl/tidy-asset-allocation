@@ -1,0 +1,233 @@
+---
+metadata:
+  pagetitle: "Proofs"
+  description-meta: "Derivations deferred from the main text: the mean-variance frontier, its two anchor portfolios, and two-fund separation."
+---
+
+# Proofs {#sec-91-proofs}
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+```
+
+Parts II to IV state results and show what they do to a portfolio. The
+derivations behind them are collected here. Part VIII derives in place and
+contributes nothing to this appendix.
+
+Throughout, $\boldsymbol{\mu}$ is the vector of expected excess returns,
+$\boldsymbol{\Sigma}$ the covariance matrix of those excess returns, assumed
+positive definite, $\boldsymbol{\iota}$ a vector of ones, and $\boldsymbol{w}$
+the vector of portfolio weights. Three scalars recur:
+
+$$
+A = \boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\iota},
+\qquad
+B = \boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu},
+\qquad
+C = \boldsymbol{\mu}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu},
+\qquad
+D = AC - B^2 .
+$$ {#eq-91-scalars}
+
+$A$ and $C$ are positive because $\boldsymbol{\Sigma}^{-1}$ is positive definite,
+and $D > 0$ whenever $\boldsymbol{\mu}$ is not proportional to
+$\boldsymbol{\iota}$, by the Cauchy-Schwarz inequality applied in the inner
+product induced by $\boldsymbol{\Sigma}^{-1}$. If every asset has the same
+expected return then $D = 0$, the frontier collapses to a single point, and the
+problem below has no interior solution. These results are due to @merton1972.
+
+## The Minimum-Variance Portfolio {#sec-91-proofs-mv-weights}
+
+**Claim.** The fully invested portfolio of least variance is
+
+$$
+\boldsymbol{w}_{\text{mv}}
+= \frac{\boldsymbol{\Sigma}^{-1}\boldsymbol{\iota}}{A},
+\qquad \text{with variance} \qquad
+\sigma^2_{\text{mv}} = \frac{1}{A}.
+$$
+
+**Proof.** Minimize $\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$ subject to
+$\boldsymbol{w}'\boldsymbol{\iota} = 1$. With multiplier $2\lambda$ the
+Lagrangian is
+
+$$
+\mathcal{L} = \boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}
+  - 2\lambda\left(\boldsymbol{w}'\boldsymbol{\iota} - 1\right),
+$$
+
+and the first-order condition is
+$2\boldsymbol{\Sigma}\boldsymbol{w} - 2\lambda\boldsymbol{\iota} = \boldsymbol{0}$,
+so $\boldsymbol{w} = \lambda\boldsymbol{\Sigma}^{-1}\boldsymbol{\iota}$.
+Imposing the budget constraint gives
+$\lambda\,\boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\iota} = \lambda A = 1$,
+hence $\lambda = 1/A$ and the stated weights. The objective is strictly convex, so
+the stationary point is the unique minimum. Its variance is
+$\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w} = \lambda^2 A = 1/A$. $\square$
+
+The vector $\boldsymbol{\mu}$ does not appear. This is the property that makes
+the minimum-variance portfolio the most stable point on the frontier in practice,
+since it is exactly the input that is estimated worst.
+
+## The Frontier {#sec-91-proofs-frontier}
+
+**Claim.** The least variance attainable at expected excess return $\bar{\mu}$ is
+
+$$
+\sigma^2(\bar{\mu}) = \frac{A\bar{\mu}^2 - 2B\bar{\mu} + C}{D}.
+$$
+
+**Proof.** Minimize $\tfrac{1}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$
+subject to $\boldsymbol{w}'\boldsymbol{\mu} = \bar{\mu}$ and
+$\boldsymbol{w}'\boldsymbol{\iota} = 1$. The first-order condition is
+$\boldsymbol{\Sigma}\boldsymbol{w} = \lambda\boldsymbol{\mu} + \gamma\boldsymbol{\iota}$,
+so that
+
+$$
+\boldsymbol{w} = \boldsymbol{\Sigma}^{-1}
+  \left(\lambda\boldsymbol{\mu} + \gamma\boldsymbol{\iota}\right).
+$$ {#eq-91-frontier-weights}
+
+Substituting into the two constraints gives the linear system
+
+$$
+\begin{pmatrix} C & B \\ B & A \end{pmatrix}
+\begin{pmatrix} \lambda \\ \gamma \end{pmatrix}
+=
+\begin{pmatrix} \bar{\mu} \\ 1 \end{pmatrix},
+\qquad \text{so} \qquad
+\lambda = \frac{A\bar{\mu} - B}{D},
+\quad
+\gamma = \frac{C - B\bar{\mu}}{D}.
+$$
+
+The variance follows from @eq-91-frontier-weights:
+
+$$
+\sigma^2
+= \boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}
+= \boldsymbol{w}'\left(\lambda\boldsymbol{\mu} + \gamma\boldsymbol{\iota}\right)
+= \lambda\bar{\mu} + \gamma
+= \frac{A\bar{\mu}^2 - B\bar{\mu} + C - B\bar{\mu}}{D}
+= \frac{A\bar{\mu}^2 - 2B\bar{\mu} + C}{D}. \qquad \square
+$$
+
+The expression is a parabola in $(\sigma^2, \bar{\mu})$ space and a hyperbola in
+$(\sigma, \bar{\mu})$ space. Differentiating, $\sigma^2$ is minimized at
+$\bar{\mu} = B/A$, where it equals
+
+$$
+\frac{A(B/A)^2 - 2B(B/A) + C}{D} = \frac{C - B^2/A}{D} = \frac{1}{A},
+$$
+
+recovering the minimum-variance portfolio of the previous section as the vertex.
+
+## The Tangency Portfolio {#sec-91-proofs-tangency}
+
+**Claim.** With returns measured in excess of the risk-free rate, the fully
+invested portfolio of maximum Sharpe ratio is
+
+$$
+\boldsymbol{w}_{\text{tan}}
+= \frac{\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}}{B},
+\qquad \text{attaining} \qquad
+\max_{\boldsymbol{w}} \frac{\boldsymbol{w}'\boldsymbol{\mu}}
+  {\sqrt{\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}}} = \sqrt{C}.
+$$
+
+**Proof.** The Sharpe ratio
+$S(\boldsymbol{w}) = \boldsymbol{w}'\boldsymbol{\mu} /
+(\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w})^{1/2}$
+is homogeneous of degree zero: $S(c\boldsymbol{w}) = S(\boldsymbol{w})$ for any
+$c > 0$. The budget constraint therefore fixes only the scale, not the direction,
+and we may maximize without it and rescale afterwards. Differentiating,
+
+$$
+\frac{\partial S}{\partial \boldsymbol{w}}
+= \frac{\boldsymbol{\mu}}{(\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w})^{1/2}}
+- \frac{(\boldsymbol{w}'\boldsymbol{\mu})\,\boldsymbol{\Sigma}\boldsymbol{w}}
+       {(\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w})^{3/2}}
+= \boldsymbol{0}
+\quad\Longrightarrow\quad
+\boldsymbol{\mu} = \frac{\boldsymbol{w}'\boldsymbol{\mu}}
+  {\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}}\,
+  \boldsymbol{\Sigma}\boldsymbol{w},
+$$
+
+so $\boldsymbol{w} \propto \boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$. Rescaling so
+that the weights sum to one divides by
+$\boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu} = B$. Evaluating the
+ratio at this point gives
+$S^2 = (\boldsymbol{\mu}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu})^2 /
+(\boldsymbol{\mu}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\Sigma}\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu})
+= C$. $\square$
+
+Two consequences are worth noting. The solution requires $B \neq 0$; if
+$\boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu} = 0$ no fully
+invested tangency portfolio exists, and the ray from the risk-free rate is
+asymptotic to the frontier rather than touching it. And $\boldsymbol{\mu}$ enters
+premultiplied by $\boldsymbol{\Sigma}^{-1}$, which is the algebraic source of the
+instability documented by @best1991: when $\boldsymbol{\Sigma}$ is close to
+singular, $\boldsymbol{\Sigma}^{-1}$ is large, and small changes in estimated
+means produce large changes in weights.
+
+## Two-Fund Separation {#sec-91-proofs-two-fund}
+
+**Claim.** Every frontier portfolio is a linear combination of the
+minimum-variance portfolio and the tangency portfolio. Consequently any two
+distinct frontier portfolios span the entire frontier.
+
+**Proof.** From @eq-91-frontier-weights, every frontier portfolio has the form
+$\boldsymbol{w} = \lambda\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}
++ \gamma\boldsymbol{\Sigma}^{-1}\boldsymbol{\iota}$,
+a linear combination of the two vectors
+$\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$ and
+$\boldsymbol{\Sigma}^{-1}\boldsymbol{\iota}$. These are, up to scale, the
+tangency and minimum-variance portfolios. The frontier is therefore a
+two-dimensional affine family, and any two distinct members with different
+expected returns form a basis for it. $\square$
+
+When a risk-free asset is available, @tobin1958 sharpens this. An investor
+maximizing $\boldsymbol{w}'\boldsymbol{\mu} -
+\tfrac{\gamma}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$ with the
+remainder held in cash has first-order condition
+$\boldsymbol{\mu} = \gamma\boldsymbol{\Sigma}\boldsymbol{w}$, so
+$\boldsymbol{w} = \gamma^{-1}\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$. Risk
+aversion changes only the scale of the risky holding, never its composition.
+Every investor holds the same risky portfolio, which is what allows @sharpe1964
+to aggregate individual choices into a market equilibrium.
+
+## Quadratic Utility and the Mean-Variance Problem {#sec-91-proofs-quadratic-utility}
+
+**Claim.** Maximizing $\boldsymbol{w}'\boldsymbol{\mu} -
+\tfrac{\gamma}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$ over
+$\boldsymbol{w}$ traces the same frontier as @eq-09-problem as $\gamma$ varies
+over $(0, \infty)$.
+
+**Proof.** The first-order condition of the unconstrained problem is
+$\boldsymbol{\mu} - \gamma\boldsymbol{\Sigma}\boldsymbol{w} = \boldsymbol{0}$,
+giving $\boldsymbol{w} = \gamma^{-1}\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$.
+Under the budget constraint the same Lagrangian argument as in the previous
+section yields
+$\boldsymbol{w} = \boldsymbol{\Sigma}^{-1}(\gamma^{-1}\boldsymbol{\mu}
++ \gamma_0\boldsymbol{\iota})$ for a multiplier $\gamma_0$, which is
+@eq-91-frontier-weights with $\lambda = \gamma^{-1}$. Each $\gamma$ therefore
+selects one frontier point, and the map from $\gamma$ to $\bar{\mu}$ is
+monotone. $\square$
+
+::: {.callout-warning}
+## The risk-aversion argument in `PortfolioAnalytics` is $\gamma/2$, not $\gamma$
+
+This matters whenever a result is compared against a textbook formula. The
+package's quadratic utility objective builds
+$\boldsymbol{Q} = 2\lambda\boldsymbol{\Sigma}$ and hands it to `ROI`, whose
+quadratic program is stated as $\tfrac{1}{2}\boldsymbol{x}'\boldsymbol{Q}\boldsymbol{x}$.
+The factors do not cancel: the effective coefficient on
+$\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$ is $\lambda$, whereas the
+convention above puts $\gamma/2$ there. Setting `risk_aversion = 2` therefore
+solves the problem a textbook would write with $\gamma = 4$. Verified by
+numerical fit, where the ratio is exactly 2.000 at every level tested. The
+behavior is undocumented upstream and is recorded in @sec-93-package-notes.
+:::

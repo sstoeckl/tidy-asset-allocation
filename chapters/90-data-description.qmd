@@ -1,0 +1,434 @@
+---
+metadata:
+  pagetitle: "Data Description"
+  description-meta: "Every series in the modeled market: construction, units, coverage and known limitations."
+---
+
+# Data Description {#sec-90-data-description}
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+This appendix documents the modeled market in full. Chapter 2
+(@sec-02-notation-and-data-simulated-market) introduces it and says why the book
+runs on it; chapter 4 (@sec-04-descriptive-analysis-implementation) measures its
+properties. Here we record what each shipped object contains, how it was
+constructed, and what it cannot support. Everything below is computed from the
+objects as they ship in `tidypm`, so the appendix cannot drift from the data.
+
+The dataset is modeled and contains no real data. Factor models for government
+bonds, credit, equities and commodities were estimated by historical simulation
+on market data from 1992 to 2022; the factors were replayed, the idiosyncratic
+components drawn afresh, and the asset paths reassembled, so that no series is
+the history of a real security. The market therefore runs on its own calendar,
+model years
+`r paste(model_year(range(sim_class_returns_monthly$date)), collapse = " to ")`,
+read with the tools of @sec-02-notation-and-data-model-calendar. Its stress
+episodes are named for what happens in them and ship as `sim_episodes`. And
+because every series is the output of a factor model, the market can be re-run
+with its factors shocked, which a history cannot, and
+@sec-965-scenario-analysis does so.
+
+```{r}
+#| label: objects
+objects <- c("sim_assets",
+             "sim_class_returns_monthly", "sim_class_returns_weekly",
+             "sim_money_market_monthly", "sim_money_market_weekly",
+             "sim_asset_returns_monthly", "sim_asset_returns_weekly",
+             "sim_riskfree_monthly", "sim_riskfree_weekly",
+             "sim_fx_monthly", "sim_fx_weekly",
+             "sim_curve_weekly", "sim_marketcap_weekly",
+             "sim_esg_changes_quarterly", "sim_episodes")
+# The model years an object covers, from whichever date columns it carries.
+years_of <- function(o) {
+  x <- get(o)
+  d <- do.call(c, unname(as.list(x[intersect(names(x), c("date", "start", "end"))])))
+  if (is.null(d)) return("")
+  paste(model_year(range(d)), collapse = " to ")
+}
+inventory <- tibble::tibble(
+  object  = objects,
+  rows    = vapply(objects, function(o) nrow(get(o)), integer(1)),
+  years   = vapply(objects, years_of, character(1)),
+  columns = vapply(objects, function(o) paste(names(get(o)), collapse = ", "),
+                   character(1))
+)
+first_week <- min(sim_class_returns_weekly$date)
+stopifnot(all(inventory$years[grepl("returns|money_market|fx", objects)] == "1 to 31"),
+          first_week - min(sim_riskfree_weekly$date) == 7,
+          first_week - min(sim_curve_weekly$date) == 7,
+          min(sim_marketcap_weekly$date) < first_week - 7,
+          max(sim_marketcap_weekly$date) > max(sim_class_returns_weekly$date))
+inventory |>
+  kable(align = "lrrl", col.names = c("object", "rows", "model years", "columns"))
+```
+
+The return tables and the exchange rates cover model years 1 to 31 exactly. The
+weekly bill and the curve start one week before the first weekly return, and
+the capitalizations extend past both ends of the sample, so that a lagged
+capitalization exists for the first return.
+
+## Class Series {#sec-90-data-description-class-series}
+
+The allocation universe is the sixteen risky class series in
+`sim_class_returns_monthly`: five currencies, each with a government bond, a
+credit and an equity series, plus one global commodity index. The five
+money-market series ship beside them in `sim_money_market_monthly` and are not
+part of the universe, for the reason given in
+@sec-02-notation-and-data-vocabulary. Both tables carry `date`, `class`,
+`return` (a simple total return in decimal) and `index` (a total-return index
+with base 100 one period before the first observation).
+
+```{r}
+#| label: class-panel
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+M  <- as_xts_pm(sim_money_market_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+d  <- zoo::index(R)
+stopifnot(ncol(R) == 16L, ncol(M) == 5L,
+          identical(d, zoo::index(M)),
+          all(d == sim_riskfree_monthly$date))
+
+# The index is the compounded return series, in both tables.
+rebuilt <- dplyr::bind_rows(sim_class_returns_monthly, sim_money_market_monthly) |>
+  dplyr::group_by(class) |>
+  dplyr::arrange(date, .by_group = TRUE) |>
+  dplyr::mutate(rebuilt = 100 * cumprod(1 + return)) |>
+  dplyr::ungroup()
+stopifnot(max(abs(rebuilt$rebuilt - rebuilt$index)) < 1e-8)
+
+c(months = nrow(R), first_model_year = min(model_year(d)),
+  last_model_year = max(model_year(d)))
+```
+
+```{r}
+#| label: tbl-90-classes
+#| tbl-cap: "The sixteen risky class series and the five money markets, annualized from monthly data over the full sample. Sharpe ratios are over the Treasury bill."
+#| echo: false
+ann_ret <- function(x) prod(1 + x)^(12 / length(x)) - 1
+ann_vol <- function(x) stats::sd(x) * sqrt(12)
+rf_ann  <- ann_ret(rf)
+describe <- function(X, role) {
+  tibble::tibble(
+    series = colnames(X),
+    role   = role,
+    region = sub("_.*$", "", colnames(X)),
+    class  = sub("^[A-Z]+_", "", colnames(X)),
+    ret    = apply(X, 2, ann_ret),
+    vol    = apply(X, 2, ann_vol),
+    sharpe = (ret - rf_ann) / vol,
+    maxdd  = apply(X, 2, function(x) { i <- cumprod(1 + x); min(i / cummax(i)) - 1 })
+  )
+}
+classes <- dplyr::bind_rows(describe(R, "universe"), describe(M, "beside it")) |>
+  dplyr::arrange(role, class, region)
+classes |>
+  dplyr::mutate(dplyr::across(c(ret, vol, maxdd), ~ sprintf("%.1f%%", 100 * .x)),
+                sharpe = sprintf("%.2f", sharpe)) |>
+  dplyr::select(series, role, ret, vol, sharpe, maxdd) |>
+  kable(align = "llrrrr",
+        col.names = c("", "", "return", "volatility", "Sharpe", "max drawdown"))
+```
+
+**Weighting.** Equity class series are value-weighted on the market
+capitalization of the *previous* weekly observation, so no portfolio is formed
+with information it could not have had; government, credit, money-market and
+commodity series are equally weighted across their instruments, because no
+capitalization exists for them. The portfolio is rebalanced weekly, and the
+monthly return is the compounded weekly one, so the monthly series is a
+weekly-rebalanced portfolio observed at month ends rather than a
+monthly-rebalanced one.
+
+**The money market is a duration asset.** Each `*_money_market` series is the
+0.25-year point on a Nelson–Siegel curve fitted to 2-, 5- and 10-year yields,
+marked to market. The US series tracks the bill closely but is not the bill:
+
+```{r}
+#| label: money-market
+mm <- as.numeric(M[, "US_money_market"])
+c(mm_negative_months   = mean(mm < 0),
+  bill_negative_months = mean(rf < 0),
+  correlation          = stats::cor(mm, rf))
+```
+
+Abroad, a three-month instrument has almost no duration, so unhedged in dollars
+it is close to a pure currency position:
+
+```{r}
+#| label: money-market-fx
+vapply(c("EU", "UK", "CH", "JP"), function(rg) {
+  fx <- sim_fx_monthly[sim_fx_monthly$region == rg, ]
+  stats::cor(as.numeric(M[, paste0(rg, "_money_market")]),
+             fx$fx_return[match(zoo::index(M), fx$date)])
+}, numeric(1))
+```
+
+**Episodes.** Four stress episodes are kept apart throughout the book because
+they are economically different. They ship as `sim_episodes`, each named for
+what happens in it, and `in_episode()` selects the dates of one, so that no
+chapter types a window (@sec-02-notation-and-data-model-calendar).
+
+```{r}
+#| label: tbl-90-episode-windows
+#| tbl-cap: "The four named episodes of `sim_episodes` on the model calendar. Each window is a closed interval of dates; the count is of monthly observations."
+#| echo: false
+ep <- sim_episodes
+ep_months <- vapply(ep$episode, function(e) sum(in_episode(d, e)), integer(1))
+stopifnot(all(ep_months > 0), all(ep$start < ep$end))
+tibble::tibble(key         = paste0("`", ep$episode, "`"),
+               label       = ep$label,
+               from        = fmt_model(ep$start),
+               to          = fmt_model(ep$end),
+               months      = ep_months,
+               description = ep$description) |>
+  kable(align = "llllrl")
+```
+
+@tbl-90-episodes gives the cumulative return of every class through each
+episode, compounded over the months `in_episode()` selects.
+
+```{r}
+#| label: tbl-90-episodes
+#| tbl-cap: "Cumulative returns of the sixteen class series through the four episodes of `sim_episodes`, in dollars and unhedged."
+#| echo: false
+cum <- vapply(ep$episode, function(e) {
+  apply(R[in_episode(d, e), ], 2, function(x) prod(1 + x) - 1)
+}, numeric(ncol(R)))
+stopifnot(identical(rownames(cum), colnames(R)), identical(colnames(cum), ep$episode))
+
+universe <- classes$series[classes$role == "universe"]     # the order of the table above
+stopifnot(setequal(universe, rownames(cum)))
+cum <- cum[universe, ]
+
+kind_of <- sub("^[A-Z]+_", "", rownames(cum))
+falls   <- function(kind, e) sum(cum[kind_of == kind, e] < 0)
+label   <- setNames(ep$label, ep$episode)
+n2w     <- xfun::numbers_to_words                        # counts as words in the text
+# What the sentences below the table take for granted.
+stopifnot(falls("equity", "equity_bear") == 5L, falls("equity", "credit_crisis") == 5L,
+          falls("equity", "liquidity_shock") == 5L, falls("credit", "liquidity_shock") == 5L,
+          falls("government", "rates_shock") == 5L, falls("credit", "rates_shock") == 5L,
+          cum["US_government", "credit_crisis"] > 0,
+          cum["GLOBAL_commodity", "rates_shock"] > 0)
+
+tibble::as_tibble(cum, rownames = "series") |>
+  dplyr::mutate(dplyr::across(-series, ~ sprintf("%+.1f%%", 100 * .x))) |>
+  kable(align = "lrrrr", col.names = c("", ep$label))
+```
+
+Every figure is in dollars and unhedged, so a foreign class carries its
+currency's move with it. In the `r label[["equity_bear"]]` all five equity
+classes fall, the worst by
+`r sprintf("%.0f%%", -100 * min(cum[kind_of == "equity", "equity_bear"]))`,
+while `r n2w(5 - falls("government", "equity_bear"))` of the five government
+classes gain. In the `r label[["credit_crisis"]]` all five equity classes and
+`r n2w(falls("credit", "credit_crisis"))` of the five credit classes fall, and
+`US_government` gains
+`r sprintf("%.0f%%", 100 * cum["US_government", "credit_crisis"])`. The
+`r label[["liquidity_shock"]]` lasts `r n2w(ep_months[["liquidity_shock"]])`
+months, in which every equity and credit class and
+`r n2w(sum(cum[, "liquidity_shock"] < 0))` of the sixteen classes in all fall.
+In the `r label[["rates_shock"]]` every government and credit class falls,
+together with `r n2w(falls("equity", "rates_shock"))` of the five equity
+classes, and the commodity index gains
+`r sprintf("%.0f%%", 100 * cum["GLOBAL_commodity", "rates_shock"])`.
+
+## Instrument Series {#sec-90-data-description-instruments}
+
+`sim_asset_returns_monthly` and `sim_asset_returns_weekly` hold the same market
+at instrument level, one column per `asset`, and `sim_assets` describes each
+instrument.
+
+```{r}
+#| label: tbl-90-instruments
+#| tbl-cap: "Instruments by region and asset class."
+#| echo: false
+sim_assets |>
+  dplyr::count(region, asset_class) |>
+  tidyr::pivot_wider(names_from = asset_class, values_from = n, values_fill = 0L) |>
+  dplyr::select(region, equity, government, credit, money_market, commodity) |>
+  kable(align = "lrrrrr")
+```
+
+```{r}
+#| label: instrument-panel
+Ra <- as_xts_pm(sim_asset_returns_monthly, date, asset, return)
+stopifnot(ncol(Ra) == nrow(sim_assets), !anyNA(Ra),
+          setequal(colnames(Ra), sim_assets$asset_id))
+dim(Ra)
+```
+
+Identifiers are anonymized (`US_EQU_01`, `EU_CRE_03`, `GLOBAL_CMD_02`): a
+region, an asset class and a running number. Government bonds are
+zero-coupon instruments held at constant maturities of 2, 5 and 10 years; credit
+is the same three maturities in two grades (`credit_grade` is `IG` or `HY`); the
+money-market instrument is the 0.25-year point on the regional curve; the eight
+commodities are a broad index plus gold, energy, precious metals, silver,
+agriculture, industrial metals and a crypto series. Equities carry a `sector`.
+
+```{r}
+#| label: tbl-90-sectors
+#| tbl-cap: "Equity instruments by sector."
+#| echo: false
+sim_assets |>
+  dplyr::filter(asset_class == "equity") |>
+  dplyr::count(sector, name = "instruments") |>
+  dplyr::arrange(dplyr::desc(instruments)) |>
+  kable(align = "lr")
+```
+
+**Conditioning.** Three maturities per region are priced off a three-factor
+curve, and the two credit grades at each maturity share one credit factor, so
+some bond combinations are near-exact replicas of others. The instrument-level
+covariance is therefore close to singular, which is why every instrument-level
+optimization in Part VI needs a constraint or a shrinkage estimator
+(@sec-07-covariance-matrix-theory, @sec-21-equity-sleeve-theory).
+
+```{r}
+#| label: conditioning
+ev  <- eigen(stats::cov(Ra), symmetric = TRUE, only.values = TRUE)$values
+ev16 <- eigen(stats::cov(R), symmetric = TRUE, only.values = TRUE)$values
+condition <- c(instruments_log10_condition = log10(max(ev) / min(ev)),
+               classes_log10_condition     = log10(max(ev16) / min(ev16)))
+stopifnot(min(ev) > 0)                # positive definite, but only just
+condition
+```
+
+## Risk-Free Rate and Exchange Rates {#sec-90-data-description-rates}
+
+`sim_riskfree_monthly` and `sim_riskfree_weekly` are a three-month Treasury
+bill carried onto the model's grid: `rate_annual` is the quoted annual rate and
+`return` the simple return over one period. The bill enters the model as an
+input, and it is the risk-free rate everywhere in the book
+(@sec-03-return-risk-and-the-investor-theory).
+
+```{r}
+#| label: bill
+c(annualized = ann_ret(rf), negative_months = sum(rf < 0),
+  min_rate = min(sim_riskfree_monthly$rate_annual),
+  max_rate = max(sim_riskfree_monthly$rate_annual))
+```
+
+`sim_fx_monthly` and `sim_fx_weekly` hold, for the four non-US regions, the
+value of one unit of local currency in dollars (`rate`, weekly only) and its
+return `fx_return`. Like the bill, the exchange rates enter the model as
+inputs. The quote direction matters: a positive `fx_return` means
+the local currency appreciated against the dollar, which is a gain for an
+unhedged dollar investor holding the local asset. Subtracting `fx_return` from
+an unhedged local return gives the hedged return, which is how the book hedges
+(@sec-04-descriptive-analysis-application).
+
+```{r}
+#| label: fx
+sim_fx_monthly |>
+  dplyr::group_by(region) |>
+  dplyr::summarise(ann_vol = ann_vol(fx_return),
+                   ann_return = ann_ret(fx_return), .groups = "drop")
+```
+
+`sim_curve_weekly` holds the drivers of the bond block: Nelson–Siegel level,
+slope and curvature for each region, plus an investment-grade and a high-yield
+credit spread per region. Chapter 22 (@sec-22-fixed-income-sleeve-theory)
+decomposes bond returns on them.
+
+```{r}
+#| label: curve
+sort(unique(sim_curve_weekly$series))
+```
+
+`sim_marketcap_weekly` holds the market capitalization of the
+`r dplyr::n_distinct(sim_marketcap_weekly$asset)` equities on the weekly grid,
+which is what a capitalization-weighted benchmark needs
+(@sec-24-benchmarks-and-active-risk-application, @sec-21-equity-sleeve-implementation).
+
+`sim_esg_changes_quarterly` holds changes in an ESG rating of the equities: the
+quarter end (`date`), the instrument (`asset`) and an integer `esg_change`. It
+carries changes only, no starting level, and the changes have no effect on the
+returns.
+
+```{r}
+#| label: esg
+esg <- sim_esg_changes_quarterly
+stopifnot(all(esg$asset %in% sim_assets$asset_id[sim_assets$asset_class == "equity"]))
+c(changes = nrow(esg), equities = dplyr::n_distinct(esg$asset),
+  quarters = dplyr::n_distinct(esg$date),
+  first_model_year = min(model_year(esg$date)),
+  last_model_year = max(model_year(esg$date)),
+  smallest = min(esg$esg_change), largest = max(esg$esg_change),
+  share_upgrades = round(mean(esg$esg_change > 0), 2))
+```
+
+## Known Limitations {#sec-90-data-description-limitations}
+
+The dataset is frozen at version 6.2.0. The idiosyncratic components of every
+instrument are one draw, so a regenerated export is a different realized path
+rather than an update, and every number in this book is pinned to this one. The
+limitations below are properties of the model and are stated rather than
+repaired.
+
+```{r}
+#| label: limitations
+equity_ids <- sim_assets$asset_id[sim_assets$asset_class == "equity"]
+equity_vol <- stats::quantile(apply(Ra[, equity_ids], 2, ann_vol), c(0.25, 0.5, 0.75))
+
+overlay    <- 0.03
+overlay_se <- overlay / (ann_vol(as.numeric(R[, "EU_equity"])) / sqrt(nrow(R) / 12))
+
+# Share of variance the currency hedge removes from each foreign bond class.
+foreign_bonds <- grep("^(UK|EU|CH|JP)_(government|credit)$", colnames(R), value = TRUE)
+hedge_share <- vapply(foreign_bonds, function(s) {
+  fx <- sim_fx_monthly[sim_fx_monthly$region == sub("_.*$", "", s), ]
+  stopifnot(all(fx$date == d))
+  u <- as.numeric(R[, s])
+  1 - stats::var(u - fx$fx_return) / stats::var(u)
+}, numeric(1))
+stopifnot(overlay_se < 1, length(foreign_bonds) == 8L, all(hedge_share > 0.5))
+
+round(c(equity_vol, overlay_in_se = overlay_se,
+        hedge_share_min = min(hedge_share), hedge_share_max = max(hedge_share)), 2)
+```
+
+- **One realized path.** The factor paths are fixed; only the idiosyncratic
+  components are drawn. The market as shipped is one path, not a distribution
+  over paths: its factors can be shocked (@sec-965-scenario-analysis), but the
+  data hold no second draw of them.
+- **The euro-area equity overlay.** Every euro-area equity carries an
+  expected-return overlay of three percentage points a year, added as a
+  constant weekly drift. It is a stated capital-market assumption,
+  `r sprintf("%.1f", overlay_se)` standard errors of the sample mean, made so
+  that the class is not excluded by every mean-variance optimizer on the
+  sample. No other series carries one.
+- **Single securities.** The equity series are individual securities with a
+  median volatility of `r sprintf("%.0f", 100 * equity_vol[["50%"]])` percent,
+  half of them between `r sprintf("%.0f", 100 * equity_vol[["25%"]])` and
+  `r sprintf("%.0f", 100 * equity_vol[["75%"]])` percent, and their
+  idiosyncratic components are drawn independently. A portfolio of them
+  diversifies more readily than a real index would.
+- **Currency.** Everything is in dollars, unhedged. For a non-US bond the
+  currency is the larger part of the risk, between
+  `r sprintf("%.0f", 100 * min(hedge_share))` and
+  `r sprintf("%.0f", 100 * max(hedge_share))` percent of the variance of the
+  `r n2w(length(foreign_bonds))` foreign bond classes, and `sim_fx_*` exists so
+  that the hedged position can always be formed.
+- **Near rank deficiency.** The bond block is nearly rank-deficient at
+  instrument level: the covariance matrix of the `r ncol(Ra)` instruments has
+  a condition number of
+  $10^{`r sprintf("%.1f", condition[["instruments_log10_condition"]])`}$.
+  Unconstrained mean-variance on all of them produces nonsense, which is worth
+  demonstrating rather than preventing.
+- **Derived Swiss credit.** No Swiss credit series with usable history exists,
+  so the Swiss credit loadings are derived from the other regions rather than
+  measured.
+- **No fundamentals, no ESG levels.** The dataset carries no firm fundamentals,
+  and of ESG ratings only the `r nrow(esg)` changes of
+  `sim_esg_changes_quarterly`, not the levels, so cumulating them gives a
+  rating up to an unknown constant. Chapter 20 (@sec-20-sustainability-theory)
+  and the value-factor material of Part VI therefore work with what returns,
+  capitalizations and rating changes can support.
+- **Nominal only.** There is no inflation series; the book works in nominal
+  dollars throughout (@sec-03-return-risk-and-the-investor-theory).

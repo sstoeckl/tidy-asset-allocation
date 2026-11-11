@@ -1,0 +1,179 @@
+---
+metadata:
+  pagetitle: "Preface"
+  description-meta: "Why this book exists, who it is for, and how the chapters are built."
+---
+
+# Preface {.unnumbered}
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+```
+
+## Why this book exists {.unnumbered}
+
+Asset allocation is taught as a small set of ideas — a frontier, a risk
+measure, a constraint, a backtest — and practiced as a long chain of decisions
+about data, estimation, solvers and costs, in which the ideas are the shortest
+links. The gap between the two is where most of the difficulty lives. A
+student who can derive the tangency portfolio on paper is often unable to
+produce it from a return matrix, not because the mathematics is hard but
+because the implementation asks questions the derivation never did: in excess
+of what rate, on which window, under which constraint, with which solver, and
+did the solver actually do what it was told.
+
+There is an excellent R package for this work. `PortfolioAnalytics`
+[@peterson2026] has been under development for more than a decade, it
+supports nine solvers, fourteen constraint types and eleven risk measures, and
+almost nobody uses more than a tenth of it — partly because a reference manual
+answers *what does this function do* and never *which of these constraints
+does my mandate need, and which solver will still honour it once I have added
+it*, and partly because several of its defaults are wrong in ways that produce
+a plausible answer rather than an error. This book is a course text built on
+that package. It states each method in mathematics, attributes it to the
+literature, implements it in R on a market whose every property can be
+inspected, and then measures how much of the textbook answer survives contact
+with data the optimizer had not seen.
+
+The model for how such a book should be built is *Tidy Finance with R*
+[@scheuch2023] and *Machine Learning for Factor Investing* [@coqueret2020]:
+explain what is being done, state it precisely, cite it, run it, and hand the
+reader takeaways and exercises. Where those books end — with a set of factors
+and a set of return forecasts — this one begins.
+
+## Who this is for {.unnumbered}
+
+This is a course text, written first for a master's student meeting portfolio
+construction in a syllabus. Each chapter is meant to be teachable in one
+session: it opens with the question it answers and the work that first asked
+it, states the theory with the mathematics in the running text, implements it
+with code the student can run on the shipped data, and closes with takeaways
+and exercises whose solutions are in @sec-96-solutions. Nothing is assumed
+beyond an introductory course in finance and the R of @sec-94-r-primer.
+
+It is also written for a practitioner who knows the theory and wants the
+working implementation, including the part the package makes hard. There is
+no separate track: the same text carries the derivation for the student and
+the callout for the practitioner, because in this subject the two are rarely
+far apart. The reader who wants only the machinery can read the
+implementation sections and the callouts and skip nothing that matters.
+
+A doctoral student or a researcher is not the reader the prose is aimed at,
+but the references are complete enough that the book can be used as a route
+into the literature. Every method is attributed on first use, every empirical
+claim that the literature has settled carries the paper that settled it, and
+the bibliography has been checked entry by entry.
+
+## How the chapters are built {.unnumbered}
+
+Every chapter opens with the question it answers and the work that first asked
+it, states what we do, and then moves through theory, implementation and
+application. Each closes with key takeaways and exercises; solutions are in
+@sec-96-solutions.
+
+Mathematics is in the running text, because a portfolio problem is easier to
+read as an optimization problem than as a paragraph. In Parts II to IV we state
+the problem and its solution and send the proof to @sec-91-proofs. In Part VIII
+we derive in place, because there the theory is the subject.
+
+Where `PortfolioAnalytics` defaults the wrong way, fails silently or accepts a
+constraint and then drops it, we say so in a callout placed where the reader
+would otherwise walk into it. That material is one of the reasons for this
+book, and it is not in any reference manual. Worked examples that the reader
+may want to skip on a first pass sit in collapsible boxes.
+
+## How the book is organized {.unnumbered}
+
+The parts follow the allocation hierarchy. Parts II to V work at the level of
+asset classes, because a sixteen-asset problem can be seen whole and a
+one-hundred-and-eighty-one-asset problem cannot. Part VI then goes inside a
+single class and asks which securities to hold. Part VII is about implementing
+and evaluating any of it, and Part VIII carries the theory behind the earlier
+intuitions.
+
+Running across that hierarchy is a second distinction, between **strategic**
+allocation, which sets a long-run policy from unconditional assumptions, and
+**tactical** allocation, which departs from that policy using information
+available at the time. We define both in @sec-03-return-risk-and-the-investor-theory
+and then say, chapter by chapter, which one is being done. The two ideas are
+often run together; they are not the same, and keeping them apart is worth the
+small effort it costs.
+
+## The data {.unnumbered}
+
+Every number in the book is computed on a modeled multi-asset market that
+ships with the companion package: five regions, sixteen risky asset-class
+series, 181 instruments, monthly and weekly over thirty-one model years, all
+in dollars, licensed to nobody. It is introduced in
+@sec-02-notation-and-data-simulated-market, measured in
+@sec-04-descriptive-analysis-implementation and documented in full in
+@sec-90-data-description. The market is modeled, not recorded — no series is
+the history of a real security — and that is what allows the whole
+book to reproduce on the reader's machine without an account anywhere. Where a
+claim has to be about real markets, the free data reached through the
+companion package is used and the chapter says so.
+
+## What you can skip {.unnumbered}
+
+Parts I to VII are the course, and they are complete on their own. Part VIII
+gives the theory behind the intuition, the estimators behind the defaults, and
+the parts of the literature that have not yet reached the textbooks. Nothing in
+the earlier parts depends on it.
+
+## What this book is not {.unnumbered}
+
+It is not an introduction to R, and it is not an introduction to empirical asset
+pricing. Where those are needed, they are cited rather than reproduced:
+
+- For getting financial data into R and building factors from it,
+  @scheuch2023 is better than anything this book would write, and its companion
+  package is used here directly.
+- For the machine-learning algorithms behind return prediction, @coqueret2020
+  is the reference. This book picks up where the prediction ends.
+- For the R language itself, @wickham2023 remains the standard, and
+  @sec-94-r-primer offers a short refresher for readers who want one.
+
+## Conventions {.unnumbered}
+
+Vectors are bold lower case, matrices bold capitals, and the symbols are fixed
+once in @sec-02-notation-and-data-notation. Returns are simple returns in
+decimal, and they enter every optimization in excess of the Treasury bill, for
+the reasons given in @sec-03-return-risk-and-the-investor-theory. Code objects
+follow the mathematics: `R` is the return matrix, `Re` the excess-return
+matrix, `rf` the bill, `w` a weight vector.
+
+Every chapter runs from the project root, sources one setup file, attaches the
+companion package `tidypm`, and loads the data in two lines. The boundary
+between the tidy long table the data ship as and the wide matrix the optimizer
+wants is crossed explicitly, once per chapter, with `as_xts_pm()`
+(@sec-01-setting-up-implementation). Wherever two objects have to line up —
+a weight vector and the columns of a return matrix, a group constraint and the
+groups it binds — the alignment is asserted in code rather than assumed, and
+every figure is built from a single data frame so that no coordinate can be
+paired with the wrong label.
+
+Numbers in the prose are computed, never typed. The spelling is American in
+the text and follows the package in code, so `ggplot2`'s argument is `colour`.
+Functions are set in code font with their parentheses, `optimize.portfolio()`.
+
+## Reproducing this book {.unnumbered}
+
+```{r}
+#| label: colophon
+#| echo: false
+cat("R version:          ", R.version.string, "\n", sep = "")
+cat("PortfolioAnalytics: ", as.character(utils::packageVersion("PortfolioAnalytics")),
+    "\n", sep = "")
+cat("tidypm:             ", as.character(utils::packageVersion("tidypm")), "\n", sep = "")
+```
+
+The full dependency set, pinned to the versions this book was built against,
+lives in `renv.lock`, and `renv::restore()` recreates it. Every deviation from
+the released package versions is listed in @sec-93-package-notes, and
+@sec-97-colophon records how the book was built and what has changed.
+
+## Acknowledgements {.unnumbered}
+
+See @sec-98-acknowledgements.

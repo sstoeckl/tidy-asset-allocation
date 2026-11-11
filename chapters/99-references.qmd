@@ -1,0 +1,9 @@
+---
+metadata:
+  pagetitle: "References"
+---
+
+# References {.unnumbered #sec-99-references}
+
+::: {#refs}
+:::

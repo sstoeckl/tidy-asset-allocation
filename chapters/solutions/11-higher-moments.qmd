@@ -1,0 +1,182 @@
+### Chapter 11: Higher Moments {.unnumbered}
+
+```{r}
+#| label: sol-11-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+N  <- ncol(Re)
+base_spec <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only")
+mes_spec <- base_spec |>
+  add.objective(type = "risk", name = "ES", arguments = list(method = "modified", p = 0.95))
+mom_s <- set.portfolio.moments(Re, mes_spec, method = "sample")
+
+# The chapter's helpers, repeated so that this fragment runs on its own.
+qu_weights <- function(gamma) {
+  spec <- base_spec |>
+    add.objective(type = "return", name = "mean") |>
+    add.objective(type = "risk",   name = "var", risk_aversion = gamma / 2)
+  w <- extractWeights(optimize.portfolio(Re, spec, optimize_method = "ROI"))
+  w <- pmax(w[colnames(Re)], 0)
+  w / sum(w)
+}
+w_gmv <- extractWeights(optimize.portfolio(Re, base_spec |> add.objective(type = "risk", name = "var"),
+                                           optimize_method = "ROI"))[colnames(Re)]
+w_eq  <- setNames(rep(1 / N, N), colnames(Re))
+
+crra_utility <- function(R, weights, mu, sigma, m3, m4, gamma = 5, order = 4) {
+  w  <- as.numeric(weights)
+  Wb <- 1 + sum(w * as.numeric(mu))
+  m2 <- as.numeric(t(w) %*% sigma %*% w)
+  eu <- Wb^(1 - gamma) / (1 - gamma) - gamma / 2 * Wb^(-gamma - 1) * m2
+  if (order >= 3) eu <- eu + gamma * (gamma + 1) / 6 * Wb^(-gamma - 2) * PerformanceAnalytics::portm3(w, m3)
+  if (order >= 4) eu <- eu - gamma * (gamma + 1) * (gamma + 2) / 24 * Wb^(-gamma - 3) * PerformanceAnalytics::portm4(w, m4)
+  -eu
+}
+crra_fn <- function(mom, gamma, order = 4) function(w)
+  crra_utility(NULL, w, mom$mu, mom$sigma, mom$m3, mom$m4, gamma, order)
+mes_fn <- function(mom) function(w)
+  as.numeric(PerformanceAnalytics::ES(NULL, p = 0.95, method = "modified", portfolio_method = "single",
+                                      weights = w, mu = mom$mu, sigma = mom$sigma,
+                                      m3 = mom$m3, m4 = mom$m4, invert = FALSE))
+polish <- function(f, w0) {
+  w0  <- pmax(as.numeric(w0), 0); w0 <- w0 / sum(w0)
+  sol <- nloptr::slsqp(x0 = w0, fn = f, lower = rep(0, N), upper = rep(1, N),
+                       heq = function(w) sum(w) - 1,
+                       control = list(xtol_rel = 1e-10, maxeval = 2000))
+  w <- pmax(sol$par, 0)
+  setNames(w / sum(w), colnames(Re))
+}
+best_of <- function(f, starts) {
+  sols <- lapply(starts, function(s) polish(f, s))
+  sols[[which.min(vapply(sols, f, numeric(1)))]]
+}
+ce_annual <- function(neg_eu, gamma) 12 * (((1 - gamma) * (-neg_eu))^(1 / (1 - gamma)) - 1)
+```
+
+#### Exercise 1
+
+The tensor contraction reproduces the series skewness exactly, and the
+decomposition into own and cross terms follows from writing out
+$\boldsymbol{w}'\boldsymbol{M}_3(\boldsymbol{w}\otimes\boldsymbol{w})$ as a
+triple sum.
+
+```{r}
+#| label: sol-11-ex1
+X3 <- zoo::coredata(Re[, c("US_credit", "US_government", "US_equity")])
+w3 <- rep(1 / 3, 3)
+M3 <- PerformanceAnalytics::M3.MM(X3)
+r3 <- as.numeric(X3 %*% w3)
+
+m3_w <- PerformanceAnalytics::portm3(w3, M3)
+stopifnot(all.equal(m3_w, mean((r3 - mean(r3))^3)))
+
+own   <- sum(vapply(1:3, function(i) w3[i]^3 * M3[i, (i - 1) * 3 + i], numeric(1)))
+cross <- m3_w - own
+stopifnot(cross / m3_w > 0.5)     # the text says the cross terms carry most of it
+c(skewness = m3_w / sqrt(mean((r3 - mean(r3))^2))^3,
+  own_share = own / m3_w, cross_share = cross / m3_w)
+```
+
+The cross terms carry `r sprintf("%.0f%%", 100 * cross / m3_w)` of the
+portfolio's third moment, which is why the skewness of a combination is not
+the average of its constituents' skewness: it is set mainly by how the
+constituents move together in their tails, not by their own asymmetry.
+
+#### Exercise 2
+
+```{r}
+#| label: sol-11-ex2
+gammas <- c(2, 5, 10, 20)
+sweep <- lapply(gammas, function(g) {
+  f4 <- crra_fn(mom_s, g, order = 4)
+  w2 <- qu_weights(g)
+  w4 <- best_of(f4, list(w2, w_gmv, w_eq))
+  tibble::tibble(gamma = g, credit_two_moment = w2[["US_credit"]],
+                 credit_four_moment = w4[["US_credit"]],
+                 ce_gain_bp = 1e4 * (ce_annual(f4(w4), g) - ce_annual(f4(w2), g)))
+}) |> dplyr::bind_rows()
+# The text: the gain is not monotone, the two-moment investor holds no credit at
+# the lowest risk aversion, and the credit position shrinks from gamma = 5 on.
+stopifnot(!all(diff(sweep$ce_gain_bp) >= 0), !all(diff(sweep$ce_gain_bp) <= 0),
+          sweep$credit_two_moment[sweep$gamma == 2] < 0.005,
+          all(diff(sweep$credit_two_moment[sweep$gamma >= 5]) < 0))
+sweep
+```
+
+The gain is largest at
+$\gamma = `r sweep$gamma[which.max(sweep$ce_gain_bp)]`$. It is not monotone
+because the higher moments have something to correct only where the two-moment
+portfolio holds the skewed asset. At $\gamma = 2$ the quadratic-utility
+investor holds no `US_credit` at all, the portfolio being the two largest
+equity markets, so the gain is
+`r sprintf("%.1f", sweep$ce_gain_bp[sweep$gamma == 2])` basis points. From
+$\gamma = 5$ on, two forces pull in opposite directions: the weight the
+four-moment terms carry in @eq-11-crra grows with $\gamma$, but the two-moment
+investor's credit position shrinks with $\gamma$ as the quadratic-utility
+solution walks toward the minimum-variance end of the frontier, so there is
+less skewness left in the two-moment portfolio for the higher moments to
+correct.
+
+#### Exercise 3
+
+```{r}
+#| label: sol-11-ex3
+structured <- function(k) {
+  fit <- statistical.factor.model(Re, k = k)
+  list(mu = mom_s$mu, sigma = extractCovariance(fit),
+       m3 = extractCoskewness(fit), m4 = extractCokurtosis(fit))
+}
+credit_by_k <- vapply(1:3, function(k) {
+  best_of(mes_fn(structured(k)), list(w_gmv, w_eq))[["US_credit"]]
+}, numeric(1))
+credit_sample <- best_of(mes_fn(mom_s), list(w_gmv, w_eq))[["US_credit"]]
+stopifnot(credit_sample < 0.005, all(credit_by_k > 0.10))   # the text below
+round(c(sample = credit_sample, setNames(credit_by_k, paste0("k = ", 1:3))), 4)
+```
+
+Adding factors changes the loadings and the factor moments in
+@eq-11-single-factor, but every factor model of this kind keeps the residuals
+independent of the factors, so the cross terms
+$\mathbb{E}[f^2\varepsilon]$ and $\mathbb{E}[f\varepsilon^2]$ that carry the
+skewness of `US_credit` remain zero at every $k$. The weight stays between
+`r sprintf("%.0f%%", 100 * min(credit_by_k))` and
+`r sprintf("%.0f%%", 100 * max(credit_by_k))` for $k = 1, 2, 3$, against
+`r sprintf("%.0f%%", 100 * credit_sample)` under the sample tensors: what moves
+with $k$ is the decomposition of variance, not the missing skewness; only a
+structure with dependent residuals, or the sample tensor itself, contains it.
+
+#### Exercise 4
+
+```{r}
+#| label: sol-11-ex4
+q <- 0.10
+regions <- c("US", "UK", "EU", "CH", "JP")
+tail_tbl <- lapply(regions, function(r) {
+  a <- paste0(r, "_credit"); b <- paste0(r, "_government")
+  U   <- copula::pobs(zoo::coredata(Re[, c(a, b)]))
+  rho <- as.numeric(stats::cor(Re[, a], Re[, b]))
+  tibble::tibble(region = r, correlation = rho,
+                 lower_empirical = mean(U[, 1] <= q & U[, 2] <= q) / q,
+                 lower_gaussian  = copula::pCopula(c(q, q), copula::normalCopula(rho)) / q)
+}) |> dplyr::bind_rows() |>
+  dplyr::mutate(excess = lower_empirical - lower_gaussian) |>
+  dplyr::arrange(dplyr::desc(lower_empirical))
+tail_tbl
+```
+
+`r tail_tbl$region[1]` is the region whose credit is most tail-dependent on
+its own government bond, with the two series jointly in their worst decile
+`r sprintf("%.0f%%", 100 * tail_tbl$lower_empirical[1])` of the time that
+either is, against
+`r sprintf("%.0f%%", 100 * tail_tbl$lower_gaussian[1])` under a Gaussian
+copula at the same correlation. The ranking by empirical tail dependence
+`r if (identical(tail_tbl$region, tail_tbl$region[order(-tail_tbl$correlation)])) "coincides with" else "differs from"`
+the ranking by correlation, which is the point of @eq-11-tail-dep: the two
+measures answer different questions, and a covariance matrix reports only the
+second.

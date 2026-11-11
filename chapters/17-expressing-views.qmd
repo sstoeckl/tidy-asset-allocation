@@ -1,0 +1,1179 @@
+---
+title: "Expressing Views"
+metadata:
+  pagetitle: "Expressing Views"
+  description-meta: "How an opinion becomes a portfolio weight: Black-Litterman as a Bayesian update with the confidence parameter made explicit, Meucci's entropy pooling on historical scenarios, and Almgren-Chriss centroids from a ranking, implemented in R with PortfolioAnalytics."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+An allocator has an opinion: European credit will lag, commodities will pay,
+Japanese equity is cheap. How does that opinion become a weight? @black1992
+answered that it should not become one directly, because an optimizer handed
+a hand-written return vector produces the extreme, unstable portfolios that
+@michaud1989 called error maximization; the opinion should instead be blended
+with an equilibrium prior in proportion to how confidently it is held, and
+the optimizer given the blend. That construction, the Black-Litterman model,
+is the standard answer, and this chapter sets it beside two others that ask
+less of the allocator: views on the probabilities of historical scenarios
+[@meucci2008], and views that are only a ranking [@almgren2006].
+
+This chapter is **tactical** in the sense of
+@sec-03-return-risk-and-the-investor-theory: a view is conditioning
+information, and every portfolio below is a deviation from the strategic
+policy that @sec-06-expected-returns-theory anchored on the equilibrium
+vector. We first state the three formulations as mathematics, then implement
+each on the sixteen risky class series, and finally express one opinion three
+ways and compare what each formulation committed to.
+
+The data are the sixteen risky class series of
+@sec-02-notation-and-data-simulated-market, in excess of the Treasury bill for
+the reasons of @sec-03-return-risk-and-the-investor-theory.
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+stopifnot(ncol(Re) == 16L, !anyNA(Re))
+N <- ncol(Re); T <- nrow(Re)
+mu_s <- colMeans(Re)                 # the sample mean of chapter 6
+S    <- stats::cov(Re)               # the sample covariance of chapter 7
+```
+
+## A View as a Bayesian Update {#sec-17-expressing-views-theory}
+
+### The Black-Litterman posterior
+
+Write $\boldsymbol{\mu}$ for the vector of expected excess returns and
+$\boldsymbol{\Sigma}$ for their covariance, as in @sec-09-mean-variance-theory.
+@black1991 treat $\boldsymbol{\mu}$ as unknown and center its prior on the
+equilibrium vector of @eq-06-equilibrium, read from market weights by the
+reverse optimization of @sharpe1974,
+
+$$
+\boldsymbol{\mu} \sim N\!\left(\boldsymbol{\mu}_{\text{eq}},\, \tau\boldsymbol{\Sigma}\right),
+\qquad
+\boldsymbol{\mu}_{\text{eq}} = \delta\,\boldsymbol{\Sigma}\,\boldsymbol{w}_{\text{mkt}},
+$$ {#eq-17-prior}
+
+where $\tau$ scales the prior's uncertainty relative to the returns. A view is
+a statement about $K$ linear combinations of $\boldsymbol{\mu}$, collected in
+a $K \times N$ pick matrix $\boldsymbol{P}$, with a stated value
+$\boldsymbol{q}$ and an error whose covariance $\boldsymbol{\Omega}$ says how
+sure the allocator is:
+
+$$
+\boldsymbol{P}\boldsymbol{\mu} = \boldsymbol{q} + \boldsymbol{\varepsilon},
+\qquad
+\boldsymbol{\varepsilon} \sim N(\boldsymbol{0}, \boldsymbol{\Omega}).
+$$ {#eq-17-views}
+
+A row of $\boldsymbol{P}$ with a single one is an absolute view on one asset;
+a row with $+1$ and $-1$ is a relative view on a spread. Prior and likelihood
+are normal, so the posterior is normal, with mean and covariance
+
+$$
+\boldsymbol{\mu}_{\text{BL}}
+= \boldsymbol{\mu}_{\text{eq}}
++ \tau\boldsymbol{\Sigma}\boldsymbol{P}'
+  \left(\boldsymbol{P}\tau\boldsymbol{\Sigma}\boldsymbol{P}' + \boldsymbol{\Omega}\right)^{-1}
+  \left(\boldsymbol{q} - \boldsymbol{P}\boldsymbol{\mu}_{\text{eq}}\right),
+\qquad
+\boldsymbol{\Sigma}_{\boldsymbol{\mu}}
+= \tau\boldsymbol{\Sigma}
+- \tau\boldsymbol{\Sigma}\boldsymbol{P}'
+  \left(\boldsymbol{P}\tau\boldsymbol{\Sigma}\boldsymbol{P}' + \boldsymbol{\Omega}\right)^{-1}
+  \boldsymbol{P}\tau\boldsymbol{\Sigma}.
+$$ {#eq-17-posterior}
+
+@satchell2000 give the Bayesian derivation, @kolm2017 the cleanest statement
+of what is conditioned on what, and @cheung2010 and @walters2014 the
+bookkeeping the original paper left out. Two features of @eq-17-posterior
+decide everything below. The posterior mean moves away from the prior only in
+the directions $\boldsymbol{\Sigma}\boldsymbol{P}'$, so a view on one asset
+moves every asset that covaries with it. And
+$\boldsymbol{\Sigma}_{\boldsymbol{\mu}}$ is the covariance of the *mean*, not
+of returns, and is never to be handed to a risk objective, the fourth point of
+the callout in @sec-06-expected-returns-implementation.
+
+Two parameters have no data behind them. $\tau$ is the more discussed and the
+less important: @he1999 set it at 0.05, @idzorek2007 at 0.025, @walters2014
+surveys a range from $1/T$ upward, and @meucci2010 observes that if
+$\boldsymbol{\Omega}$ is proportional to $\tau$ then $\tau$ cancels from the
+posterior mean, which is the convention here. $\boldsymbol{\Omega}$ is the
+parameter that matters. @he1999 take it diagonal with
+$\omega_k = \boldsymbol{p}_k'\tau\boldsymbol{\Sigma}\boldsymbol{p}_k$, so a
+view on a volatile spread is held less tightly; @idzorek2007 asks for a
+confidence between zero and one and solves for the $\omega_k$ that delivers
+that fraction of the full-confidence tilt; @meucci2010 gives the closed form
+of the same idea, used throughout this chapter:
+
+$$
+\boldsymbol{\Omega} = \frac{1-c}{c}\;\boldsymbol{P}\tau\boldsymbol{\Sigma}\boldsymbol{P}',
+\qquad c \in (0, 1).
+$$ {#eq-17-omega}
+
+Substituting @eq-17-omega into @eq-17-posterior, the bracketed matrix becomes
+$\boldsymbol{P}\tau\boldsymbol{\Sigma}\boldsymbol{P}'/c$, $\tau$ cancels, and
+the posterior value of each view portfolio is a weighted average of prior and
+view:
+
+$$
+\boldsymbol{P}\boldsymbol{\mu}_{\text{BL}}
+= (1-c)\,\boldsymbol{P}\boldsymbol{\mu}_{\text{eq}} + c\,\boldsymbol{q}.
+$$ {#eq-17-pooling}
+
+At $c = \tfrac12$ allocator and market are weighted equally; as $c \to 1$ the
+view is imposed and as $c \to 0$ ignored. The confidence is therefore the size
+of the position rather than a nuisance parameter, and
+@sec-17-expressing-views-implementation traces it.
+
+What the optimizer does with $\boldsymbol{\mu}_{\text{BL}}$ is the result
+@he1999 wrote the model to obtain. An investor with the market's risk
+aversion holds $\boldsymbol{w} = (\delta\boldsymbol{\Sigma})^{-1}\boldsymbol{\mu}$,
+and substituting @eq-17-posterior with @eq-17-omega gives
+
+$$
+\boldsymbol{w}_{\text{BL}}
+= (\delta\boldsymbol{\Sigma})^{-1}\boldsymbol{\mu}_{\text{BL}}
+= \boldsymbol{w}_{\text{mkt}} + \boldsymbol{P}'\boldsymbol{\Lambda},
+\qquad
+\boldsymbol{\Lambda} = \frac{c}{\delta}
+  \left(\boldsymbol{P}\boldsymbol{\Sigma}\boldsymbol{P}'\right)^{-1}
+  \left(\boldsymbol{q} - \boldsymbol{P}\boldsymbol{\mu}_{\text{eq}}\right).
+$$ {#eq-17-weights}
+
+The posterior portfolio is the market plus a position in each view portfolio,
+and nothing else: an asset in no view keeps its market weight, however
+strongly it covaries with the assets that are. This is what distinguishes
+Black-Litterman from writing a number into $\boldsymbol{\mu}$ by hand: the
+update through $\boldsymbol{\Sigma}\boldsymbol{P}'$ moves the means of
+correlated assets by exactly enough that the optimizer sees no spread to
+exploit between them. @bertsimas2012 reach the same construction from inverse
+optimization, and @sec-17-expressing-views-application shows what happens
+without it. Under a long-only constraint @eq-17-weights holds until a weight
+reaches zero, after which the portfolio is the quadratic program of
+@sec-12-constraints-theory.
+
+### Views on scenarios: entropy pooling
+
+Black-Litterman is a view on the mean under normality, and @meucci2008
+removes both restrictions. Take as the prior not a distribution but $J$
+scenarios $\boldsymbol{r}_1, \dots, \boldsymbol{r}_J$ with probabilities
+$p_1, \dots, p_J$, here the `r T` months of the sample with uniform weight. A
+view is any constraint on expectations under new probabilities
+$\tilde{\boldsymbol{p}}$: a mean, a variance, a probability of loss, a
+ranking. Among all probability vectors that satisfy it, the posterior is the
+one closest to the prior in relative entropy,
+
+$$
+\tilde{\boldsymbol{p}}
+= \arg\min_{\boldsymbol{x}} \sum_{j=1}^{J} x_j \left(\ln x_j - \ln p_j\right)
+\quad \text{subject to} \quad
+\sum_j x_j = 1,
+\quad \boldsymbol{H}\boldsymbol{x} = \boldsymbol{h},
+\quad \boldsymbol{F}\boldsymbol{x} \le \boldsymbol{f},
+$$ {#eq-17-entropy}
+
+where each row of $\boldsymbol{H}$ or $\boldsymbol{F}$ holds the scenario
+values of one view function. The objective is the divergence of
+@kullback1951; choosing the least-divergent distribution consistent with
+stated moments is the maximum-entropy principle of @jaynes1957; @csiszar1975
+proved the solution exists and is unique; and @robertson2005 brought the same
+device to macroeconomic forecasting. The solution is an exponential tilt,
+
+$$
+\tilde{p}_j \propto p_j \exp\!\left(-\boldsymbol{\theta}'\boldsymbol{H}_{\cdot j}
+- \boldsymbol{\lambda}'\boldsymbol{F}_{\cdot j}\right),
+\qquad \boldsymbol{\lambda} \ge \boldsymbol{0},
+$$ {#eq-17-tilt}
+
+with one multiplier per view, so the optimization runs over $K$ numbers
+rather than $J$ probabilities. @eq-17-tilt is also why entropy pooling
+reproduces Black-Litterman when the scenarios are normal and the views are
+on means [@meucci2006; @meucci2008]: a tilt in the direction of a view
+portfolio shifts every other asset by its covariance with that portfolio.
+Where the scenarios are not normal the two part, and
+@sec-17-expressing-views-application measures by how much.
+
+A posterior that concentrates on a few months has thrown the rest of the
+history away, and the diagnostic is the **effective number of scenarios**,
+
+$$
+N_{\text{eff}} = \exp\!\left(-\sum_{j=1}^{J} \tilde{p}_j \ln \tilde{p}_j\right),
+$$ {#eq-17-effective}
+
+the construction @meucci2009 uses for the effective number of bets in
+@sec-09-mean-variance-application: $J$ under the uniform prior, falling toward
+one as the mass concentrates. For a view that moves one mean by $k$ standard
+errors, the divergence of the tilt is $k^2/2T$ to second order, so
+
+$$
+N_{\text{eff}} \approx T \exp\!\left(-\frac{k^2}{2T}\right),
+$$ {#eq-17-cost}
+
+which says where the entropy step bites: a view within a few standard errors
+costs almost nothing, and one tens of standard errors away leaves a fraction
+of the history. Confidence enters by opinion pooling,
+$\boldsymbol{p}_c = (1-c)\,\boldsymbol{p} + c\,\tilde{\boldsymbol{p}}$
+[@meucci2008], which gives the posterior mean the form of @eq-17-pooling.
+
+### Views as an ordering: the centroid
+
+Both formulations ask for a number, and @salcher2026less argue that a number
+is often more than an allocator honestly has: what survives estimation error
+in a cross-section of means is their ordering, and a rule that commits to the
+ranking alone loses less out of sample than one that commits to magnitudes.
+@almgren2006 formalize the ranking as a view. If the allocator believes
+$\mu_{\pi(1)} \ge \dots \ge \mu_{\pi(N)}$ for a permutation $\pi$, the mean
+vectors consistent with that belief form a cone $Q$, and for any convex
+feasible set the portfolio that maximizes expected return over $Q$ maximizes
+$\boldsymbol{w}'\boldsymbol{c}$, where
+
+$$
+\boldsymbol{c} = \mathbb{E}\!\left[\boldsymbol{\mu} \mid \boldsymbol{\mu} \in Q\right],
+\qquad
+c_{\pi(j)} \approx \Phi^{-1}\!\left(\frac{N + 1 - j - \alpha}{N - 2\alpha + 1}\right),
+\quad \alpha = 0.4424 - 0.1185\,N^{-0.21},
+$$ {#eq-17-centroid}
+
+is the **centroid** of the cone under a spherically symmetric distribution,
+with the closed-form approximation of the same paper. It is the vector of
+expected order statistics of $N$ standard normals: symmetric about zero,
+wider-spaced at the ends, carrying no level and no scale. @herold2003 works
+the same problem with qualitative forecasts, and @grinold1989 supplies the
+reason a ranking can be worth money: the value of a signal is its correlation
+with realized returns, which a correct ordering delivers without any
+magnitude. What a centroid does not say is how large the position should be.
+
+## Three Ways to Make a Weight {#sec-17-expressing-views-implementation}
+
+The prior is the class-level equilibrium of
+@sec-06-expected-returns-implementation, rebuilt verbatim so that the two
+chapters cannot disagree; the market weights of the eleven non-equity classes
+are the stated proxy of that chapter's worked box.
+
+::: {.callout-note collapse="true"}
+## The prior of @sec-06-expected-returns-implementation, rebuilt
+
+```{r}
+#| label: prior
+eq_ids     <- sim_assets$asset_id[sim_assets$asset_class == "equity"]
+region_of  <- setNames(sim_assets$region, sim_assets$asset_id)
+eq_classes <- grep("_equity$", colnames(Re), value = TRUE)
+
+cap_region <- sim_marketcap_weekly |>
+  dplyr::filter(asset %in% eq_ids) |>
+  dplyr::mutate(class = paste0(region_of[asset], "_equity")) |>
+  dplyr::group_by(date, class) |>
+  dplyr::summarise(cap = sum(market_cap), .groups = "drop") |>
+  tidyr::pivot_wider(names_from = class, values_from = cap) |>
+  dplyr::arrange(date)
+cap_mat <- as.matrix(cap_region[, eq_classes])
+d <- zoo::index(Re)
+W_eq <- t(vapply(seq_along(d), function(i) {
+  cutoff <- if (i == 1) d[1] - 31 else d[i - 1]
+  j <- max(which(cap_region$date <= cutoff))
+  cap_mat[j, ] / sum(cap_mat[j, ])
+}, numeric(length(eq_classes))))
+colnames(W_eq) <- eq_classes
+
+# ASSUMPTION, not data: the split of world wealth across the four blocks.
+block <- c(equity = 0.40, government = 0.40, credit = 0.15, commodity = 0.05)
+W16 <- matrix(0, nrow(Re), N, dimnames = list(NULL, colnames(Re)))
+for (r in sub("_equity$", "", eq_classes)) {
+  s <- W_eq[, paste0(r, "_equity")]
+  W16[, paste0(r, "_equity")]     <- block[["equity"]]     * s
+  W16[, paste0(r, "_government")] <- block[["government"]] * s
+  W16[, paste0(r, "_credit")]     <- block[["credit"]]     * s
+}
+W16[, "GLOBAL_commodity"] <- block[["commodity"]]
+stopifnot(all(abs(rowSums(W16) - 1) < 1e-10), identical(colnames(W16), colnames(Re)))
+
+mkt16_e <- rowSums(W16 * zoo::coredata(Re))
+delta16 <- mean(mkt16_e) / stats::var(mkt16_e)                        # @eq-06-delta
+w_mkt   <- colMeans(W16)
+mu_eq   <- setNames(delta16 * as.numeric(S %*% w_mkt), colnames(Re))  # @eq-06-equilibrium
+
+# The equity-only equilibrium of the same chapter, for the five-class examples.
+mkt_e  <- rowSums(W_eq * zoo::coredata(Re[, eq_classes]))
+delta  <- mean(mkt_e) / stats::var(mkt_e)
+w_mkt5 <- colMeans(W_eq)
+S5     <- S[eq_classes, eq_classes]
+mu_eq5 <- setNames(delta * as.numeric(S5 %*% w_mkt5), eq_classes)
+
+c(delta = delta16, delta_equity = delta)
+```
+:::
+
+Two functions from @sec-06-expected-returns-application are reused unchanged:
+`tangency_lo()` solves the long-only tangency problem as one quadratic
+program, and `make_moments()` hands a mean vector the package did not compute
+to `optimize.portfolio()`.
+
+```{r}
+#| label: helpers
+tangency_lo <- function(mu, S) {
+  if (max(mu) <= 0) return(setNames(rep(NA_real_, length(mu)), names(mu)))
+  N <- length(mu)
+  sol <- quadprog::solve.QP(Dmat = 2 * S, dvec = rep(0, N),
+                            Amat = cbind(mu, diag(N)), bvec = c(1, rep(0, N)), meq = 1)
+  w <- pmax(sol$solution, 0)
+  setNames(w / sum(w), names(mu))
+}
+make_moments <- function(mu, S) {
+  force(mu); force(S)
+  function(R, portfolio, ...) list(mu = mu, sigma = S, m3 = NULL, m4 = NULL, mean = mu, var = S)
+}
+spec <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only") |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "StdDev")
+
+w_prior <- tangency_lo(mu_eq, S)
+stopifnot(isTRUE(all.equal(w_prior, w_mkt, tolerance = 1e-6)))   # the prior buys the market
+```
+
+### Black-Litterman with two views
+
+Two views, one relative and one absolute: United States credit will
+outperform European credit by two percentage points a year, and commodities
+will earn four percent a year above the bill. Each is a row of
+$\boldsymbol{P}$ and an entry of $\boldsymbol{q}$, in the monthly units of
+the data.
+
+```{r}
+#| label: views
+P <- matrix(0, 2, N, dimnames = list(c("credit_spread", "commodity"), colnames(Re)))
+P["credit_spread", "US_credit"]     <-  1
+P["credit_spread", "EU_credit"]     <- -1
+P["commodity",     "GLOBAL_commodity"] <- 1
+q <- c(credit_spread = 0.02, commodity = 0.04) / 12
+stopifnot(identical(colnames(P), colnames(Re)), identical(names(q), rownames(P)))
+
+prior_views <- as.numeric(P %*% mu_eq)
+stopifnot(prior_views[1] < 0)      # the prior puts US_credit below EU_credit, as the text explains
+```
+
+```{r}
+#| label: tbl-17-views
+#| tbl-cap: "The two views as rows of the pick matrix, with what the equilibrium prior says about the same portfolios. Only the nonzero columns of P are shown; annualized."
+#| echo: false
+tibble::tibble(
+  view       = rownames(P),
+  portfolio  = apply(P, 1, function(r) paste(sprintf("%+d %s", r[r != 0], names(r)[r != 0]), collapse = " ")),
+  prior      = sprintf("%.2f%%", 100 * prior_views * 12),
+  view_value = sprintf("%.2f%%", 100 * q * 12)
+) |>
+  kable(align = "llrr", col.names = c("", "view portfolio", "prior says", "view says"))
+```
+
+The prior disagrees with the first view by
+`r sprintf("%.1f", 100 * (q[["credit_spread"]] - prior_views[1]) * 12)`
+percentage points, because under the proxy weights European credit covaries
+more with the market than United States credit; the second view is
+`r sprintf("%.1f", 100 * (q[["commodity"]] - prior_views[2]) * 12)` points
+from the prior. @eq-17-posterior with @eq-17-omega is a few lines, and
+writing them is the only way to have a confidence parameter, because
+`black.litterman()` has none.
+
+```{r}
+#| label: bl-post
+bl_post <- function(mu, S, P, q, conf, tau = 1) {
+  stopifnot(identical(colnames(P), names(mu)), nrow(P) == length(q))
+  Omega   <- (1 - conf) / conf * P %*% (tau * S) %*% t(P)          # @eq-17-omega
+  M       <- solve(P %*% (tau * S) %*% t(P) + Omega)
+  mu_post <- mu + as.numeric((tau * S) %*% t(P) %*% M %*% (q - P %*% mu))   # @eq-17-posterior
+  S_mu    <- tau * S - (tau * S) %*% t(P) %*% M %*% P %*% (tau * S)
+  list(mu = setNames(mu_post, names(mu)), S_mu = S_mu, Omega = Omega)
+}
+
+post <- bl_post(mu_eq, S, P, q, conf = 0.5)
+bl   <- black.litterman(Re, P = P, Mu = mu_eq, Views = q)
+
+stopifnot(isTRUE(all.equal(unname(post$mu), as.numeric(bl$BLMu))),          # the package at c = 1/2
+          isTRUE(all.equal(unname(post$S_mu), unname(bl$BLSigma))),
+          isTRUE(all.equal(bl_post(mu_eq, S, P, q, 0.5, tau = 0.05)$mu, post$mu)),  # tau cancels
+          isTRUE(all.equal(as.numeric(P %*% post$mu), 0.5 * prior_views + 0.5 * unname(q))))  # @eq-17-pooling
+round(cbind(prior = prior_views, view = q, posterior = as.numeric(P %*% post$mu)) * 12, 4)
+```
+
+The four assertions carry the theory: `black.litterman()` is @eq-17-posterior
+at $c = \tfrac12$, since its fixed
+$\boldsymbol{\Omega} = \boldsymbol{P}\boldsymbol{\Sigma}\boldsymbol{P}'$ is
+@eq-17-omega at that confidence; changing $\tau$ leaves the posterior mean
+untouched; and each view portfolio lands at the midpoint of prior and view.
+
+::: {.callout-note}
+## `black.litterman()` with views: three things to check before believing it
+
+The function takes the full matrix
+$\boldsymbol{P}\boldsymbol{\Sigma}\boldsymbol{P}'$ as $\boldsymbol{\Omega}$,
+off-diagonals included, so covarying view portfolios are treated as
+correlated errors, which is @eq-17-omega and not the diagonal convention of
+@he1999; a textbook example with independent views will not match it. `P`
+must be a matrix even for one view, since a plain vector fails inside
+`tcrossprod()`. And `Views` is not checked against `nrow(P)`: a shorter
+vector is recycled without a message, so one number silently becomes every
+view.
+
+```{r}
+#| label: bl-recycle
+one_number <- black.litterman(Re, P = P, Mu = mu_eq, Views = q[1])
+both_same  <- black.litterman(Re, P = P, Mu = mu_eq, Views = c(q[1], q[1]))
+c(recycled_silently = isTRUE(all.equal(as.numeric(one_number$BLMu), as.numeric(both_same$BLMu))),
+  vector_P_fails    = inherits(try(black.litterman(Re, P = P[2, ], Mu = mu_eq, Views = q[2]),
+                                   silent = TRUE), "try-error"))
+```
+
+The `stopifnot()` at the top of `bl_post()` is the guard the package lacks.
+:::
+
+What the two views do to the sixteen means comes first, from one frame with
+one row per asset and estimate.
+
+```{r}
+#| label: bl-means-frame
+mu_long <- tibble::tibble(
+  asset = rep(colnames(Re), 2),
+  kind  = rep(c("prior", "posterior, c = 0.5"), each = N),
+  value = c(mu_eq, post$mu) * 12
+) |>
+  dplyr::mutate(asset = factor(asset, levels = names(sort(mu_eq))))
+stopifnot(nrow(mu_long) == 2 * N, !anyNA(mu_long$value))
+
+shift <- (post$mu - mu_eq) * 1200
+stopifnot(all(shift[grep("^(EU|CH|UK)_", names(shift))] < 0))   # the caption of @fig-17-bl-means
+round(sort(shift), 2)
+```
+
+```{r}
+#| label: fig-17-bl-means
+#| fig-cap: "Equilibrium and Black-Litterman means for the sixteen series at a confidence of one half, annualized. Each segment joins an asset's prior to its posterior. The view on European credit pulls down everything that covaries with it, which on this market is every European, Swiss and British series; the view on commodities moves almost nothing else."
+#| echo: false
+#| fig-asp: 0.7
+mu_long |>
+  ggplot2::ggplot(ggplot2::aes(value, asset)) +
+  ggplot2::geom_line(ggplot2::aes(group = asset), colour = tidyaa_colors[["rule"]],
+                     linewidth = 1.3) +
+  ggplot2::geom_point(ggplot2::aes(colour = kind), size = 2.4) +
+  scale_colour_tidyaa() +
+  ggplot2::scale_x_continuous(labels = scales::percent) +
+  ggplot2::labs(x = "annualized expected excess return", y = NULL, colour = NULL)
+```
+
+A view on two credit series moved `r sum(abs(shift) > 0.5)` of the sixteen
+means by more than half a percentage point: `EU_credit` falls by
+`r sprintf("%.1f", -shift[["EU_credit"]])` points and `EU_equity`, in no
+view, by `r sprintf("%.1f", -shift[["EU_equity"]])`, because it covaries
+with European credit. That is @eq-17-posterior at work, and @eq-17-weights
+says what it buys.
+
+```{r}
+#| label: bl-tangency
+w_post <- tangency_lo(post$mu, S)
+w_pkg  <- extractWeights(optimize.portfolio(Re, spec, optimize_method = "ROI", maxSR = TRUE,
+                                            momentFUN = make_moments(post$mu, S)))
+stopifnot(max(abs(w_pkg[colnames(Re)] - w_post)) < 1e-6)
+
+# @eq-17-weights, unconstrained: the tilt lives only on the assets a view names.
+tilt    <- solve(delta16 * S, post$mu) - w_mkt
+in_view <- colSums(P != 0) > 0
+stopifnot(max(abs(tilt[!in_view])) < 1e-8)
+round(tilt[in_view], 4)
+
+moved <- (w_post - w_prior)[abs(w_post - w_prior) > 0.005]
+round(sort(moved), 3)
+```
+
+Unconstrained, @eq-17-weights holds to machine precision: the thirteen assets
+in no view keep their market weight, `US_credit` and `EU_credit` move by
+`r sprintf("%+.1f", 100 * tilt[["US_credit"]])` and
+`r sprintf("%+.1f", 100 * tilt[["EU_credit"]])` points, and commodities by
+`r sprintf("%+.1f", 100 * tilt[["GLOBAL_commodity"]])`. The long-only tangency
+portfolio cannot short `EU_credit`, so it sells what it has and the constraint
+redistributes the rest: `r length(moved)` weights move by more than half a
+point, `US_government` by
+`r sprintf("%.1f", 100 * moved[["US_government"]])`, because it is the least
+volatile home for money the constraint would otherwise have shorted, as
+@sec-12-constraints-theory explains.
+
+The confidence is the size of all of this, and tracing it shows the weights
+sliding from the market portfolio to the portfolio the views alone would buy.
+
+```{r}
+#| label: confidence-trace
+confs <- c(0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99)
+trace <- lapply(confs, function(cc) {
+  w <- tangency_lo(bl_post(mu_eq, S, P, q, cc)$mu, S)
+  tibble::tibble(conf = cc, asset = names(w), weight = w)
+}) |> dplyr::bind_rows()
+stopifnot(nrow(trace) == length(confs) * N, !anyNA(trace$weight))
+shown <- c("US_government", "US_credit", "GLOBAL_commodity", "EU_equity", "EU_credit")
+us_c  <- trace$weight[trace$asset == "US_credit"]
+stopifnot(any(diff(us_c) > 0), any(diff(us_c) < 0))   # the path of a named asset is not monotone
+```
+
+```{r}
+#| label: fig-17-confidence
+#| fig-cap: "Long-only tangency weights of five series as the confidence in the two views rises from 0.01 to 0.99. At the left every series holds its market weight; at the right the views are imposed exactly. The path between is not monotone even for the assets a view names, because the long-only constraint decides where the money shorted from European credit goes."
+#| echo: false
+#| fig-asp: 0.6
+trace |>
+  dplyr::filter(asset %in% shown) |>
+  ggplot2::ggplot(ggplot2::aes(conf, weight, colour = asset)) +
+  ggplot2::geom_line(linewidth = 0.8) +
+  ggplot2::geom_point(size = 1.6) +
+  scale_colour_tidyaa() +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  ggplot2::labs(x = "confidence c in the views", y = "weight", colour = NULL)
+```
+
+At $c = 0.01$ the portfolio is the market to within
+`r sprintf("%.1f", 100 * max(abs(trace$weight[trace$conf == 0.01] - w_mkt[trace$asset[trace$conf == 0.01]])))`
+points in any weight; at $c = 0.99$ `US_government` holds
+`r sprintf("%.0f%%", 100 * trace$weight[trace$conf == 0.99 & trace$asset == "US_government"])`
+and commodities
+`r sprintf("%.0f%%", 100 * trace$weight[trace$conf == 0.99 & trace$asset == "GLOBAL_commodity"])`.
+Nothing in the data chose any point on that path; the confidence is a
+statement about the allocator, and @sec-28-robustness-theory treats the same
+number as the size of an uncertainty set rather than a probability.
+
+### Through `set.portfolio.moments()`
+
+The route that needs no custom function is `method = "black_litterman"`,
+which `set.portfolio.moments()` passes on to `black.litterman()`. The
+arguments must travel through `optimize.portfolio()`, because a direct call
+recovers them with `match.call()` and sees symbols rather than values, as
+@sec-06-expected-returns-implementation showed; with views the route works
+and carries one more trap.
+
+```{r}
+#| label: spm-route
+opt_spm <- optimize.portfolio(Re, spec, optimize_method = "ROI", maxSR = TRUE,
+                              momentFUN = "set.portfolio.moments", method = "black_litterman",
+                              Mu = mu_eq, P = P, Views = q)
+opt_fix <- optimize.portfolio(Re, spec, optimize_method = "ROI", maxSR = TRUE,
+                              momentFUN = "set.portfolio.moments", method = "black_litterman",
+                              Mu = mu_eq, P = P, Views = q, momentargs = list(sigma = S))
+c(mu_is_posterior      = isTRUE(all.equal(as.numeric(opt_spm$moment_values$mu), as.numeric(bl$BLMu))),
+  sigma_is_BLSigma     = isTRUE(all.equal(unname(opt_spm$moment_values$sigma), unname(bl$BLSigma))),
+  max_weight_gap_pp    = 100 * max(abs(extractWeights(opt_spm)[colnames(Re)] - w_post)),
+  fixed_max_gap_pp     = 100 * max(abs(extractWeights(opt_fix)[colnames(Re)] - w_post)))
+```
+
+::: {.callout-warning}
+## With views, `BLSigma` is no longer a rescaled $\boldsymbol{\Sigma}$
+
+With the prior alone, `set.portfolio.moments(method = "black_litterman")`
+hands the optimizer $\boldsymbol{\Sigma}/2$, which a tangency portfolio does
+not notice. With views it hands $\boldsymbol{\Sigma}_{\boldsymbol{\mu}}$ of
+@eq-17-posterior, $\boldsymbol{\Sigma}$ minus a rank-$K$ correction in the
+directions of the view portfolios, and the tangency portfolio is solved on
+the wrong risk: the commodity weight comes out at
+`r sprintf("%.0f%%", 100 * extractWeights(opt_spm)[["GLOBAL_commodity"]])`
+against `r sprintf("%.0f%%", 100 * w_post[["GLOBAL_commodity"]])` on
+$\boldsymbol{\Sigma}$, a gap of
+`r sprintf("%.0f", 100 * max(abs(extractWeights(opt_spm)[colnames(Re)] - w_post)))`
+points in one weight, and nothing warns. The remedy is `momentargs`:
+`set.portfolio.moments()` fills only the moments it is not given, so
+`momentargs = list(sigma = S)` keeps the posterior mean, restores the return
+covariance, and agrees with the hand computation to
+`r sprintf("%.0e", max(abs(extractWeights(opt_fix)[colnames(Re)] - w_post)))`.
+:::
+
+### Entropy pooling on the 372 months
+
+The prior is uniform over the `r T` months; the series is `US_equity`; the
+views are that its mean will be two percentage points a year above the
+sample mean and that its volatility will be twenty percent below the sample
+volatility. A view on a mean is a row of $\boldsymbol{H}$ holding the series;
+a view on a volatility is a row holding its square, with $\boldsymbol{h}$ set
+to the second moment the view implies.
+
+```{r}
+#| label: entropy-views
+p0    <- rep(1 / T, T)                          # the uniform prior
+Aeq0  <- matrix(1, 1, T)                        # probabilities sum to one
+V     <- as.numeric(zoo::coredata(Re[, "US_equity"]))
+m0    <- mean(V); s0 <- stats::sd(V)
+m_v   <- m0 + 0.02 / 12                         # the mean view
+s_v   <- 0.8 * s0                               # the volatility view
+
+eff_n <- function(p) exp(-sum(p[p > 0] * log(p[p > 0])))     # @eq-17-effective
+
+ep_mean <- suppressMessages(EntropyProg(p0, Aeq = rbind(Aeq0, V),      beq = c(1, m_v)))
+ep_vol  <- suppressMessages(EntropyProg(p0, Aeq = rbind(Aeq0, V, V^2), beq = c(1, m0, s_v^2 + m0^2)))
+ep_both <- suppressMessages(EntropyProg(p0, Aeq = rbind(Aeq0, V, V^2), beq = c(1, m_v, s_v^2 + m_v^2)))
+
+posterior <- list(`mean view` = ep_mean$p_, `volatility view` = ep_vol$p_, `both views` = ep_both$p_)
+stopifnot(all(vapply(posterior, function(p) abs(sum(p) - 1) < 1e-6, logical(1))),
+          abs(sum(ep_both$p_ * V) - m_v) < 1e-8,
+          abs(sqrt(sum(ep_both$p_ * V^2) - sum(ep_both$p_ * V)^2) - s_v) < 1e-8)
+vapply(posterior, eff_n, numeric(1))
+```
+
+::: {.callout-note}
+## `EntropyProg()`: what the signature does not say
+
+`Aeq` and `beq` have no default, so a view expressed only as inequalities
+still needs `Aeq = matrix(1, 1, J), beq = 1` for the probabilities to sum to
+one; leave them out and the error names a missing argument, not the
+constraint. The prior must sum to one within $10^{-5}$. Every call runs
+`nloptr`'s derivative checker and reports as an R message, hence the
+`suppressMessages()` above; on a squared series the checker sometimes reports
+one error from its finite-difference tolerance while the optimization
+converges and hits the constraint, which the `stopifnot()` confirms. The
+result `p_` is a $J \times 1$ matrix, not a vector. And a view the scenarios
+cannot satisfy, a mean beyond the range of the data or a volatility near
+zero, does not fail as infeasible: the multipliers diverge and the function
+stops with `Sum of revised probabilities is greater than 1!`, the symptom
+rather than the cause.
+:::
+
+The mean view leaves `r sprintf("%.1f", eff_n(ep_mean$p_))` effective months
+of `r T`, the volatility view `r sprintf("%.1f", eff_n(ep_vol$p_))`. The
+probabilities themselves are the object to look at, from one frame.
+
+```{r}
+#| label: entropy-frame
+p_long <- lapply(names(posterior), function(k) {
+  tibble::tibble(date = zoo::index(Re), kind = k,
+                 p_rel = as.numeric(posterior[[k]]) * T)          # relative to the prior 1/T
+}) |>
+  dplyr::bind_rows() |>
+  dplyr::mutate(kind = sprintf("%s: %.0f effective months",
+                               kind, vapply(kind, function(k) eff_n(posterior[[k]]), numeric(1))))
+stopifnot(nrow(p_long) == 3 * T, !anyNA(p_long$p_rel))
+
+worst <- p_long |> dplyr::filter(grepl("^volatility", kind)) |> dplyr::slice_min(p_rel, n = 3)
+stopifnot(all(in_episode(worst$date, "liquidity_shock") | in_episode(worst$date, "credit_crisis")),
+          in_episode(worst$date[1], "liquidity_shock"))
+worst
+```
+
+```{r}
+#| label: fig-17-entropy
+#| fig-cap: "Posterior scenario probabilities relative to the uniform prior, month by month, for a view on the mean, a view on the volatility, and both. The mean view tilts every month by a little; the volatility view removes the months of the liquidity shock and the credit crisis almost entirely and spreads their mass over the calm ones."
+#| echo: false
+#| fig-asp: 0.85
+p_long |>
+  ggplot2::ggplot(ggplot2::aes(date, p_rel)) +
+  ggplot2::geom_hline(yintercept = 1, linetype = "22", colour = tidyaa_colors[["ink_soft"]],
+                      linewidth = 0.4) +
+  ggplot2::geom_col(width = 25, fill = tidyaa_colors[["blue"]]) +
+  ggplot2::facet_wrap(~ kind, ncol = 1) +
+  scale_x_model() +
+  ggplot2::labs(y = "posterior probability / prior probability")
+```
+
+The mean view is an exponential tilt in `US_equity`'s own return,
+@eq-17-tilt, so good months are weighted up and bad months down by a few
+percent each. The volatility view is a tilt in the squared return and falls
+hardest on the months furthest from the mean in either direction:
+`r fmt_model(worst$date[1])`, in the liquidity shock, keeps
+`r sprintf("%.1f%%", 100 * worst$p_rel[1])` of its prior probability.
+`meucci.moments()` turns the probabilities into probability-weighted first
+and second moments.
+
+```{r}
+#| label: meucci-moments
+mm <- meucci.moments(Re, ep_both$p_)
+mu_ep <- setNames(as.numeric(mm$mu), colnames(Re)); S_ep <- mm$sigma
+stopifnot(identical(rownames(mm$mu), colnames(Re)),
+          abs(mu_ep[["US_equity"]] - m_v) < 1e-8,
+          abs(sqrt(S_ep["US_equity", "US_equity"]) - s_v) < 1e-8)
+
+moved_mu  <- (mu_ep - mu_s) * 1200
+moved_vol <- sqrt(diag(S_ep)) / sqrt(diag(S)) - 1
+round(rbind(mean_shift_pp = moved_mu, vol_change = 100 * moved_vol)[, order(-abs(moved_mu))][, 1:6], 2)
+```
+
+The view named one series and moved sixteen: `EU_equity`'s mean rises by
+`r sprintf("%.1f", moved_mu[["EU_equity"]])` points and `UK_equity`'s
+volatility falls by `r sprintf("%.0f%%", -100 * moved_vol[["UK_equity"]])`,
+because the months the volatility view discarded were their bad months too.
+With the uniform prior `meucci.moments()` returns
+$\hat{\boldsymbol{\Sigma}}\,(T-1)/T$, which differs from `stats::cov()` by
+`r sprintf("%.2f%%", 100 / T)` and is invisible to a tangency portfolio. The
+portfolio follows by the package route, `method = "meucci"` with the
+posterior probabilities, which unlike the Black-Litterman branch reads its
+argument by value and so also works on a direct call.
+
+```{r}
+#| label: meucci-portfolio
+opt_ep <- optimize.portfolio(Re, spec, optimize_method = "ROI", maxSR = TRUE,
+                             method = "meucci", posterior_p = ep_both$p_)
+w_ep   <- extractWeights(opt_ep)[colnames(Re)]
+stopifnot(isTRUE(all.equal(as.numeric(opt_ep$moment_values$mu), as.numeric(mm$mu))),
+          max(abs(w_ep - tangency_lo(mu_ep, S_ep))) < 1e-6)
+w_smp  <- tangency_lo(mu_s, S)
+
+cmp <- cbind(sample = w_smp, entropy = w_ep)
+round(cmp[rowSums(cmp > 0.005) > 0, ], 3)
+```
+
+The sample tangency portfolio holds
+`r sprintf("%.0f%%", 100 * w_smp[["US_government"]])` in `US_government` and
+`r sprintf("%.1f%%", 100 * w_smp[["US_credit"]])` in `US_credit`; under a
+view about `US_equity`'s volatility the second becomes
+`r sprintf("%.0f%%", 100 * w_ep[["US_credit"]])`. Nothing was said about
+credit, but `US_credit` has the skewness of
+`r sprintf("%.2f", as.numeric(PerformanceAnalytics::skewness(R[, "US_credit"])))`
+that @sec-04-descriptive-analysis-theory measured and its worst months are
+the equity market's worst months, so a view that discounts those months
+re-rates it. The view is on one number and the posterior is on the whole
+history.
+
+Where the step bites is a matter of distance, and @eq-17-cost says how to
+measure it.
+
+```{r}
+#| label: entropy-cost
+se_m <- s0 / sqrt(T)
+ks   <- c(2, 5, 10, 20, 40)
+rs   <- c(0.8, 0.6, 0.4, 0.25)
+cost <- dplyr::bind_rows(
+  lapply(ks, function(k) {
+    e <- suppressMessages(EntropyProg(p0, Aeq = rbind(Aeq0, V), beq = c(1, m0 + k * se_m)))
+    tibble::tibble(view = sprintf("mean %+d standard errors (%.0f pp a year)", k, k * se_m * 1200),
+                   n_eff = eff_n(e$p_), max_p = max(e$p_) * T, approx = T * exp(-k^2 / (2 * T)))
+  }),
+  lapply(rs, function(r) {
+    e <- suppressMessages(EntropyProg(p0, Aeq = rbind(Aeq0, V, V^2), beq = c(1, m0, (r * s0)^2 + m0^2)))
+    tibble::tibble(view = sprintf("volatility at %.0f%% of sample", 100 * r),
+                   n_eff = eff_n(e$p_), max_p = max(e$p_) * T,
+                   approx = T * exp(-0.5 * (r^2 - 1 - log(r^2))))
+  }))
+```
+
+```{r}
+#| label: tbl-17-entropy-cost
+#| tbl-cap: "How much history a view costs. The effective number of months of @eq-17-effective, the largest posterior probability relative to the prior, and the second-order approximation of @eq-17-cost for a mean view or its normal counterpart for a volatility view."
+#| echo: false
+cost |>
+  dplyr::mutate(n_eff = sprintf("%.0f", n_eff), max_p = sprintf("%.1f", max_p),
+                approx = sprintf("%.0f", approx)) |>
+  kable(align = "lrrr",
+        col.names = c("view on US_equity", "effective months", "largest p / prior", "approximation"))
+```
+
+A mean view five standard errors from the sample, already
+`r sprintf("%.0f", 5 * se_m * 1200)` percentage points a year, keeps
+`r sprintf("%.0f", cost$n_eff[grepl("^mean \\+5 ", cost$view)])` of `r T`
+months; forty keep
+`r sprintf("%.0f", cost$n_eff[grepl("^mean \\+40", cost$view)])` and put
+`r sprintf("%.0f", cost$max_p[grepl("^mean \\+40", cost$view)])` times the
+prior mass on the single best month. @eq-17-cost tracks the measured number
+until the tilt reaches the skewed tail, where the normal approximation
+understates what the data can still supply. In the units an allocator states
+them in, the volatility view is the expensive one: a twenty percent cut costs
+`r sprintf("%.0f", T - eff_n(ep_vol$p_))` months where two points on the mean
+cost `r sprintf("%.1f", T - eff_n(ep_mean$p_))`, because @eq-04-precision made
+the variance the input a sample knows well and @eq-06-se the mean the one it
+does not. In standard errors of the respective estimate, two points on the
+mean are `r sprintf("%.1f", (m_v - m0) / se_m)` standard errors away and the
+twenty percent cut `r sprintf("%.1f", (s0 - s_v) / (s0 / sqrt(2 * T)))`, and
+@eq-17-cost prices a view by that distance alone.
+
+### Ordinal views on the five equity classes
+
+The last formulation asks for no number. The view is that Japanese equity
+will lead and that the other four keep the order the sample gave them;
+`order` lists the classes from lowest expected return to highest, by column
+index, built here by name.
+
+```{r}
+#| label: ranking
+Req      <- Re[, eq_classes]
+asc_smp  <- names(sort(mu_s[eq_classes]))                      # sample order, ascending
+view_asc <- c(setdiff(asc_smp, "JP_equity"), "JP_equity")      # Japan promoted to the top
+ord      <- match(view_asc, colnames(Req))
+stopifnot(!anyNA(ord), length(ord) == 5L)
+view_asc
+```
+
+`meucci.ranking()` writes each adjacent pair of the ranking as an inequality
+row of @eq-17-entropy, $\mathbb{E}[r_{\pi(j)}] - \mathbb{E}[r_{\pi(j+1)}] \le 0$,
+and returns the posterior moments. It discards the probabilities, so the same
+constraints go to `EntropyProg()` beside it to recover them.
+
+```{r}
+#| label: meucci-ranking
+mr  <- suppressMessages(meucci.ranking(Req, p0, ord))
+Vk  <- zoo::coredata(Req)[, ord[1:4]] - zoo::coredata(Req)[, ord[2:5]]   # the rows meucci.ranking() builds
+epr <- suppressMessages(EntropyProg(p0, A = t(Vk), b = rep(0, 4), Aeq = Aeq0, beq = 1))
+mu_rank <- setNames(as.numeric(mr$mu), eq_classes)
+stopifnot(isTRUE(all.equal(as.numeric(t(zoo::coredata(Req)) %*% epr$p_), unname(mu_rank))),
+          all(diff(mu_rank[view_asc]) > -1e-6))                            # the ranking holds, to solver tolerance
+tied <- names(which(abs(mu_rank - mu_rank[["JP_equity"]]) < 1e-6))
+stopifnot(names(which.min(mu_s[eq_classes])) == "JP_equity",               # the text: Japan's sample mean is the lowest
+          setequal(tied, c("JP_equity", tail(setdiff(asc_smp, "JP_equity"), 2))))   # tied with the two highest
+
+round(rbind(sample = mu_s[eq_classes], ranked = mu_rank)[, view_asc] * 12, 4)
+c(effective_months = eff_n(epr$p_))
+```
+
+The ranking holds in the posterior, but not as a ranking. The constraint is
+weak, and the least-divergent way to put `JP_equity`, whose sample mean is
+the lowest of the five by up to
+`r sprintf("%.1f", 100 * (max(mu_s[eq_classes]) - mu_s[["JP_equity"]]) * 12)`
+points, at the top is to tie it with the two highest at
+`r sprintf("%.1f%%", 100 * mu_rank[["JP_equity"]] * 12)` and pull the other
+two below; `r 4L - sum(diff(mu_rank[view_asc]) > 1e-6)` of the four
+inequalities hold as ties. That costs
+`r sprintf("%.1f", T - eff_n(epr$p_))` effective months, almost nothing, and
+hands the optimizer three assets it cannot tell apart by mean. The centroid
+of @eq-17-centroid commits to more, a definite spacing, and `ac.ranking()`
+returns it for a complete sort.
+
+```{r}
+#| label: ac-ranking
+set.seed(1602)
+c_ac <- setNames(ac.ranking(Req, ord), colnames(Req))
+c_mc <- setNames(centroid.complete.mc(ord, simulations = 1000), colnames(Req))
+
+# @eq-17-centroid by hand, assigned so that the top of the ranking gets the largest value.
+centroid_ac <- function(n) {
+  alpha <- 0.4424 - 0.1185 * n^(-0.21)
+  qnorm((n + 1 - seq_len(n) - alpha) / (n - 2 * alpha + 1))
+}
+c_an <- setNames(numeric(5), colnames(Req)); c_an[rev(ord)] <- centroid_ac(5)
+stopifnot(isTRUE(all.equal(c_ac / max(c_ac), c_an / max(c_an))),   # ac.ranking() is the formula, rescaled
+          max(abs(c_mc - c_an)) < 0.05)                              # Monte Carlo agrees
+
+round(rbind(ac_ranking = c_ac, formula = c_an, monte_carlo = c_mc)[, view_asc], 4)
+```
+
+::: {.callout-warning}
+## `ac.ranking()` ignores its scale argument
+
+The documentation says the centroid is scaled to the median of the asset
+means, and the function reads a `max.value` argument to that end. The scaling
+helper then discards it and maps the centroid onto $[-0.05, 0.05]$ whatever
+the data: the top-ranked asset is assigned five percent *per period*,
+`r sprintf("%.0f", 100 * max(c_ac) * 12)` percent a year on monthly data, and
+passing `max.value` changes nothing. The vector carries no names. Treat the
+output as a direction, name it yourself, and set the scale yourself.
+:::
+
+The three other centroid functions encode views that are less than a
+complete sort, each returning an unnamed vector in asset-index order.
+
+```{r}
+#| label: centroid-family
+set.seed(1602)
+tibble::tibble(
+  fn = c("centroid.complete.mc(order)", "centroid.buckets(list)",
+         "centroid.sign(positive, negative)", "centroid.sectors(list)"),
+  view = c("a complete ordering of all assets",
+           "groups ordered against each other, no order inside a group",
+           "positive and negative expected returns, each side ordered",
+           "an ordering inside each sector, no view across sectors"),
+  example = c(paste(round(centroid.complete.mc(c(2, 1, 3, 5, 4)), 2), collapse = " "),
+              paste(round(centroid.buckets(list(c(1, 5), c(2, 4), 3)), 2), collapse = " "),
+              paste(round(centroid.sign(positive = c(2, 3), negative = c(5, 4)), 2), collapse = " "),
+              paste(round(centroid.sectors(list(c(2, 1, 3), c(5, 4))), 2), collapse = " "))
+) |>
+  kable(align = "lll", col.names = c("function", "the view it encodes", "five-asset example"))
+```
+
+Every one is a Monte Carlo average of sorted normal draws, so the result
+depends on the seed and on `simulations`; the sector variant centers each
+sector at zero and says nothing about one sector against another; the bucket
+variant gives every member of a bucket the same value, the right encoding of
+"these are in the middle" and the wrong one if the allocator has any opinion
+inside the bucket.
+
+A centroid is a direction. Handed to a tangency solver alone it selects the
+top of the ranking and nothing else, because the Sharpe ratio is invariant to
+the scale of $\boldsymbol{\mu}$ and a zero-mean vector on five correlated
+assets offers no diversification.
+
+```{r}
+#| label: centroid-portfolios
+kappa5 <- diff(range(mu_eq5)) / diff(range(c_an))    # the ranking given the prior's dispersion
+mu_c5  <- mu_eq5 + kappa5 * c_an
+
+W5 <- cbind(`equilibrium`      = tangency_lo(mu_eq5, S5),
+            `sample mean`      = tangency_lo(mu_s[eq_classes], S5),
+            `entropy ranking`  = tangency_lo(mu_rank, mr$sigma),
+            `centroid alone`   = tangency_lo(c_an, S5),
+            `prior + centroid` = tangency_lo(mu_c5, S5))
+stopifnot(identical(rownames(W5), eq_classes),
+          isTRUE(all.equal(W5[, "equilibrium"], w_mkt5, tolerance = 1e-6)),
+          isTRUE(all.equal(tangency_lo(c_an, S5), tangency_lo(10 * c_an, S5))))
+zeroed <- names(which(W5[, "prior + centroid"] < 0.005))
+stopifnot(view_asc[4] == "EU_equity", setequal(zeroed, view_asc[1:2]),       # the text names them
+          W5["JP_equity", "prior + centroid"] > w_mkt5[["JP_equity"]],
+          W5["EU_equity", "prior + centroid"] > w_mkt5[["EU_equity"]])
+```
+
+```{r}
+#| label: tbl-17-ranking
+#| tbl-cap: "Long-only tangency portfolios of the five equity classes under five mean vectors. The centroid alone is a corner solution at any scale; added to the equilibrium prior with the prior's own dispersion it becomes a tilt."
+#| echo: false
+(W5 * 100) |>
+  round(1) |>
+  as.data.frame() |>
+  tibble::rownames_to_column("class") |>
+  dplyr::mutate(dplyr::across(-class, ~ sprintf("%.1f%%", .x))) |>
+  kable(align = "lrrrrr", col.names = c("", colnames(W5)))
+```
+
+The entropy ranking, which tied three classes, holds
+`r sprintf("%.0f%%", 100 * W5["US_equity", "entropy ranking"])` `US_equity`
+and `r sprintf("%.0f%%", 100 * W5["JP_equity", "entropy ranking"])`
+`JP_equity`: with equal means the optimizer sorts by variance and covariance,
+which is @eq-09-gmv at work inside a tangency problem. The centroid alone
+holds `r sprintf("%.0f%%", 100 * W5["JP_equity", "centroid alone"])`
+`JP_equity`. Added to the prior with the prior's own dispersion it lifts
+Japan from `r sprintf("%.1f%%", 100 * w_mkt5[["JP_equity"]])` to
+`r sprintf("%.1f%%", 100 * W5["JP_equity", "prior + centroid"])` and
+`EU_equity`, ranked second, from
+`r sprintf("%.1f%%", 100 * w_mkt5[["EU_equity"]])` to
+`r sprintf("%.1f%%", 100 * W5["EU_equity", "prior + centroid"])`, sells
+`r paste0("\x60", zeroed, "\x60", collapse = " and ")`, the
+`r length(zeroed)` classes ranked lowest, to zero, and takes the rest from
+`US_equity`. The level came from the prior and the size from a choice; the
+ranking supplied only the direction, which is all a ranking is.
+
+## One Opinion, Three Formulations {#sec-17-expressing-views-application}
+
+The opinion is that United States credit is expensive and Japanese equity is
+cheap: as a portfolio, long `JP_equity` and short `US_credit`. Each
+formulation receives it in its own language: a relative view three
+percentage points a year above the equilibrium spread at a confidence of one
+half; the same spread as an entropy view on the historical scenarios, pooled
+at the same confidence; and a bucket ranking with `US_credit` at the bottom,
+`JP_equity` at the top, and no opinion about the fourteen between.
+
+```{r}
+#| label: application-views
+P_a <- matrix(0, 1, N, dimnames = list("JP_vs_UScredit", colnames(Re)))
+P_a[1, "JP_equity"] <- 1; P_a[1, "US_credit"] <- -1
+spread_eq <- as.numeric(P_a %*% mu_eq)
+q_a <- spread_eq + 0.03 / 12
+c_a <- 0.5
+
+# A: Black-Litterman.
+mu_A <- bl_post(mu_eq, S, P_a, q_a, c_a)$mu
+
+# B: entropy pooling. The scenarios are the sample months shifted so that
+# their mean is the equilibrium vector: the three formulations share a prior,
+# and the covariance and every higher moment of the history are untouched.
+Rc <- sweep(zoo::coredata(Re), 2, mu_s - mu_eq)
+stopifnot(isTRUE(all.equal(unname(colMeans(Rc)), unname(mu_eq))))
+V_a  <- as.numeric(Rc %*% t(P_a))
+stopifnot(0.03 < stats::sd(V_a) * sqrt(12) / sqrt(T / 12))   # the view is within one standard error of the mean
+ep_a <- suppressMessages(EntropyProg(p0, Aeq = rbind(Aeq0, V_a), beq = c(1, q_a)))
+p_a  <- (1 - c_a) * p0 + c_a * as.numeric(ep_a$p_)                     # opinion pooling
+mm_a <- meucci.moments(Rc, p_a)
+mu_B <- setNames(as.numeric(mm_a$mu), colnames(Re)); S_B <- mm_a$sigma
+
+# C: a bucket centroid, given the size the other two used.
+set.seed(1602)
+i_top <- match("JP_equity", colnames(Re)); i_bot <- match("US_credit", colnames(Re))
+cb    <- setNames(centroid.buckets(list(i_bot, setdiff(seq_len(N), c(i_bot, i_top)), i_top)),
+                  colnames(Re))
+kappa <- c_a * (q_a - spread_eq) / (cb[["JP_equity"]] - cb[["US_credit"]])
+mu_C  <- mu_eq + kappa * cb
+
+spreads <- c(prior = spread_eq, BL = P_a %*% mu_A, entropy = P_a %*% mu_B, centroid = P_a %*% mu_C)
+stopifnot(all(abs(spreads[-1] - ((1 - c_a) * spread_eq + c_a * q_a)) < 1e-10))
+round(spreads * 12, 4)
+```
+
+All three posteriors put the spread at
+`r sprintf("%.2f%%", 100 * spreads[["BL"]] * 12)` a year, halfway from the
+equilibrium's `r sprintf("%.2f%%", 100 * spread_eq * 12)` to the view's
+`r sprintf("%.2f%%", 100 * q_a * 12)`, so the strength of the opinion about
+its own subject is identical. Everything else differs.
+
+```{r}
+#| label: application-portfolios
+W3 <- cbind(market = w_mkt, `Black-Litterman` = tangency_lo(mu_A, S),
+            `entropy pooling` = tangency_lo(mu_B, S_B), `centroid` = tangency_lo(mu_C, S))
+stopifnot(identical(rownames(W3), colnames(Re)), !anyNA(W3))
+
+p_te <- function(w) sqrt(as.numeric(t(w - w_mkt) %*% S %*% (w - w_mkt))) * sqrt(12)
+p_sr <- function(w, m, SS = S) sum(m * w) * 12 / (sqrt(as.numeric(t(w) %*% SS %*% w)) * sqrt(12))
+turnover <- function(w) sum(abs(w - w_mkt)) / 2
+
+summ <- tibble::tibble(
+  formulation = colnames(W3),
+  specified   = c("market weights", "a number and a confidence",
+                  "a number and a confidence", "an order"),
+  te          = apply(W3, 2, p_te),
+  turnover    = apply(W3, 2, turnover),
+  held        = colSums(W3 > 0.005),
+  sr_prior    = apply(W3, 2, p_sr, m = mu_eq),
+  jp          = W3["JP_equity", ],
+  usc         = W3["US_credit", ]
+)
+stopifnot(identical(summ$formulation, colnames(W3)))
+
+named <- c("JP_equity", "US_credit")
+d_ep  <- (W3[, "entropy pooling"] - w_mkt)[setdiff(colnames(Re), named)]
+stopifnot(sum(abs(W3[, "Black-Litterman"] - w_mkt) > 1e-6) == 2L,   # @eq-17-weights: only the named assets move
+          summ$formulation[which.max(summ$turnover)] == "centroid",
+          W3["US_credit", "centroid"] < 0.005)
+```
+
+```{r}
+#| label: tbl-17-three
+#| tbl-cap: "The same opinion three ways, and the market portfolio it departs from. Tracking error and turnover are against the market; the Sharpe ratio is scored on the equilibrium mean, the one vector none of the three was fitted to."
+#| echo: false
+summ |>
+  dplyr::mutate(te = sprintf("%.2f%%", 100 * te), turnover = sprintf("%.1f%%", 100 * turnover),
+                sr_prior = sprintf("%.3f", sr_prior),
+                jp = sprintf("%.1f%%", 100 * jp), usc = sprintf("%.1f%%", 100 * usc)) |>
+  kable(align = "llrrrrrr",
+        col.names = c("", "what had to be specified", "tracking error", "turnover",
+                      "held", "Sharpe on prior", "JP_equity", "US_credit"))
+```
+
+```{r}
+#| label: fig-17-three
+#| fig-cap: "Long-only tangency weights under the three formulations of one opinion, against the market portfolio, from one data frame. Black-Litterman and entropy pooling move the two assets the opinion named and little else; the centroid, written into the mean vector asset by asset, is turned by the optimizer into a hedged position across the credit and government series."
+#| echo: false
+#| fig-asp: 0.72
+w3_long <- as.data.frame(W3) |>
+  tibble::rownames_to_column("asset") |>
+  tidyr::pivot_longer(-asset, names_to = "formulation", values_to = "weight") |>
+  dplyr::mutate(asset = factor(asset, levels = rownames(W3)[order(W3[, "market"])]),
+                formulation = factor(formulation, levels = colnames(W3)))
+stopifnot(nrow(w3_long) == 4 * N)
+
+w3_long |>
+  ggplot2::ggplot(ggplot2::aes(weight, asset, fill = formulation)) +
+  ggplot2::geom_col(position = ggplot2::position_dodge(width = 0.76), width = 0.7) +
+  scale_fill_tidyaa() +
+  ggplot2::scale_x_continuous(labels = scales::percent) +
+  ggplot2::labs(x = "weight in the long-only tangency portfolio", y = NULL, fill = NULL)
+```
+
+Read @tbl-17-three across. Black-Litterman and entropy pooling put the
+tracking error within
+`r sprintf("%.2f", 100 * abs(diff(summ$te[summ$formulation %in% c("Black-Litterman", "entropy pooling")])))`
+points of each other, at
+`r sprintf("%.2f%%", 100 * summ$te[summ$formulation == "Black-Litterman"])` and
+`r sprintf("%.2f%%", 100 * summ$te[summ$formulation == "entropy pooling"])`,
+and both move `JP_equity` from
+`r sprintf("%.1f%%", 100 * w_mkt[["JP_equity"]])` to about
+`r sprintf("%.1f%%", 100 * summ$jp[summ$formulation == "Black-Litterman"])`.
+The first touches nothing else, which is @eq-17-weights: the unconstrained
+tilt is $\boldsymbol{P}'\boldsymbol{\Lambda}$, and the long-only constraint
+does not bind. The second moves `r sum(abs(d_ep) > 0.005)` other weights by
+more than half a point, `r names(which.max(abs(d_ep)))` the most at
+`r sprintf("%.1f", 100 * max(abs(d_ep)))` points, the difference between an
+exponential tilt on `r T` skewed months and a normal update; it is small here
+because the spread series has a skewness of
+`r sprintf("%.2f", as.numeric(PerformanceAnalytics::skewness(V_a)))`, and on
+the volatility view above it was not.
+
+The centroid committed to the least and moved the portfolio the most: a
+turnover of
+`r sprintf("%.0f%%", 100 * summ$turnover[summ$formulation == "centroid"])`
+against `r sprintf("%.0f%%", 100 * summ$turnover[summ$formulation == "Black-Litterman"])`,
+`US_credit` sold to zero, and
+`r sum(abs(W3[, "centroid"] - w_mkt) > 0.005) - 2L` other weights changed by
+more than half a point. The reason is not the ranking but the way it entered
+$\boldsymbol{\mu}$. Adding $\kappa\boldsymbol{c}$ to the prior lowered
+`US_credit`'s mean and left `US_government`'s where it was, and the optimizer
+read that as an opinion about the spread between two series that move
+together: the unconstrained tilt $\boldsymbol{\Sigma}^{-1}\kappa\boldsymbol{c}$
+is a large short in credit hedged with a large long in government bonds,
+which the long-only constraint clips into what @fig-17-three shows.
+Black-Litterman moved `US_government`'s mean by
+`r sprintf("%.2f", (mu_A - mu_eq)[["US_government"]] * 1200)` points along
+with credit's, so no such spread appeared. A view is coherent with the
+covariance matrix only when the shift in $\boldsymbol{\mu}$ is
+$\boldsymbol{\Sigma}$ times a portfolio, and the centroid's shift is not; the
+remedy is to pass the ranking through @eq-17-posterior as absolute views on
+the two named assets, which exercise 3 asks for. The lesson of @he1999 is
+that the point of Black-Litterman is less the Bayesian update than the
+guarantee that the answer is the market plus the views.
+
+Two readings from @sec-08-estimation-error-theory close the comparison. A
+view is an estimate: the spread has an annualized volatility of
+`r sprintf("%.1f%%", 100 * stats::sd(V_a) * sqrt(12))`, so the standard
+error of its mean over `r T / 12` model years is, by @eq-06-se,
+`r sprintf("%.1f", 100 * stats::sd(V_a) * sqrt(12) / sqrt(T / 12))` percentage
+points, and the three-point deviation the opinion asserted is less than one
+standard error of what the entire sample could say about it; the entropy
+program priced it at `r sprintf("%.1f", T - eff_n(ep_a$p_))` effective months
+of `r T`. And a ranking commits to less: it is invariant to the magnitude
+errors that @chopra1993 found an order of magnitude more costly than errors
+in variances, which is the case @salcher2026less make for it, and on these
+numbers the formulation that asked for a rank matched the two that asked for
+a number until the rank was written into $\boldsymbol{\mu}$ without the
+covariance. Whether the ranking is right is a separate question from whether
+it was expressed well, and only the second is settled here.
+
+None of this is out of sample, and it cannot be. A view is dated, held at a
+moment about a horizon, and a backtest of views needs a record of what the
+allocator believed month by month, which no dataset supplies and this book
+does not invent. The chapter therefore stops at in-sample comparisons of what
+each formulation buys. Where the view is generated from data, a momentum
+ranking or a signal of @sec-16-signals-and-forecasts-theory, a history of
+views exists by construction, and @sec-16-signals-and-forecasts-application
+is where such a view is run through the rolling machinery of
+@sec-25-backtesting-application. @sec-18-parametric-policies-theory takes the
+alternative route of skipping $\boldsymbol{\mu}$ altogether, and
+@sec-19-regimes-theory reads a regime as a view on which scenarios apply,
+@eq-17-entropy with the probabilities set by a state rather than an opinion.
+
+## Key Takeaways {.unnumbered}
+
+- Black-Litterman is @eq-17-posterior: a normal prior on $\boldsymbol{\mu}$
+  centered on the equilibrium of @eq-06-equilibrium, views as linear
+  statements with error, and a posterior that moves every asset by its covariance with
+  the view portfolios [@black1992; @satchell2000].
+- With $\boldsymbol{\Omega} = \tfrac{1-c}{c}\boldsymbol{P}\tau\boldsymbol{\Sigma}\boldsymbol{P}'$
+  the scale $\tau$ cancels and each view lands at $(1-c)$ times the prior
+  plus $c$ times the view [@meucci2010]. The confidence is the size of the
+  position; `black.litterman()` fixes it at one half.
+- The posterior tangency portfolio is the market plus a position in each view
+  portfolio, @eq-17-weights, and assets in no view keep their weight
+  [@he1999]. A view written into $\boldsymbol{\mu}$ by hand lacks that
+  property and becomes a hedged spread trade.
+- Entropy pooling replaces the distribution with `r T` scenarios and the view
+  with a constraint on their probabilities [@meucci2008]. A mean view within a
+  few standard errors costs nothing; a volatility view discards the months of
+  the liquidity shock and the credit crisis and re-rates everything with a
+  left tail.
+- A ranking is a direction, and the centroid of @eq-17-centroid is its
+  expected value [@almgren2006]. It has no level and no scale, `ac.ranking()`
+  assigns it a wrong one, and the size of the position is a choice the
+  allocator has to make explicitly.
+
+## Exercises {.unnumbered}
+
+1. Replace @eq-17-omega with the diagonal convention of @he1999,
+   $\omega_k = \boldsymbol{p}_k'\boldsymbol{\Sigma}\boldsymbol{p}_k$, in
+   `bl_post()` and recompute the posterior for the two views of
+   @tbl-17-views. Does @eq-17-pooling still hold view by view? Explain what
+   the off-diagonal element of $\boldsymbol{P}\boldsymbol{\Sigma}\boldsymbol{P}'$
+   carries and when the two conventions coincide.
+2. Express the volatility view at 50 and at 150 percent of the sample
+   volatility. Report the effective number of months for each, which months
+   carry the most posterior probability, and what the tangency portfolio does
+   with `US_credit` in the two cases.
+3. Write the bucket ranking of @sec-17-expressing-views-application as two
+   absolute views in `bl_post()`, one on `JP_equity` at
+   $\mu_{\text{eq}} + \kappa c$ and one on `US_credit`, at the same
+   confidence, and compare the tangency portfolio with the centroid column of
+   @tbl-17-three. Which weights stop moving, and why?
+4. Rank the five equity classes in the reverse of their sample order and run
+   `meucci.ranking()`. How many posterior means are tied, and what does
+   `ac.ranking()` return for the same view? Say which of the two a reader who
+   believed the reversal should hand to the optimizer, and at what scale.

@@ -1,0 +1,207 @@
+### Chapter 28: Robustness and Model Uncertainty {.unnumbered}
+
+```{r}
+#| label: sol-28-setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+N <- ncol(Re); Tn <- nrow(Re); d <- zoo::index(R)
+mu <- colMeans(Re); S <- stats::cov(Re)
+gamma <- 3
+
+# The chapter's helpers, repeated so that this fragment runs on its own.
+qp_simplex <- function(Dmat, dvec, nm) {
+  n <- length(dvec)
+  sol <- quadprog::solve.QP(Dmat = Dmat * 1e4, dvec = dvec * 1e4,
+                            Amat = cbind(rep(1, n), diag(n)), bvec = c(1, rep(0, n)), meq = 1)
+  w <- pmax(sol$solution, 0); setNames(w / sum(w), nm)
+}
+gmv_qp <- function(S) qp_simplex(2 * S, rep(0, ncol(S)), colnames(S))
+mv_qp  <- function(mu, S, gamma) qp_simplex(gamma * S, mu, names(mu))
+tan_qp <- function(mu, S) {
+  n <- length(mu)
+  if (max(mu) <= 0) return(gmv_qp(S))
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(mu * 1e2, diag(n)), bvec = c(1, rep(0, n)), meq = 1)
+  y <- pmax(sol$solution, 0); setNames(y / sum(y), names(mu))
+}
+target_qp <- function(mu, S, target) {
+  n <- length(mu)
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(rep(1, n), mu * 1e2, diag(n)),
+                            bvec = c(1, target * 1e2, rep(0, n)), meq = 2)
+  w <- pmax(sol$solution, 0); setNames(w / sum(w), names(mu))
+}
+p_vol <- function(w, V = S) sqrt(as.numeric(t(w) %*% V %*% w)) * sqrt(12)
+p_ret <- function(w, m = mu) sum(m * w) * 12
+p_sr  <- function(w) p_ret(w) / p_vol(w)
+turnover <- function(w1, w2) sum(abs(w1[names(w2)] - w2)) / 2
+block_index <- function(n, block = 12L) {
+  starts <- sample.int(n - block + 1L, ceiling(n / block), replace = TRUE)
+  as.vector(outer(0:(block - 1L), starts, "+"))[seq_len(n)]
+}
+eps_of <- function(p, T_ = Tn, N_ = N) N_ * (T_ - 1) / (T_ * (T_ - N_)) * stats::qf(p, N_, T_ - N_)
+mp_long_only <- function(mu, S, eps, gamma, tol = 1e-8, maxit = 200L) {
+  w <- mv_qp(mu, S, gamma)
+  for (i in seq_len(maxit)) {
+    g_star <- gamma + sqrt(eps) / sqrt(as.numeric(t(w) %*% S %*% w))
+    w_new  <- mv_qp(mu, S, g_star)
+    if (max(abs(w_new - w)) < tol) { w <- w_new; break }
+    w <- w_new
+  }
+  w
+}
+kl_tilt <- function(w, eta, X) {
+  x <- as.numeric(X %*% w)
+  q_of  <- function(th) { a <- -th * x; a <- a - max(a); q <- exp(a); q / sum(q) }
+  kl_of <- function(th) { q <- q_of(th); q <- q[q > 0]; sum(q * log(q * length(x))) }
+  theta <- stats::uniroot(function(th) kl_of(th) - eta, c(0, 5000), tol = 1e-10)$root
+  q <- q_of(theta)
+  list(q = q, theta = theta, mu_q = setNames(as.numeric(t(X) %*% q), colnames(X)))
+}
+w_gmv <- gmv_qp(S); w_tan <- tan_qp(mu, S); w_plugin <- mv_qp(mu, S, gamma)
+base_spec <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only")
+```
+
+#### Exercise 1
+
+The three levels are run through the same rolling loop, scored as the
+register scores them, and the mean trading distance from the minimum-variance
+portfolio of the same window is recorded beside the Sharpe ratio.
+
+```{r}
+#| label: sol-28-ex1
+win <- 60L; ends <- seq.int(120L, Tn - 1L)
+Rm <- zoo::coredata(R); Rem <- zoo::coredata(Re)
+levels_p <- c(0.1, 0.5, 0.9)
+eps_lv <- eps_of(levels_p, win, N)
+
+sol1 <- lapply(ends, function(e) {
+  X <- Rem[(e - win + 1L):e, , drop = FALSE]
+  m <- colMeans(X); V <- stats::cov(X); wg <- gmv_qp(V)
+  lapply(eps_lv, function(eps) { w <- mp_long_only(m, V, eps, gamma); structure(w, to_gmv = turnover(w, wg)) })
+})
+score_level <- function(k) {
+  eop <- NULL; gross <- turn <- dist <- numeric(length(ends))
+  for (j in seq_along(ends)) {
+    w <- as.numeric(sol1[[j]][[k]]); rt <- Rm[ends[j] + 1L, ]
+    turn[j] <- if (is.null(eop)) NA_real_ else 0.5 * sum(abs(w - eop))
+    gross[j] <- sum(w * rt); dist[j] <- attr(sol1[[j]][[k]], "to_gmv")
+    eop <- w * (1 + rt) / (1 + gross[j])
+  }
+  rfo <- rf[ends + 1L]; n <- length(gross)
+  tibble::tibble(p = levels_p[k],
+                 sharpe = (prod(1 + gross)^(12 / n) - prod(1 + rfo)^(12 / n)) / (stats::sd(gross) * sqrt(12)),
+                 ann_turnover = mean(turn, na.rm = TRUE) * 12,
+                 dist_to_gmv = mean(dist))
+}
+ex1 <- dplyr::bind_rows(lapply(seq_along(levels_p), score_level))
+stopifnot(all(diff(ex1$dist_to_gmv) < 0), all(diff(ex1$sharpe) > 0), ex1$dist_to_gmv[3] > 0.1)
+ex1
+```
+
+The distance to minimum variance falls from
+`r sprintf("%.0f%%", 100 * ex1$dist_to_gmv[1])` of the portfolio at
+$p = 0.1$ to `r sprintf("%.0f%%", 100 * ex1$dist_to_gmv[3])` at $p = 0.9$,
+and the Sharpe ratio rises with every step. At $p = 0.9$ the two portfolios
+still differ by more than a tenth of their weight, so on sixty-month windows
+the multi-prior rule is not yet minimum variance even at a ninety-percent
+ellipsoid; it is a portfolio that moves most of the way there and keeps the
+rest as a tilt toward the sample means.
+
+#### Exercise 2
+
+```{r}
+#| label: sol-28-ex2
+set.seed(1602)
+K <- 25L; B <- 200L
+frontier_of <- function(m, V, K = 25L) {
+  lo <- sum(gmv_qp(V) * m); hi <- max(m)
+  targets <- lo + (hi - lo) * seq(0, 0.995, length.out = K)
+  t(vapply(targets, function(tg) target_qp(m, V, tg), numeric(length(m))))
+}
+boot <- lapply(seq_len(B), function(b) {
+  X <- zoo::coredata(Re)[block_index(Tn), ]
+  frontier_of(colMeans(X), stats::cov(X), K)
+})
+W_res <- Reduce(`+`, boot) / B
+top_asset <- names(which.max(mu))
+same_top  <- mean(vapply(boot, function(W) names(which.max(W[K, ])) == top_asset, logical(1)))
+c(resampled_top_return = p_ret(W_res[K, ]), highest_mean = 12 * max(mu),
+  positions_in_top = sum(W_res[K, ] > 0.01), share_of_draws_with_same_top = same_top)
+```
+
+Under a long-only constraint the highest-return point of any frontier is a
+single asset, the one with the highest mean in that sample. The draws disagree
+about which asset that is: only
+`r sprintf("%.0f%%", 100 * same_top)` of them put `r top_asset` at the top.
+Averaging those corners produces a portfolio of
+`r sum(W_res[K, ] > 0.01)` classes whose return at the sample moments,
+`r sprintf("%.1f%%", 100 * p_ret(W_res[K, ]))`, lies below the highest sample
+mean of `r sprintf("%.1f%%", 100 * 12 * max(mu))`. The right end of a
+resampled frontier is therefore never the maximum-return portfolio of the
+sample; it is inside the hull by construction, which is the part of
+@scherer2002's critique that needs no distributional argument at all.
+
+#### Exercise 3
+
+```{r}
+#| label: sol-28-ex3
+set.seed(1602)
+mkt  <- rowMeans(zoo::coredata(Re))
+beta <- apply(zoo::coredata(Re), 2, function(x) stats::cov(x, mkt) / stats::var(mkt))
+spec_fe <- base_spec |>
+  add.constraint(type = "factor_exposure", B = beta, lower = 0.2, upper = 0.4) |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "StdDev")
+W <- rp_sample(spec_fe, permutations = 2000)
+colnames(W) <- names(spec_fe$assets); W <- W[, colnames(Re)]
+expo <- as.numeric(W %*% beta)
+keep <- W[expo >= 0.2 & expo <= 0.4, , drop = FALSE]
+sr_keep <- as.numeric(keep %*% mu) * 12 / (sqrt(rowSums((keep %*% S) * keep)) * sqrt(12))
+w_roi <- extractWeights(optimize.portfolio(Re, spec_fe, optimize_method = "ROI", maxSR = TRUE))[colnames(Re)]
+c(generated = nrow(W), surviving = nrow(keep),
+  best_surviving = max(sr_keep), ROI = p_sr(w_roi), share = max(sr_keep) / p_sr(w_roi))
+```
+
+Of `r nrow(W)` draws, `r nrow(keep)` satisfy the exposure bound once it is
+checked by hand, and the best of them reaches
+`r sprintf("%.0f%%", 100 * max(sr_keep) / p_sr(w_roi))` of the Sharpe ratio
+the quadratic program attains at the cap. Eliminating by hand restores a
+feasible answer but not a good one: a constraint that cuts the feasible set to
+a thin slab leaves a random sample with few members inside it, and the search
+is as poor as @sec-13-solvers-application found it on the unconstrained set.
+
+#### Exercise 4
+
+```{r}
+#| label: sol-28-ex4
+eta <- 0.05; eps <- 2 * eta
+Xm <- zoo::coredata(Re)
+sig_w <- sqrt(as.numeric(t(w_plugin) %*% S %*% w_plugin))
+mu_ellipsoid <- mu - sqrt(eps) / sig_w * as.numeric(S %*% w_plugin)      # eq. 28-worst-mean
+mu_tilt      <- kl_tilt(w_plugin, eta, Xm)$mu_q                           # eq. 28-tilt
+skew <- apply(Xm, 2, function(x) mean((x - mean(x))^3) / stats::sd(x)^3)
+ex4 <- tibble::tibble(class = colnames(Re),
+                      ellipsoid = 12 * (mu_ellipsoid - mu), tilt = 12 * (mu_tilt - mu),
+                      extra = tilt - ellipsoid, skewness = skew) |>
+  dplyr::arrange(extra)
+rho <- stats::cor(ex4$extra, ex4$skewness, method = "spearman")
+stopifnot(rho > 0.5)
+head(ex4, 5)
+```
+
+The tilt marks down most, relative to the ellipsoid, the classes listed first:
+their extra mark-down and their skewness have a rank correlation of
+`r sprintf("%.2f", rho)`, `r if (rho > 0) "positive" else "negative"` because
+the tilt loads on the months the plug-in portfolio lost most, and a class whose
+own worst months fall in those months — a left tail that coincides with the
+portfolio's — is marked down beyond what its covariance alone implies. The
+ellipsoid of @eq-28-worst-mean sees only $\boldsymbol{\Sigma}\boldsymbol{w}$
+and cannot distinguish a symmetric class from a skewed one with the same
+covariance.

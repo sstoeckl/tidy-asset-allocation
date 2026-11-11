@@ -1,0 +1,292 @@
+/*-- scss:defaults --*/
+
+// Layered on top of `cosmo` and `_brand.yml`, in the spirit of Tidy Finance:
+// the stock Bootstrap theme carries the page, one accent colour carries the
+// identity, and this file only removes ornament and sets the title block.
+// Anything longer than this is a redesign, not a stylesheet.
+
+$tidyaa-paper:     #FFFFFF !default;
+$tidyaa-surface:   #F8F9FA !default;
+$tidyaa-ink:       #212529 !default;
+$tidyaa-inksoft:   #6C757D !default;
+$tidyaa-rule:      #DEE2E6 !default;
+$tidyaa-blue:      #2E77A6 !default;
+$tidyaa-bluelit:   #5FA8D3 !default;
+$tidyaa-bluepale:  #EAF2F8 !default;
+$tidyaa-bluedeep:  #1B4F6F !default;
+$tidyaa-good:      #2C6A4C !default;
+$tidyaa-caution:   #D6A419 !default;
+$tidyaa-broken:    #C0392B !default;
+
+$body-bg:            $tidyaa-paper !default;
+$body-color:         $tidyaa-ink !default;
+$link-color:         $tidyaa-blue !default;
+$link-hover-color:   $tidyaa-bluedeep !default;
+$border-color:       $tidyaa-rule !default;
+
+$code-color:         $tidyaa-ink !default;
+$code-bg:            $tidyaa-bluepale !default;
+$code-block-bg:      $tidyaa-surface !default;
+$code-block-font-size: 0.85em !default;
+
+$toc-font-size:      0.85rem !default;
+$toc-color:          $tidyaa-inksoft !default;
+$toc-active-border:  $tidyaa-blue !default;
+
+$table-border-color: $tidyaa-rule !default;
+
+
+/*-- scss:rules --*/
+
+/* --- the font stacks -------------------------------------------------------
+   `_brand.yml` emits `--bs-body-font-family: Source Sans 3`, unquoted. A CSS
+   family name whose last token starts with a digit is invalid unquoted, so the
+   browser drops the whole declaration and falls back to its default serif. The
+   same applies to Source Serif 4 and to any face with a numeric suffix. Quote
+   the names here and give every stack a real fallback, so the book still sets
+   in a sans face when Google Fonts is unreachable.                          */
+
+:root {
+  --bs-font-sans-serif: "Source Sans 3", "Source Sans Pro", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --bs-body-font-family: var(--bs-font-sans-serif);
+  --bs-headings-font-family: var(--bs-font-sans-serif);
+  --bs-font-monospace: "IBM Plex Mono", SFMono-Regular, Menlo, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+body { font-family: var(--bs-body-font-family); }
+
+h1, h2, h3, h4, h5, h6,
+.title, .subtitle,
+.sidebar, .navbar, nav[role="doc-toc"] {
+  font-family: var(--bs-headings-font-family);
+}
+
+code, pre, kbd, samp, .sourceCode {
+  font-family: var(--bs-font-monospace);
+}
+
+/* --- links -----------------------------------------------------------------
+   No underline in running text, as in Tidy Finance. Colour alone carries the
+   link, so nothing competes with the emphasis in a sentence.                */
+
+a { text-decoration: none; }
+main a:hover { text-decoration: underline; }
+
+/* --- headings --------------------------------------------------------------
+   No rules, no borders. The size steps do the work.                         */
+
+h1, h2, h3, h4, h5 { line-height: 1.3; }
+
+h2 {
+  margin-top: 2.4rem;
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+h3 { margin-top: 1.8rem; font-size: 1.2rem; }
+h4 { margin-top: 1.6rem; font-size: 1.05rem; }
+h5 { margin-top: 1.5rem; font-size: 1rem; }
+
+/* --- the title block -------------------------------------------------------
+   This is the one place the book departs from Tidy Finance. A short accent
+   bar, the title at display size, the subtitle beneath it in the quiet grey.
+   The same treatment serves a chapter and the landing page.                 */
+
+#title-block-header {
+  margin-bottom: 2.4rem;
+}
+
+#title-block-header .quarto-title > h1.title,
+#title-block-header .title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: -0.021em;
+  line-height: 1.12;
+  margin-bottom: 0.5rem;
+  padding-top: 0.9rem;
+  position: relative;
+}
+
+#title-block-header .quarto-title > h1.title::before,
+#title-block-header .title::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3.25rem;
+  height: 4px;
+  background: $tidyaa-bluelit;
+}
+
+#title-block-header .subtitle {
+  font-size: 1.12rem;
+  font-weight: 400;
+  color: $tidyaa-inksoft;
+  line-height: 1.45;
+  margin-bottom: 0.9rem;
+}
+
+/* Author and date sit under the title as a quiet single line. */
+#title-block-header .quarto-title-meta {
+  font-size: 0.84rem;
+  color: $tidyaa-inksoft;
+  border-top: 1px solid $tidyaa-rule;
+  padding-top: 0.7rem;
+}
+
+#title-block-header .quarto-title-meta-heading {
+  font-size: 0.72rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+/* --- code ------------------------------------------------------------------
+   The cosmo/Tidy Finance treatment: a soft grey ground, no left rule, and
+   printed output set flush and quieter so the eye separates the two.        */
+
+div.sourceCode {
+  background-color: $tidyaa-surface;
+  border: 1px solid $tidyaa-rule;
+  border-radius: 4px;
+}
+
+pre {
+  word-break: normal;
+  word-wrap: normal;
+  margin: 0;
+}
+
+pre code { white-space: inherit; }
+p code { white-space: inherit; }
+
+.cell-output pre {
+  background-color: transparent;
+  border: none;
+  border-left: 2px solid $tidyaa-rule;
+  border-radius: 0;
+  color: $tidyaa-inksoft;
+  padding: 0.3rem 0.85rem;
+  margin-top: 0.4rem;
+}
+
+.cell-output-stderr pre {
+  border-left-color: $tidyaa-caution;
+}
+
+code:not(.sourceCode) {
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+  font-size: 0.86em;
+}
+
+/* --- tables ----------------------------------------------------------------
+   Figures line up in columns or they are not worth printing.                */
+
+table { font-variant-numeric: tabular-nums; font-size: 0.94em; }
+
+.table > :not(caption) > * > * { padding: 0.42rem 0.75rem; }
+.table > thead { border-bottom: 1.5px solid $tidyaa-ink; }
+.table > thead th { font-weight: 600; border-bottom: none; }
+.table > tbody > tr:last-child > * { border-bottom: 1.5px solid $tidyaa-ink; }
+
+caption, .table-caption, figcaption {
+  color: $tidyaa-inksoft;
+  font-size: 0.88em;
+  line-height: 1.45;
+  margin-top: 0.5rem;
+}
+
+/* Wide output scrolls inside its own container so the page never does. */
+.table-wrapper,
+.cell-output-display > table,
+.cell-output-display > .kable_wrapper,
+.cell-output-display > .dataTables_wrapper {
+  display: block;
+  overflow-x: auto;
+}
+
+/* --- equations -------------------------------------------------------------
+   Display mathematics carries the argument in this book, so it gets room and
+   its number never collides with the expression.                            */
+
+.quarto-figure + p > .math.display,
+p > .math.display,
+div.math.display {
+  margin: 1.5rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* --- figures ---------------------------------------------------------------- */
+
+figure { margin: 1.8rem 0; }
+.figure-img { max-width: 100%; height: auto; }
+
+/* --- callouts ----------------------------------------------------------------
+   Used for definitions, warnings about a package's behaviour, and nothing
+   else. Squared off, no shadow.                                             */
+
+.callout {
+  border-radius: 4px;
+  border-width: 1px;
+  box-shadow: none;
+}
+
+.callout.callout-titled .callout-title { font-weight: 600; }
+
+/* --- sidebar and contents ---------------------------------------------------- */
+
+.sidebar-navigation .sidebar-item { line-height: 1.35; margin-bottom: 0.1rem; }
+
+.sidebar-navigation .sidebar-item-container .active,
+.sidebar-navigation .sidebar-item-container .show > .sidebar-link {
+  font-weight: 600;
+  color: $tidyaa-blue;
+}
+
+.sidebar-navigation .sidebar-part,
+.sidebar-item-section > .sidebar-item-container > .sidebar-link.sidebar-part {
+  font-size: 0.76rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: $tidyaa-inksoft;
+  margin-top: 1.1rem;
+}
+
+nav[role="doc-toc"] > h2 {
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: $tidyaa-inksoft;
+  font-weight: 600;
+}
+
+nav[role="doc-toc"] ul > li > a.active {
+  color: $tidyaa-blue;
+  font-weight: 600;
+}
+
+/* --- page furniture ----------------------------------------------------------- */
+
+.nav-page {
+  border-top: 1px solid $tidyaa-rule;
+  padding-top: 1.1rem;
+  margin-top: 2.8rem;
+}
+
+.nav-footer {
+  border-top: 1px solid $tidyaa-rule;
+  font-size: 0.86rem;
+  color: $tidyaa-inksoft;
+}
+
+/* --- print --------------------------------------------------------------------- */
+
+@media print {
+  .sidebar, .nav-page, #quarto-margin-sidebar { display: none; }
+}

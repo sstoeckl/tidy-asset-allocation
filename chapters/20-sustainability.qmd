@@ -1,0 +1,1018 @@
+---
+title: "Sustainable Investing Constraints"
+metadata:
+  pagetitle: "Sustainable Investing Constraints"
+  description-meta: "What exclusions, rating floors and best-in-class tilts cost a portfolio in R: the ESG-efficient frontier, the shadow price of an excluded name, rating disagreement made concrete, and a screened equity sleeve measured out of sample."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+An investor who excludes a set of names, or who requires the portfolio's
+average sustainability rating to clear a floor, has added a line to the
+mandate: what does the line cost, and who pays? @pedersen2021 answered the
+first question by drawing the ESG-efficient frontier, the highest Sharpe ratio
+attainable at each level of a portfolio's rating, so that the cost of a floor
+is a distance along a curve rather than an opinion; @pastor2021 answered the
+second in equilibrium, where a taste for green assets lowers their expected
+return, so that the investor who holds them pays in expectation and the firm
+that issues them is paid in a lower cost of capital. The two results together
+fix what this chapter can and cannot claim: a constraint that does not bind
+costs nothing, a constraint that binds costs tracking error and expected
+return at a rate the Lagrange multiplier of @sec-12-constraints-theory prices,
+and neither is an alpha.
+
+We first set out the investor's problem with a taste for a rating and with a
+floor on it, the exclusion as a restriction of the universe, the tilt as a
+factor-exposure constraint on a score, and the two facts that complicate all
+three, that a rating is an estimate and that tastes are priced; then
+construct rating levels for the `r sum(sim_assets$asset_class == "equity")`
+equities from the rating changes the modeled market ships, and implement an
+exclusion, a floor and a best-in-class floor on the equity sleeve of
+@sec-21-equity-sleeve-implementation, auditing each with the functions of
+@sec-12-constraints-implementation; then measure what the three cost out of
+sample inside the policy of @sec-15-hierarchical-allocation-application, and
+how much of an exclusion list survives a second rater. On the horizon axis of
+@sec-03-return-risk-and-the-investor-theory a sustainability constraint is
+**strategic**: it is a permanent line of the policy, set once, and it
+conditions on nothing but the ratings in force.
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)   # 16 risky classes
+rf <- sim_riskfree_monthly$return                                  # the bill
+eq <- sim_assets[sim_assets$asset_class == "equity", ]             # the equity instruments
+A  <- as_xts_pm(sim_asset_returns_monthly[sim_asset_returns_monthly$asset %in% eq$asset_id, ],
+                date, asset, return)[, eq$asset_id]
+region  <- setNames(eq$region, eq$asset_id)
+regions <- c("US", "EU", "UK", "CH", "JP")
+d <- zoo::index(A); X <- zoo::coredata(A); N <- ncol(X)
+cap_w <- sim_marketcap_weekly[sim_marketcap_weekly$asset %in% eq$asset_id, ] |>
+  tidyr::pivot_wider(names_from = asset, values_from = market_cap) |>
+  dplyr::arrange(date)
+wk1 <- min(sim_asset_returns_weekly$date)                 # the first return week, as chapter 21 anchors it
+Cap <- as.matrix(cap_w[findInterval(c(wk1 - 1, d[-length(d)]), cap_w$date), eq$asset_id])
+stopifnot(identical(d, zoo::index(R)), !anyNA(A), !anyNA(Cap), identical(colnames(Cap), colnames(X)),
+          setequal(regions, unique(region)))
+cap_w_of <- function(t, j) Cap[t, j] / sum(Cap[t, j])      # the benchmark's weights for month t, by name
+c(instruments = N, months = nrow(X))
+```
+
+## Tastes, Floors, and Exclusions {#sec-20-sustainability-theory}
+
+### The investor's problem with a taste for a rating
+
+Let $\boldsymbol{s}$ be a vector of ratings over the $N$ names, one number per
+name on a fixed scale, and $\bar{s}_{\boldsymbol{w}} = \boldsymbol{s}'\boldsymbol{w}$
+the portfolio's rating. @pedersen2021 give the investor of
+@sec-03-return-risk-and-the-investor-theory a third term,
+
+$$
+\max_{\boldsymbol{w}} \;
+\boldsymbol{w}'\boldsymbol{\mu}
+- \frac{\gamma}{2}\,\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}
++ \theta\,\boldsymbol{s}'\boldsymbol{w},
+$$ {#eq-20-taste}
+
+a taste $\theta \geq 0$ for the rating, and show that every solution lies on
+the **ESG-efficient frontier**: for each attainable $\bar{s}$, the portfolio
+with the highest Sharpe ratio among those with $\boldsymbol{s}'\boldsymbol{w} = \bar{s}$.
+An investor with $\theta = 0$ sits at the frontier's peak, the tangency
+portfolio of @eq-09-tangency; an investor with a taste moves along it, giving
+up Sharpe ratio for rating at the rate the curve's slope sets. The same
+frontier is traced by a mandate written as a floor,
+
+$$
+\min_{\boldsymbol{w}} \; \boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}
+\quad \text{subject to} \quad
+\boldsymbol{\iota}'\boldsymbol{w} = 1, \;\; \boldsymbol{w} \geq \boldsymbol{0}, \;\;
+\boldsymbol{s}'\boldsymbol{w} \geq \bar{s},
+$$ {#eq-20-floor}
+
+because the floor's multiplier $\lambda_s$ in the Lagrangian of
+@eq-12-lagrangian is the taste that would have produced the same portfolio:
+$\theta = \lambda_s$ at the optimum. Complementary slackness then says what
+the floor costs. When the unconstrained portfolio already clears $\bar{s}$,
+$\lambda_s = 0$ and the line could have been left out; when it binds,
+$\lambda_s > 0$ is the shadow price of @eq-12-shadow, the rate at which
+variance, or tracking error when the objective is active risk, falls per
+notch of floor given up. A floor is a constraint of the linear-exposure family
+of @tbl-12-families, so the feasible set stays convex and @eq-20-floor is one
+quadratic program [@boyd2004]. @jagannathan2003 and @frost1988 read a binding
+constraint as information about the estimates; a sustainability floor is not
+that. It is a preference, and its cost is a cost, which is why
+@pedersen2021 draw it as a frontier rather than argue it away.
+
+### Exclusion as a restriction of the universe
+
+The oldest form of the constraint is a list of names that may not be held,
+$w_i = 0$ for $i \in E$: a box constraint with both bounds at zero, or
+equivalently a smaller universe. For a capitalization-weighted sleeve with
+benchmark $\boldsymbol{b}$, reweighting the survivors pro rata gives active
+weights
+
+$$
+x_i =
+\begin{cases}
+-\,b_i & i \in E, \\[2pt]
+\;\; b_i \dfrac{b_E}{1 - b_E} & i \notin E,
+\end{cases}
+\qquad
+b_E = \sum_{i \in E} b_i,
+\qquad
+\text{active share} = b_E ,
+$$ {#eq-20-exclusion}
+
+so the active share of @cremers2009 is the benchmark weight of the excluded
+set, and the tracking error of @eq-24-te is $\sqrt{\boldsymbol{x}'\boldsymbol{\Sigma}\boldsymbol{x}}$
+with that $\boldsymbol{x}$: an exclusion costs active risk in proportion to
+how much of the index it removes and how differently the removed names move.
+For an optimized sleeve the cost has a sharper reading. In the first-order
+condition $\boldsymbol{\Sigma}\boldsymbol{w} = \lambda_0\boldsymbol{\iota} + \boldsymbol{\delta}$
+of @eq-12-jm, the multiplier of an excluded name is unrestricted in sign, and
+the Jagannathan--Ma identity still holds: the constrained portfolio is the
+unconstrained minimum-variance portfolio on
+$\tilde{\boldsymbol{\Sigma}} = \boldsymbol{\Sigma} - (\boldsymbol{\delta}\boldsymbol{\iota}' + \boldsymbol{\iota}\boldsymbol{\delta}')$.
+A name the optimizer would not have held anyway has $\delta_i \geq 0$ and its
+exclusion is slack. A name it wanted has $\delta_i < 0$, and excluding it is
+the same as *raising* every covariance involving it by $-\delta_i$ until the
+optimizer drops it on its own. An exclusion that binds is therefore an
+implicit risk view about the excluded name, and $-\delta_i$ is its price.
+@hong2009 found the equilibrium counterpart: names shunned by norm-constrained
+institutions are held by fewer investors, trade at lower valuations and earn
+higher expected returns, which is the premium the excluding investor forgoes;
+@heinkel2001 had derived the mechanism, a higher cost of capital for the
+excluded firm when enough capital excludes it.
+
+### Tilts as a factor-exposure constraint on a score
+
+A floor on the portfolio's rating is @eq-20-floor, and in the vocabulary of
+@sec-12-constraints-implementation it is `factor_exposure_constraint()` with
+the score vector in place of a column of betas. A **best-in-class** mandate
+imposes the floor within each group $g$ rather than across the universe, and
+because
+
+$$
+\frac{\sum_{i \in g} w_i s_i}{\sum_{i \in g} w_i} \;\geq\; \bar{s}
+\quad \Longleftrightarrow \quad
+\sum_{i \in g} w_i \,(s_i - \bar{s}) \;\geq\; 0 ,
+$$ {#eq-20-bic}
+
+it is linear too: one row per group of a factor-exposure matrix whose
+entries are the centered scores, bounded below at zero. The difference
+between the two forms is where the rating is bought. An across-the-universe
+floor lets the solver meet it in whichever region has the cheapest rating in
+tracking-error terms, which, when the regions' budgets are fixed by the policy
+above the sleeve, means concentrating the tilt where it costs least; a
+best-in-class floor spreads the tilt and costs more, which @eq-20-bic makes
+measurable.
+
+### A rating is an estimate
+
+The score in @eq-20-floor is treated as data, and it is not. @berg2022
+document that the ratings of six major providers for the same firm correlate
+at 0.54 on average, with pairwise correlations from 0.38 to 0.71, and
+decompose the divergence into what is measured, how it is measured and how
+the pieces are weighted. For a constraint the consequence is direct: the floor
+is imposed on $\hat{\boldsymbol{s}} = \boldsymbol{s} + \boldsymbol{e}$, and
+with a different rater the same mandate excludes different names and tilts
+toward different ones. @avramov2022 put the error into @eq-20-taste and find
+that rating uncertainty lowers the demand for green assets and weakens their
+expected-return effect, as estimation error in $\boldsymbol{\mu}$ did in
+@sec-08-estimation-error-theory; @gibson2021 find that the disagreement itself
+is priced in the cross-section. The one dimension on which the measurement
+problem is smaller is carbon, where emissions are a quantity rather than an
+opinion, and @bolton2021 find a premium on it. The modeled market carries no
+emissions data, so a carbon budget is the one construction this chapter
+cannot run; its mechanics are @eq-20-floor with emissions in place of a
+rating and an upper bound in place of a floor.
+
+### Tastes are priced
+
+Finally, the equilibrium of @pastor2021: when investors have a taste for
+green assets, those assets' expected returns are lower in equilibrium by the
+amount of the taste, so that the frontier of @pedersen2021 slopes down for
+the reason the demand curve slopes down. The realized returns of a green
+tilt can nevertheless be high for a long time, and @pastor2022 show that the
+green outperformance of their sample is what an unexpected strengthening of
+tastes produces, not what the equilibrium promises. A constraint and an alpha
+are different objects: the first is a cost paid for a property of the
+portfolio, the second a claim about expected returns that @sec-24-benchmarks-and-active-risk-theory
+would ask for an error bar on. The evidence on the alpha is mixed on purpose:
+@friede2015 aggregate some two thousand studies and find a non-negative
+relation in most of them, @serafeim2022 find that only financially material
+rating news moves prices, and @zerbib2019 measures the green premium in bonds
+at a few basis points. None of that is needed to price the constraint, which
+is what the rest of the chapter does.
+
+## Implementation {#sec-20-sustainability-implementation}
+
+### A level from a path of changes
+
+::: {.callout-important}
+## The market ships rating changes, not ratings
+
+`sim_esg_changes_quarterly` holds `r nrow(sim_esg_changes_quarterly)` integer
+rating changes on `r dplyr::n_distinct(sim_esg_changes_quarterly$asset)` of
+the `r N` equities, dated at quarter ends from model year
+`r min(model_year(sim_esg_changes_quarterly$date))` on, and no starting level,
+as @sec-02-notation-and-data-simulated-market records. Cumulating the changes
+gives each name's rating up to its own unknown constant, and a screen or a
+floor needs the constant. The chapter therefore **constructs** the levels
+under a stated assumption, and the assumption is an argument of a function so
+that a reader can change it.
+:::
+
+The assumption is this. Each name has a latent score on a seven-point scale,
+the number of grades the common letter scales use; its starting value is drawn
+once, with the book's seed, from a normal distribution centered on the
+scale's midpoint with a standard deviation of 1.2 grades, so that the middle
+three grades hold `r sprintf("%.0f%%", 100 * (stats::pnorm(5.5, 4, 1.2) - stats::pnorm(2.5, 4, 1.2)))`
+of the names in expectation and the extremes are rare, the bell shape a vendor's grade
+distribution has; the shipped changes then move
+the score by whole grades from the quarter in which they are dated, and the
+score is clipped to the scale. A different distribution is a different rater,
+which @berg2022 say is the realistic case, and the application redraws it.
+
+```{r}
+#| label: esg-levels
+esg_start <- function(assets, dist = function(n) stats::rnorm(n, mean = 4, sd = 1.2),
+                      seed = 1602, scale = c(1, 7)) {
+  set.seed(seed)
+  setNames(pmin(pmax(dist(length(assets)), scale[1]), scale[2]), assets)
+}
+esg_levels <- function(start, changes = sim_esg_changes_quarterly, dates = d, scale = c(1, 7)) {
+  stopifnot(all(changes$asset %in% names(start)))
+  L <- matrix(start, length(dates), length(start), byrow = TRUE,
+              dimnames = list(NULL, names(start)))
+  for (k in seq_len(nrow(changes))) {
+    from <- match(TRUE, dates > changes$date[k])   # in force from the first month that starts after the change
+    if (is.na(from)) next
+    L[from:nrow(L), changes$asset[k]] <- L[from:nrow(L), changes$asset[k]] + changes$esg_change[k]
+  }
+  pmin(pmax(L, scale[1]), scale[2])
+}
+grade <- function(s) pmin(pmax(round(s), 1), 7)
+
+s0 <- esg_start(eq$asset_id)
+L  <- esg_levels(s0)
+t1 <- 121L                                           # the register's first out-of-sample month
+stopifnot(identical(colnames(L), colnames(X)), all(L[t1, ] == s0))   # no change is in force yet at t1
+esg <- sim_esg_changes_quarterly
+net <- tapply(esg$esg_change, esg$asset, sum)
+c(share_upgrades = mean(esg$esg_change > 0), mean_net_change = mean(net),
+  mean_score_t1 = mean(L[t1, ]), mean_score_end = mean(L[nrow(L), ]),
+  share_top_grade_end = mean(grade(L[nrow(L), ]) == 7))
+```
+
+```{r}
+#| label: tbl-20-cross-section
+#| tbl-cap: "The constructed ratings by grade, at the register's first out-of-sample month and at the end of the sample. The first row is the drawn distribution; the second is what the shipped changes make of it."
+#| echo: false
+dplyr::bind_rows(
+  tibble::tibble(when = "register start", grade = grade(L[t1, ])),
+  tibble::tibble(when = "end of sample",  grade = grade(L[nrow(L), ]))) |>
+  dplyr::mutate(when = factor(when, c("register start", "end of sample"))) |>
+  dplyr::count(when, grade) |>
+  tidyr::complete(when, grade = 1:7, fill = list(n = 0L)) |>
+  tidyr::pivot_wider(names_from = grade, values_from = n) |>
+  kable(align = "lrrrrrrr", col.names = c("", paste("grade", 1:7)))
+```
+
+The changes are not symmetric: `r sprintf("%.0f%%", 100 * mean(esg$esg_change > 0))`
+of them are upgrades, and a rated name ends the sample
+`r sprintf("%.1f", mean(net))` grades above where it started. On a bounded
+scale that drift is a compression toward the ceiling, and @tbl-20-cross-section
+shows it: a cross-section that began bell-shaped around grade 4 ends with
+`r sprintf("%.0f%%", 100 * mean(grade(L[nrow(L), ]) == 7))` of the names at
+the top grade. @fig-20-drift draws the path.
+
+```{r}
+#| label: fig-20-drift
+#| fig-cap: "The constructed ratings over the sample: the cross-sectional mean score, and the share of names at the top grade. Flat until the first shipped change, then drifting upward because the shipped changes are mostly upgrades."
+#| echo: false
+#| fig-asp: 0.55
+drift <- dplyr::bind_rows(
+  tibble::tibble(date = d, kind = "mean score", value = rowMeans(L)),
+  tibble::tibble(date = d, kind = "share at the top grade", value = rowMeans(grade(L) == 7)))
+ggplot2::ggplot(drift, ggplot2::aes(date, value)) +
+  ggplot2::geom_line(colour = tidyaa_colors[["blue"]], linewidth = 0.6) +
+  ggplot2::facet_wrap(~ kind, ncol = 1, scales = "free_y") +
+  scale_x_model() +
+  ggplot2::labs(y = NULL)
+```
+
+One sentence settles what the ratings can and cannot do to the returns.
+@sec-90-data-description records that the changes have no effect on the
+returns, so any performance difference below is a universe and constraint
+effect, measured on a market in which no rating premium exists, and not a
+priced rating factor; what it can still be, an exposure the rating carries
+to characteristics that are priced, is what the application finds.
+
+### The sleeve, its benchmark, and its covariance
+
+The sleeve is the one @sec-21-equity-sleeve-implementation built: all
+`r N` names, capitalization weighted within region on the last capitalization
+before the month began, with the regional budgets fixed above the sleeve. Here
+the five regions receive one fifth each, the simplest multi-region policy;
+the application uses the policy's own split. Moments are estimated on the
+`r 120L` months before the register's first out-of-sample month with the
+shrinkage of @sec-07-covariance-matrix-implementation, because the sample
+matrix of `r N` names on that window is singular by @eq-07-rank.
+
+```{r}
+#| label: sleeve
+W <- 120L
+shrunk <- function(X) {
+  S <- corpcor::cov.shrink(X, verbose = FALSE)
+  matrix(as.numeric(S), ncol(X), ncol(X), dimnames = list(colnames(X), colnames(X)))
+}
+bench_of <- function(t, budget) {                   # regional budgets, cap weighted within region, by name
+  b <- setNames(numeric(N), colnames(X))
+  for (g in names(budget)) { j <- names(region)[region == g]; b[j] <- budget[[g]] * cap_w_of(t, j) }
+  b
+}
+budget <- setNames(rep(0.2, length(regions)), regions)
+b <- bench_of(t1, budget)
+S <- shrunk(X[(t1 - W):(t1 - 1L), ])
+s <- L[t1, ]
+stopifnot(abs(sum(b) - 1) < 1e-12, identical(names(b), names(s)), identical(rownames(S), names(b)))
+
+te_of    <- function(w, b, S) sqrt(12 * as.numeric(t(w - b) %*% S %*% (w - b)))
+p_vol    <- function(w, S)    sqrt(12 * as.numeric(t(w) %*% S %*% w))
+score_of <- function(w, s)    sum(w * s) / sum(w)
+c(benchmark_score = score_of(b, s), benchmark_vol = p_vol(b, S))
+```
+
+### Exclusion
+
+The screen removes the bottom fifth of each region by score, ties broken by
+position so that the count is fixed, and reweights the survivors within
+their region so that the policy's regional budgets are untouched.
+
+```{r}
+#| label: exclusion
+bottom_of <- function(s, q = 0.2)                    # the names in the bottom fifth of their region
+  unlist(lapply(split(names(s), region[names(s)]), function(j)
+    j[rank(s[j], ties.method = "first") <= ceiling(q * length(j))]), use.names = FALSE)
+screen_w <- function(b, excl) {                      # drop the names, reweight within region
+  w <- b; w[excl] <- 0
+  for (g in unique(region[names(b)])) {
+    j <- names(b)[region[names(b)] == g]
+    if (sum(w[j]) > 0) w[j] <- w[j] * sum(b[j]) / sum(w[j])
+  }
+  w
+}
+excl <- bottom_of(s)
+w_ex <- screen_w(b, excl)
+b_E  <- sum(b[excl])
+stopifnot(abs(sum(w_ex) - 1) < 1e-12, abs(sum(abs(w_ex - b)) / 2 - b_E) < 1e-12)   # eq-20-exclusion
+c(excluded = length(excl), benchmark_weight_removed = b_E,
+  active_share = sum(abs(w_ex - b)) / 2, tracking_error = te_of(w_ex, b, S),
+  score_benchmark = score_of(b, s), score_screened = score_of(w_ex, s))
+```
+
+The screen removes `r length(excl)` names carrying
+`r sprintf("%.1f%%", 100 * b_E)` of the benchmark, which by @eq-20-exclusion
+is the active share exactly, at a tracking error of
+`r sprintf("%.2f%%", 100 * te_of(w_ex, b, S))` a year; it lifts the sleeve's
+score from `r sprintf("%.2f", score_of(b, s))` to
+`r sprintf("%.2f", score_of(w_ex, s))`. For the optimized sleeve the price of
+each excluded name follows from the multipliers, and the identity of
+@eq-12-jm is checked with the excluded names' multipliers in it.
+
+```{r}
+#| label: exclusion-jm
+gmv_lo <- function(S) {                              # long-only minimum variance, eq-09-gmv under w >= 0
+  n <- ncol(S)
+  w <- quadprog::solve.QP(2 * S, rep(0, n), cbind(rep(1, n), diag(n)), c(1, rep(0, n)), meq = 1)$solution
+  w <- pmax(w, 0); setNames(w / sum(w), colnames(S))
+}
+w_mv  <- gmv_lo(S)
+keep  <- setdiff(colnames(X), excl)
+w_mvx <- setNames(numeric(N), colnames(X)); w_mvx[keep] <- gmv_lo(S[keep, keep])
+lambda0 <- as.numeric(t(w_mvx) %*% S %*% w_mvx)
+delta   <- setNames(as.numeric(S %*% w_mvx) - lambda0, colnames(X))
+free0   <- setdiff(names(which(w_mvx <= 1e-6)), excl)           # at zero by choice, not by exclusion
+stopifnot(all(abs(delta[w_mvx > 1e-6]) < 1e-7), all(delta[free0] > -1e-7))   # complementary slackness
+S_tilde <- S - (outer(delta, rep(1, N)) + outer(rep(1, N), delta))
+w_jm    <- as.numeric(solve(S_tilde, rep(1, N))); w_jm <- w_jm / sum(w_jm)
+stopifnot(max(abs(w_jm - w_mvx)) < 1e-6)                        # eq-12-jm with the exclusions in it
+wanted  <- excl[delta[excl] < -1e-7]                            # excluded names the optimizer would have held
+c(reproduced_to = max(abs(w_jm - w_mvx)), excluded = length(excl), binding = length(wanted),
+  held_unconstrained = sum(w_mv[excl] > 1e-6),
+  vol_unconstrained = p_vol(w_mv, S), vol_screened = p_vol(w_mvx, S))
+round(sort(-delta[wanted] * 12 * 1e4, decreasing = TRUE)[1:3], 2)   # the dearest exclusions, annualized variance x 1e4
+```
+
+Of the `r length(excl)` exclusions, `r length(wanted)` bind on the
+minimum-variance sleeve and the rest are slack, names the optimizer would
+not have held given the others; for comparison, the unconstrained portfolio
+holds `r sum(w_mv[excl] > 1e-6)` of them. The identity reproduces the
+screened solution to `r sprintf("%.0e", max(abs(w_jm - w_mvx)))`, and the
+multiplier of each binding exclusion is the amount by which its covariances
+would have to rise for the optimizer to drop it unasked. The screen costs the
+minimum-variance sleeve
+`r sprintf("%.2f", 100 * (p_vol(w_mvx, S) - p_vol(w_mv, S)))` percentage
+points of volatility, from `r sprintf("%.2f%%", 100 * p_vol(w_mv, S))` to
+`r sprintf("%.2f%%", 100 * p_vol(w_mvx, S))`.
+
+### A floor on the sleeve's rating
+
+The floor enters as `factor_exposure_constraint()` with the score vector as
+$\boldsymbol{B}$, bound by name and asserted, on a minimum-variance sleeve
+under a ten percent cap per name and the regional budgets as a group
+constraint with equal bounds, the construction of
+@sec-12-constraints-implementation. The best-in-class form is @eq-20-bic, one
+column per region of centered scores.
+
+```{r}
+#| label: floor-specs
+shrinkage_moments <- function(R, portfolio) {
+  S <- shrunk(zoo::coredata(R))
+  list(mu = colMeans(R), sigma = S, m3 = NULL, m4 = NULL)
+}
+grp  <- split(seq_len(N), region[colnames(X)])
+gbud <- budget[names(grp)]
+stopifnot(identical(names(grp), names(gbud)))
+base_sleeve <- portfolio.spec(assets = colnames(X)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "box", min = 0, max = 0.10) |>
+  add.constraint(type = "group", groups = grp, group_min = unname(gbud), group_max = unname(gbud))
+
+floor_spec <- function(spec, s, floor) {             # s'w >= floor, across the universe
+  stopifnot(identical(names(s), names(spec$assets)))
+  spec |> add.constraint(type = "factor_exposure", B = s, lower = floor, upper = max(s))
+}
+bic_B <- function(s, floor, groups = unique(region[names(s)])) {   # eq-20-bic: one column per region
+  B <- sapply(groups, function(g) (s - floor) * (region[names(s)] == g))
+  rownames(B) <- names(s); B
+}
+bic_spec <- function(spec, s, floor) {
+  B <- bic_B(s, floor); stopifnot(identical(rownames(B), names(spec$assets)))
+  spec |> add.constraint(type = "factor_exposure", B = B, lower = rep(0, ncol(B)), upper = rep(max(s), ncol(B)))
+}
+pa_minvar <- function(spec) {
+  w <- extractWeights(optimize.portfolio(A[(t1 - W):(t1 - 1L), ],
+                                         spec |> add.objective(type = "risk", name = "var"),
+                                         optimize_method = "ROI", momentFUN = shrinkage_moments))
+  stopifnot(!is.null(w), !anyNA(w), setequal(names(w), colnames(X)))
+  w[colnames(X)]
+}
+# the highest rating the cap and the budgets allow: two names at ten percent per region
+top2 <- vapply(names(grp), function(g) mean(sort(s[grp[[g]]], decreasing = TRUE)[1:2]), numeric(1))
+s_max <- c(across = sum(gbud * top2), within = min(top2))
+floors <- seq(4, 6, by = 0.5); floors <- floors[floors < min(s_max)]
+w_mv0 <- pa_minvar(base_sleeve)
+round(c(s_max, unconstrained_score = score_of(w_mv0, s)), 3)
+```
+
+::: {.callout-note}
+## The package has no tracking-error objective, so the second frontier is solved by hand
+
+@sec-24-benchmarks-and-active-risk-implementation established that
+`PortfolioAnalytics` cannot write a tracking-error budget, and the same is
+true of tracking error as an objective: the covariance of active returns is
+singular along the benchmark, which its quadratic path refuses. The
+minimum-tracking-error sleeve under the same floor is therefore
+$\min_{\boldsymbol{w}} (\boldsymbol{w}-\boldsymbol{b})'\boldsymbol{\Sigma}(\boldsymbol{w}-\boldsymbol{b})$
+written directly in `quadprog`, which also returns the multipliers; the two
+routes are checked against each other on the problem both can solve.
+:::
+
+```{r}
+#| label: min-te
+min_te <- function(S, b, cap = pmax(0.10, b), B = NULL, lower = NULL, budget, mu = NULL) {
+  # min (w-b)'S(w-b)  s.t. regional budgets, 0 <= w <= cap, B'w >= lower; with mu: min w'Sw instead
+  n <- length(b); G <- sapply(names(budget), function(g) as.numeric(region[names(b)] == g))
+  Amat <- cbind(G, diag(n), -diag(n)); bvec <- c(unname(budget), rep(0, n), -cap)
+  k <- if (is.null(B)) 0L else NCOL(B)
+  if (k > 0) { Amat <- cbind(Amat, B); bvec <- c(bvec, lower) }
+  dvec <- if (is.null(mu)) 2 * as.numeric(S %*% b) else rep(0, n)
+  sol  <- quadprog::solve.QP(2 * S, dvec, Amat, bvec, meq = length(budget))
+  w <- pmax(sol$solution, 0); w <- setNames(w / sum(w), names(b))
+  attr(w, "lambda") <- if (k > 0) sol$Lagrangian[ncol(Amat) - k + seq_len(k)] else numeric(0)
+  w
+}
+# the quadratic program and the package agree on the minimum-variance problem with a floor
+w_pa <- pa_minvar(floor_spec(base_sleeve, s, 5))
+w_qp <- min_te(S, b, cap = rep(0.10, N), B = s, lower = 5, budget = gbud, mu = TRUE)
+stopifnot(max(abs(w_pa - w_qp)) < 1e-5)
+
+w_te0 <- min_te(S, b, budget = gbud)                                   # no floor: the benchmark itself
+stopifnot(te_of(w_te0, b, S) < 1e-6)
+frontier <- dplyr::bind_rows(lapply(floors, function(f) {
+  B_f  <- bic_B(s, f)
+  w_a  <- pa_minvar(floor_spec(base_sleeve, s, f)); w_b <- pa_minvar(bic_spec(base_sleeve, s, f))
+  t_a  <- min_te(S, b, B = s,   lower = f,               budget = gbud)
+  t_b  <- min_te(S, b, B = B_f, lower = rep(0, ncol(B_f)), budget = gbud)
+  dplyr::bind_rows(
+    tibble::tibble(floor = f, form = "across the universe", objective = "minimum variance: volatility",
+                   score = score_of(w_a, s), cost = p_vol(w_a, S), lambda = NA_real_),
+    tibble::tibble(floor = f, form = "best in class",       objective = "minimum variance: volatility",
+                   score = score_of(w_b, s), cost = p_vol(w_b, S), lambda = NA_real_),
+    tibble::tibble(floor = f, form = "across the universe", objective = "minimum tracking error: tracking error",
+                   score = score_of(t_a, s), cost = te_of(t_a, b, S), lambda = attr(t_a, "lambda")[1]),
+    tibble::tibble(floor = f, form = "best in class",       objective = "minimum tracking error: tracking error",
+                   score = score_of(t_b, s), cost = te_of(t_b, b, S), lambda = max(attr(t_b, "lambda"))))
+}))
+```
+
+```{r}
+#| label: fig-20-frontier
+#| fig-cap: "The ESG-efficient frontier of the sleeve at the register's first out-of-sample month: the cost of a rating floor against the rating it buys, for a minimum-variance sleeve (volatility) and a minimum-tracking-error sleeve (tracking error against the capitalization-weighted benchmark), with the floor imposed across the universe or within each region. A flat segment is a floor that does not bind."
+#| echo: false
+#| fig-asp: 0.55
+ggplot2::ggplot(frontier, ggplot2::aes(score, cost, colour = form)) +
+  ggplot2::geom_line(linewidth = 0.6) +
+  ggplot2::geom_point(size = 1.8) +
+  ggplot2::facet_wrap(~ objective, scales = "free_y") +
+  scale_colour_tidyaa() +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  ggplot2::labs(x = "portfolio rating", y = "cost, annualized", colour = NULL)
+```
+
+```{r}
+#| label: frontier-reading
+#| include: false
+f_te <- dplyr::filter(frontier, grepl("tracking", objective))
+slack_floors <- floors[floors <= score_of(b, s)]
+tight        <- floors[floors > score_of(b, s)]
+cost_at <- function(form, f) f_te$cost[match(paste(form, f), paste(f_te$form, f_te$floor))]
+region_score <- vapply(names(grp), function(g) score_of(b[grp[[g]]], s[grp[[g]]]), numeric(1))
+stopifnot(all(cost_at("across the universe", slack_floors) < 1e-4),  # slack floors cost nothing
+          min(region_score) < min(floors),                           # ... but one region is already below the lowest floor
+          all(cost_at("best in class", floors) >= cost_at("across the universe", floors) - 1e-9),
+          all(diff(cost_at("across the universe", tight)) > 0))      # the frontier is convex upward
+top_f <- max(floors)
+```
+
+Read @fig-20-frontier from the left. A floor across the universe at or below
+the benchmark's own rating of `r sprintf("%.2f", score_of(b, s))` costs the
+minimum-tracking-error sleeve nothing, which the hidden check asserts: the
+solution is the benchmark and the multiplier is zero. Above it the cost
+rises at an increasing rate, as a convex frontier must, reaching
+`r sprintf("%.2f%%", 100 * cost_at("across the universe", top_f))` of
+tracking error at a floor of `r top_f`. The best-in-class form costs more at
+every floor, `r sprintf("%.2f%%", 100 * cost_at("best in class", top_f))` at
+the top, and it already binds at a floor of `r min(floors)`, because the
+`r names(which.min(region_score))` benchmark's own rating is
+`r sprintf("%.2f", min(region_score))` and a floor every region must clear
+cannot buy the rating where it is cheapest. The minimum-variance panel tells
+the same story in volatility from a different starting point: the
+unconstrained sleeve's rating is `r sprintf("%.2f", score_of(w_mv0, s))`, so
+floors below that are slack for it too.
+
+### The multiplier, checked by perturbation
+
+```{r}
+#| label: shadow
+f_chk <- top_f
+w_f   <- min_te(S, b, B = s, lower = f_chk, budget = gbud)
+w_fh  <- min_te(S, b, B = s, lower = f_chk + 0.01, budget = gbud)
+te2   <- function(w) as.numeric(t(w - b) %*% S %*% (w - b))          # monthly variance of active return
+fd    <- (te2(w_fh) - te2(w_f)) / 0.01
+lam   <- attr(w_f, "lambda")[1]
+stopifnot(lam > 0, abs(fd / lam - 1) < 0.05)
+c(multiplier = lam, finite_difference = fd, ratio = fd / lam)
+```
+
+The multiplier `quadprog` returns and the finite difference of @eq-12-shadow
+agree to `r sprintf("%.1f%%", 100 * abs(fd / lam - 1))`: at a floor of
+`r f_chk` the sleeve pays `r sprintf("%.2e", lam)` of monthly active variance
+per grade of floor at the margin, which, up to the scale of the objective,
+is the taste $\theta$ in @eq-20-taste an investor would have to hold for
+this to be their unconstrained choice.
+
+### The audit
+
+Every solution above is checked against the specification it came from with
+the `audit_spec()` of @sec-12-constraints-implementation, restricted to the
+constraint types this chapter writes, and the slack of each floor is read
+off directly.
+
+```{r}
+#| label: audit
+audit_spec <- function(w, spec, tol = 1e-6) {
+  w <- w[names(spec$assets)]
+  dplyr::bind_rows(lapply(spec$constraints, function(cn) {
+    if (!isTRUE(cn$enabled)) return(NULL)
+    ok <- switch(cn$type,
+      full_investment = , weight_sum = sum(w) >= cn$min_sum - tol && sum(w) <= cn$max_sum + tol,
+      box = , long_only = all(w >= cn$min - tol) && all(w <= cn$max + tol),
+      group = { g <- vapply(cn$groups, function(i) sum(w[i]), numeric(1))
+                all(g >= cn$cLO - tol & g <= cn$cUP + tol) },
+      factor_exposure = { e <- as.numeric(t(cn$B) %*% w)
+                          all(e >= cn$lower - tol & e <= cn$upper + tol) },
+      NA)
+    tibble::tibble(constraint = cn$type, satisfied = ok)
+  }))
+}
+spec_a <- floor_spec(base_sleeve, s, 5); spec_b <- bic_spec(base_sleeve, s, 5)
+w_a5 <- pa_minvar(spec_a); w_b5 <- pa_minvar(spec_b)
+audit <- dplyr::bind_rows(audit_spec(w_a5, spec_a) |> dplyr::mutate(form = "across the universe"),
+                          audit_spec(w_b5, spec_b) |> dplyr::mutate(form = "best in class"))
+stopifnot(all(audit$satisfied))
+slack <- tibble::tibble(
+  form  = c("across the universe", rep("best in class", length(grp))),
+  where = c("universe", names(grp)),
+  slack = c(score_of(w_a5, s) - 5,
+            vapply(names(grp), function(g) score_of(w_b5[grp[[g]]], s[grp[[g]]]) - 5, numeric(1))))
+slack |> dplyr::mutate(binds = abs(slack) < 1e-6)
+```
+
+Both solutions pass every line. The across-the-universe floor binds once,
+at the universe level, and the regions' own ratings sit wherever the solver
+found the rating cheapest; the best-in-class floor binds in
+`r sum(abs(slack$slack[slack$form == "best in class"]) < 1e-6)` of the
+`r length(grp)` regions, which is where its extra cost in @fig-20-frontier
+comes from.
+
+::: {.callout-note}
+## The same constructions on real data
+
+The modeled market has no industries to exclude and no emissions to cap; the
+real-data universes of @sec-02-notation-and-data-real-data have the first.
+`tidypm::pm_screen()` returns the column names of the Kenneth French
+forty-nine industries that a sin, fossil-fuel or weapons screen removes, and
+an exclusion is then the universe restriction of @eq-20-exclusion:
+
+```{r}
+#| label: real-data
+#| eval: false
+ind      <- pm_universe("industries49", from = "1990-07-01")       # downloads, then caches
+screened <- ind[, setdiff(names(ind), pm_screen(c("sin", "fossil")))]
+c(before = ncol(ind), after = ncol(screened))
+```
+
+The screens are conventions, and the point of the chapter is to price the
+line, not to argue about where it is drawn.
+:::
+
+## What the Constraints Cost Out of Sample {#sec-20-sustainability-application}
+
+The sleeve now sits inside the policy of
+@sec-15-hierarchical-allocation-application, recomputed as
+@sec-21-equity-sleeve-application recomputed it, so that the equity budget
+$\omega$ and its regional split are computed rather than quoted.
+
+```{r}
+#| label: policy
+Re <- R - rf; S16 <- stats::cov(Re); mu16 <- colMeans(Re)
+qp <- function(S, a) {       # min w'Sw s.t. a'w = 1, w >= 0, rescaled: a = 1 gives GMV, a = mu the tangency
+  n <- ncol(S)
+  w <- quadprog::solve.QP(2 * S, rep(0, n), cbind(a, diag(n)), c(1, rep(0, n)), meq = 1)$solution
+  w <- pmax(w, 0); setNames(w / sum(w), colnames(S))
+}
+kind <- sub(".*_", "", colnames(Re)); sl <- split(colnames(Re), kind)
+v <- lapply(names(sl), function(k) {
+  a <- sl[[k]]; if (length(a) == 1L) return(setNames(1, a))
+  qp(S16[a, a], if (k == "equity") mu16[a] else rep(1, length(a)))
+}); names(v) <- names(sl)
+sr      <- sapply(v, function(x) as.numeric(Re[, names(x)] %*% x))
+budget16 <- qp(stats::cov(sr), colMeans(sr))
+policy  <- unlist(lapply(names(v), function(k) budget16[[k]] * v[[k]]))[colnames(R)]
+omega   <- budget16[["equity"]]
+eq_split <- v$equity[v$equity > 1e-6]; eq_split <- eq_split / sum(eq_split)
+stopifnot(!anyNA(policy), abs(sum(policy) - 1) < 1e-10)
+budget_app <- setNames(as.numeric(eq_split), sub("_equity$", "", names(eq_split)))
+js <- names(region)[region %in% names(budget_app)]        # the sleeve's names
+round(c(equity_budget = omega, budget_app), 4)
+```
+
+The sleeve holds the `r length(js)` names of the
+`r paste(names(budget_app), collapse = " and ")` regions at the policy's
+split. Three constructions fill it, re-estimated monthly on the trailing
+`r W` months from the register's first out-of-sample month, with the ratings
+in force at each month's start: the screen, which removes the bottom fifth of
+each region and reweights the survivors; the floor, a minimum-tracking-error
+sleeve whose rating must reach 5, one grade above the drawn cross-section's
+center; and the best-in-class floor, 5 in each region. The floor is fixed
+for the whole period because the constraint is strategic, and the drift of
+@fig-20-drift will test what a fixed floor means on a rising scale. The
+benchmark, the capitalization-weighted sleeve at the same split and the same
+monthly machinery, is the unconstrained sleeve every cost is measured against.
+
+```{r}
+#| label: rolling
+oos <- seq.int(t1, nrow(X)); floor_app <- 5
+bench_app <- function(t) {
+  b <- setNames(numeric(length(js)), js)
+  for (g in names(budget_app)) { j <- js[region[js] == g]; b[j] <- budget_app[[g]] * cap_w_of(t, j) }
+  b
+}
+runs <- lapply(oos, function(t) {
+  b_t <- bench_app(t); s_t <- L[t, js]; S_t <- shrunk(X[(t - W):(t - 1L), js])
+  B_t <- bic_B(s_t, floor_app, groups = names(budget_app))
+  ex  <- bottom_of(s_t)
+  list(benchmark = b_t,
+       screen    = screen_w(b_t, ex),
+       floor     = min_te(S_t, b_t, B = s_t, lower = floor_app, budget = budget_app),
+       `best in class` = min_te(S_t, b_t, B = B_t, lower = rep(0, ncol(B_t)), budget = budget_app),
+       excluded = ex, bench_score = score_of(b_t, s_t))
+})
+fillers <- c("benchmark", "screen", "floor", "best in class")
+Wm <- lapply(fillers, function(f) t(vapply(runs, function(r) as.numeric(r[[f]]), numeric(length(js)))))
+names(Wm) <- fillers
+stopifnot(all(vapply(Wm, function(M) max(abs(rowSums(M) - 1)) < 1e-8, logical(1))))
+
+rate <- pm_costs_default()[["equity"]]
+path <- function(Wm, Xj) {                          # weights set at each month start, as in chapter 21
+  gross   <- rowSums(Wm * Xj)
+  drifted <- Wm * (1 + Xj) / (1 + gross)
+  trade   <- rbind(0, abs(Wm[-1, , drop = FALSE] - drifted[-nrow(Wm), , drop = FALSE]))
+  tibble::tibble(gross = gross, cost = rate * rowSums(trade), turnover = rowSums(trade) / 2)
+}
+paths <- lapply(Wm, path, Xj = X[oos, js])
+```
+
+```{r}
+#| label: scores
+register_score <- function(r, rf_oos) {             # the register's definitions
+  n <- length(r)
+  c(ann_return = prod(1 + r)^(12 / n) - 1, ann_vol = stats::sd(r) * sqrt(12),
+    sharpe = (prod(1 + r)^(12 / n) - prod(1 + rf_oos)^(12 / n)) / (stats::sd(r) * sqrt(12)))
+}
+te <- function(a) stats::sd(a) * sqrt(12)
+ir <- function(a) mean(a) / stats::sd(a) * sqrt(12)
+Rm <- zoo::coredata(R)[oos, ]; rest <- setdiff(colnames(R), names(eq_split))
+r_rest  <- as.numeric(Rm[, rest] %*% policy[rest])
+r_bench <- paths$benchmark$gross
+scores <- dplyr::bind_rows(lapply(fillers, function(f) {
+  s_ <- paths[[f]]$gross; tot <- r_rest + omega * s_; tot_b <- r_rest + omega * r_bench
+  tibble::tibble(sleeve = f, !!!as.list(register_score(s_, rf[oos])),
+                 te = te(s_ - r_bench), ir = ir(s_ - r_bench),
+                 turnover = mean(paths[[f]]$turnover) * 12,
+                 total_sharpe = register_score(tot, rf[oos])[["sharpe"]],
+                 total_sharpe_net = register_score(tot - omega * paths[[f]]$cost, rf[oos])[["sharpe"]],
+                 total_te = te(tot - tot_b))
+}))
+```
+
+```{r}
+#| label: tbl-20-oos
+#| tbl-cap: "The equity sleeve under three sustainability constraints, out of sample from observation 121, against the unconstrained capitalization-weighted sleeve. Sleeve columns: Sharpe ratio as the register defines it, tracking error and information ratio against the unconstrained sleeve, turnover a year. Total columns: the policy with that sleeve in it, gross and net of the sleeve's trading costs, and its tracking error against the policy."
+#| echo: false
+scores |>
+  dplyr::mutate(dplyr::across(c(ann_return, ann_vol, te, turnover, total_te), ~ sprintf("%.2f%%", 100 * .x)),
+                dplyr::across(c(sharpe, total_sharpe, total_sharpe_net), ~ sprintf("%.3f", .x)),
+                ir = ifelse(sleeve == "benchmark", "", sprintf("%+.2f", ir)),
+                te = ifelse(sleeve == "benchmark", "", te),
+                total_te = ifelse(sleeve == "benchmark", "", total_te)) |>
+  dplyr::select(sleeve, ann_return, ann_vol, sharpe, te, ir, turnover, total_sharpe, total_sharpe_net, total_te) |>
+  kable(align = "lrrrrrrrrr",
+        col.names = c("sleeve", "return", "volatility", "Sharpe", "TE", "IR", "turnover",
+                      "total Sharpe", "net", "total TE"))
+```
+
+```{r}
+#| label: oos-reading
+#| include: false
+g_ <- function(f, col) scores[[col]][scores$sleeve == f]
+se_ir <- function(a) sqrt((1 + (mean(a) / stats::sd(a))^2 / 2) / length(a)) * sqrt(12)   # eq-24-se
+ir_se <- vapply(fillers[-1], function(f) abs(g_(f, "ir")) / se_ir(paths[[f]]$gross - r_bench), numeric(1))
+bench_score <- vapply(runs, `[[`, numeric(1), "bench_score")
+slack_from  <- oos[max(which(bench_score < floor_app)) + 1L]   # the first month after the floor last binds for the benchmark
+te_floor_m  <- vapply(seq_along(oos), function(i) {             # ex-ante tracking error of the floor sleeve
+  r <- runs[[i]]; S_t <- shrunk(X[(oos[i] - W):(oos[i] - 1L), js]); te_of(r$floor, r$benchmark, S_t) }, numeric(1))
+stopifnot(!is.na(slack_from), all(te_floor_m[oos >= slack_from] < 1e-4),   # once slack, the floor sleeve is the benchmark
+          ir_se[["screen"]] > 2, all(ir_se[c("floor", "best in class")] < 2),   # what the prose says of the IRs
+          g_("screen", "ir") < 0,
+          g_("screen", "turnover") > g_("benchmark", "turnover"))
+sharpe_cost <- g_("benchmark", "total_sharpe") - scores$total_sharpe; names(sharpe_cost) <- scores$sleeve
+excl_sets   <- lapply(runs, `[[`, "excluded")
+n_reset     <- sum(!mapply(setequal, excl_sets[-1], excl_sets[-length(excl_sets)]))
+```
+
+Three things are in @tbl-20-oos. First, the costs in active risk. The screen
+tracks the unconstrained sleeve at `r sprintf("%.2f%%", 100 * g_("screen", "te"))`
+a year, the floor at `r sprintf("%.2f%%", 100 * g_("floor", "te"))` and the
+best-in-class floor at `r sprintf("%.2f%%", 100 * g_("best in class", "te"))`,
+each arriving at the policy multiplied by $\omega$ as @eq-21-omega says.
+Second, the turnover. The unconstrained sleeve trades
+`r sprintf("%.0f%%", 100 * g_("benchmark", "turnover"))` a year to follow its
+own capitalization weights; the screen trades
+`r sprintf("%.0f%%", 100 * g_("screen", "turnover"))`, the excess being the
+`r n_reset` months in which a rating change moved a name across the quintile
+boundary and forced a sale or a repurchase, which is the trading
+@sec-23-rebalancing-application prices and which the net column charges at
+`r sprintf("%.0f", 1e4 * rate)` basis points. Third, the returns, and here
+the table does not say what the construction led us to expect. The two
+floors earn information ratios of `r sprintf("%+.2f", g_("floor", "ir"))` and
+`r sprintf("%+.2f", g_("best in class", "ir"))` against the unconstrained
+sleeve, within two standard errors of zero by @eq-24-se, and cost the policy
+`r sprintf("%.3f", sharpe_cost[["floor"]])` and
+`r sprintf("%.3f", sharpe_cost[["best in class"]])` of Sharpe ratio. The
+screen earns `r sprintf("%+.2f", g_("screen", "ir"))`, which is
+`r sprintf("%.1f", ir_se[["screen"]])` standard errors from zero, and costs
+the policy `r sprintf("%.3f", sharpe_cost[["screen"]])` of Sharpe ratio, from
+`r sprintf("%.3f", g_("benchmark", "total_sharpe"))` to
+`r sprintf("%.3f", g_("screen", "total_sharpe"))`. On a market whose returns
+do not respond to the ratings, a screen that costs two percentage points of
+return a year needs an explanation, and the first question is whether it is
+the draw.
+
+```{r}
+#| label: screen-raters
+z0 <- (s0 - 4) / 1.2                                  # the first rater's standardized draw
+second_rater <- function(rho, seed)
+  esg_start(eq$asset_id, seed = seed,
+            dist = function(n) 4 + 1.2 * (rho * z0 + sqrt(1 - rho^2) * stats::rnorm(n)))
+screen_ir <- function(L2) {                           # the screen's record under another rater's levels
+  W2 <- t(vapply(seq_along(oos), function(i)
+    as.numeric(screen_w(runs[[i]]$benchmark, bottom_of(L2[oos[i], js]))), numeric(length(js))))
+  ir(rowSums(W2 * X[oos, js]) - r_bench)
+}
+seeds  <- 1:20
+ir_ens <- vapply(seeds, function(sd) screen_ir(esg_levels(second_rater(0, sd))), numeric(1))
+stopifnot(mean(ir_ens) < 0, sum(ir_ens < 0) > length(seeds) / 2)
+c(mean_ir = mean(ir_ens), negative = sum(ir_ens < 0), of = length(seeds), base_rater = g_("screen", "ir"))
+```
+
+It is not the draw. Under `r length(seeds)` raters whose starting
+cross-sections share nothing with ours, the screen's information ratio is
+negative `r sum(ir_ens < 0)` times out of `r length(seeds)` and averages
+`r sprintf("%+.2f", mean(ir_ens))`. What the raters share is the shipped
+change path, and the change path is not independent of the names' other
+characteristics.
+
+```{r}
+#| label: sectors
+net_all <- setNames(numeric(N), colnames(X)); net_all[names(net)] <- net
+sector  <- setNames(eq$sector, eq$asset_id)
+by_sector <- tibble::tibble(asset = colnames(X), sector = sector[colnames(X)],
+                            net_change = net_all, oos_return = colMeans(X[oos, ]) * 12) |>
+  dplyr::group_by(sector) |>
+  dplyr::summarise(names = dplyr::n(), net_change = mean(net_change), oos_return = mean(oos_return)) |>
+  dplyr::arrange(dplyr::desc(net_change))
+rho_sector <- stats::cor(by_sector$net_change, by_sector$oos_return, method = "spearman")
+stopifnot(rho_sector < 0)
+```
+
+```{r}
+#| label: tbl-20-sectors
+#| tbl-cap: "The shipped rating changes by sector: names, the mean net change over the sample, and the mean annualized return of the sector's names out of sample. The sectors upgraded most earned least in this sample."
+#| echo: false
+by_sector |>
+  dplyr::mutate(net_change = sprintf("%+.1f", net_change), oos_return = sprintf("%.1f%%", 100 * oos_return)) |>
+  kable(align = "lrrr", col.names = c("sector", "names", "net rating change", "return"))
+```
+
+@tbl-20-sectors is the explanation. The shipped upgrades cluster by sector:
+`r by_sector$sector[1]` names gained `r sprintf("%.1f", by_sector$net_change[1])`
+grades on average over the sample and `r by_sector$sector[nrow(by_sector)]`
+names `r sprintf("%.1f", by_sector$net_change[nrow(by_sector)])`, and the
+sectors upgraded most are the sectors whose names earned least in this
+sample, with a rank correlation of `r sprintf("%.2f", rho_sector)` across the
+`r nrow(by_sector)` sectors. A rating is therefore partly a sector label, and
+a screen that removes the lowest-rated fifth of each region removes names
+from the sectors that happened to pay, under any rater who sees the same
+changes. The returns do not respond to the ratings; the ratings respond to
+something the returns also respond to. That is the general case rather than
+a quirk of this market: real ratings load on industry, size and region
+[@berg2022], and @pedersen2021 price a rating constraint through exactly
+those exposures. The cost of a constraint on an unpriced characteristic is
+the cost of the priced characteristics it is correlated with, which is what
+@sec-05-factor-models-implementation would recover by regressing the
+screen's active return on the sector series.
+
+```{r}
+#| label: fig-20-slack
+#| fig-cap: "The unconstrained sleeve's own rating over the out-of-sample period against the floor of 5, and the ex-ante tracking error the floor costs each month. The floor binds while the benchmark's rating is below it and is slack, at zero cost, once the drift of the shipped changes carries the benchmark past it."
+#| echo: false
+#| fig-asp: 0.55
+slack_frame <- dplyr::bind_rows(
+  tibble::tibble(date = d[oos], kind = "rating of the unconstrained sleeve", value = bench_score),
+  tibble::tibble(date = d[oos], kind = "ex-ante tracking error of the floor sleeve", value = te_floor_m))
+ref <- tibble::tibble(kind = "rating of the unconstrained sleeve", value = floor_app)
+ggplot2::ggplot(slack_frame, ggplot2::aes(date, value)) +
+  ggplot2::geom_hline(data = ref, ggplot2::aes(yintercept = value), linetype = "dashed",
+                      colour = tidyaa_colors[["ink_soft"]]) +
+  ggplot2::geom_line(colour = tidyaa_colors[["blue"]], linewidth = 0.6) +
+  ggplot2::facet_wrap(~ kind, ncol = 1, scales = "free_y") +
+  scale_x_model() +
+  ggplot2::labs(y = NULL)
+```
+
+@fig-20-slack is complementary slackness on a calendar. The floor binds from
+the register's first month until `r fmt_model(d[slack_from])`, when the
+unconstrained sleeve's own rating reaches 5 on the strength of the shipped
+upgrades; from then on the floor sleeve *is* the benchmark, its ex-ante
+tracking error is zero, and the line in the mandate costs nothing. Everything
+the floor cost in @tbl-20-oos was paid in the first
+`r sprintf("%.1f", (slack_from - t1) / 12)` model years. A strategic
+constraint written as an absolute level on a scale that drifts is a
+constraint that expires; one written relative to the benchmark, a grade
+above it, would bind throughout and cost throughout, and the exercises ask
+for it.
+
+### A second rater
+
+The last question is how much of the exclusion list is the rater's. A second
+rater draws a different starting cross-section, correlated with the first at
+$\rho$, sees the same shipped changes, and runs the same screen; the share of
+the first rater's exclusions that the second does not exclude is the
+disagreement @berg2022 measured, in the units a mandate feels it. Their
+average correlation across providers is 0.54; a correlation of zero is a rater
+who shares nothing but the changes, and 0.8 a close one.
+
+```{r}
+#| label: disagreement
+flip_share <- function(rho, seed, t) {
+  L2 <- esg_levels(second_rater(rho, seed))
+  e1 <- bottom_of(L[t, js]); e2 <- bottom_of(L2[t, js])
+  1 - length(intersect(e1, e2)) / length(e1)
+}
+t_end <- nrow(X)
+disagree <- tidyr::expand_grid(rho = c(0, 0.54, 0.8), when = c("register start", "end of sample")) |>
+  dplyr::mutate(flipped = purrr::map2_dbl(rho, when, function(r, w)
+    mean(vapply(seeds, function(sd) flip_share(r, sd, if (w == "register start") t1 else t_end), numeric(1)))))
+stopifnot(all(diff(disagree$flipped[disagree$when == "register start"]) < 0),   # closer raters disagree less
+          all(disagree$flipped[disagree$when == "end of sample"] <
+              disagree$flipped[disagree$when == "register start"]))              # the shared changes pull the lists together
+disagree |> tidyr::pivot_wider(names_from = when, values_from = flipped)
+```
+
+```{r}
+#| label: disagreement-reading
+#| include: false
+flip_of <- function(r, w) disagree$flipped[disagree$rho == r & disagree$when == w]
+```
+
+At the correlation @berg2022 report, `r sprintf("%.0f%%", 100 * flip_of(0.54, "register start"))`
+of the first rater's exclusion list is not on the second rater's at the
+register's start, and `r sprintf("%.0f%%", 100 * flip_of(0.54, "end of sample"))`
+at the end of the sample, when twenty model years of shared changes have
+pulled the two cross-sections together. With uncorrelated raters the lists
+share almost nothing at the start, `r sprintf("%.0f%%", 100 * flip_of(0, "register start"))`
+flipped, which is what two independent draws of a bottom fifth must give; with
+closely agreeing raters the list still turns over by
+`r sprintf("%.0f%%", 100 * flip_of(0.8, "register start"))`. The content of
+the mandate, which names are out, is therefore largely the rater's choice,
+while its cost in @tbl-20-oos and the sector exposure behind that cost are
+not, because every rater sees the same changes. That is the state of the
+data, and it is the reason the chapter has priced the constraint rather
+than the names: the price survives a change of rater, the list does not. What a screen does to a
+backtest's error bar is a question for @sec-25-backtesting-application, and
+whether the tilt's realized cost is stable across re-estimation windows is
+the kind of question @sec-28-robustness-application asks of every construction
+in the book.
+
+## Key Takeaways {.unnumbered}
+
+- A taste for a rating and a floor on it trace the same ESG-efficient
+  frontier [@pedersen2021]: the floor's multiplier is the taste, a floor the
+  unconstrained portfolio already clears costs nothing, and one that binds
+  costs variance or tracking error at the rate of @eq-12-shadow. In
+  equilibrium the taste is priced [@pastor2021], so the constraint is a cost
+  and not an alpha.
+- An exclusion is a box constraint at zero. For a capitalization-weighted
+  sleeve its active share is the benchmark weight removed, @eq-20-exclusion;
+  for an optimized sleeve the Jagannathan--Ma identity holds with the excluded
+  names' multipliers in it, and a binding exclusion is the same as raising the
+  excluded name's covariances until the optimizer drops it [@jagannathan2003;
+  @hong2009].
+- A rating floor is `factor_exposure_constraint()` with the score as
+  $\boldsymbol{B}$; a best-in-class floor is @eq-20-bic, linear in centered
+  scores, and costs more because it cannot buy the rating where it is
+  cheapest. The package cannot write tracking error as an objective, so the
+  minimum-tracking-error sleeve is solved by hand and checked against the
+  package on the problem both can solve.
+- The modeled market ships rating changes and no levels, so the levels here
+  are a construction, stated and seeded, and the returns do not respond to
+  them. The shipped changes are mostly upgrades, so a fixed floor expires as
+  the scale drifts and costs nothing once it is slack. The screen
+  nevertheless costs return out of sample under every rater, because the
+  changes cluster by sector and the sectors upgraded most earned least: a
+  constraint on an unpriced characteristic costs what the priced
+  characteristics it is correlated with cost.
+- A rating is an estimate [@berg2022; @avramov2022]: at the correlation
+  between real raters, roughly half of an exclusion list is the rater's
+  choice. Price the constraint, not the names.
+
+## Exercises {.unnumbered}
+
+1. Replace the absolute floor of 5 in @sec-20-sustainability-application
+   with a relative one, the unconstrained sleeve's own rating plus half a
+   grade, capped at the attainable maximum. Recompute @tbl-20-oos for the
+   floor sleeve. Does the constraint bind throughout, and what does it cost
+   in tracking error and turnover against the absolute version?
+2. Redraw the starting cross-section with a standard deviation of 0.6 grades
+   instead of 1.2 and rebuild @fig-20-frontier. Explain, using @eq-20-floor
+   and the multiplier, why a narrower cross-section makes every floor more
+   expensive.
+3. Impose the screen of @sec-20-sustainability-implementation as a box
+   constraint with `max = 0` on the excluded names, by name, in
+   `PortfolioAnalytics`, and verify with `audit_spec()` that the
+   minimum-variance solution agrees with the universe restriction `w_mvx`.
+   Then exclude the bottom *tenth* instead and report how many exclusions
+   bind.
+4. Repeat the second-rater exercise for the floor sleeve rather than the
+   screen: at $\rho = 0.54$, how far apart are the two raters' floor
+   portfolios in active share and in tracking error against each other at the
+   register's start? Relate the answer to @gibson2021.

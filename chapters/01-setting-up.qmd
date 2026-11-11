@@ -1,0 +1,565 @@
+---
+title: "Setting Up Your Environment"
+metadata:
+  pagetitle: "Setting Up Your Environment"
+  description-meta: "What to install, how tidy tables and date-indexed return matrices coexist in R, and how to read the code in every chapter of this book."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+# Error messages are part of what this chapter shows, so they are printed in
+# the language of the book rather than in the language of the machine.
+Sys.setenv(LANGUAGE = "en")
+```
+
+What has to be installed, and in what shape must a return series arrive, before
+any portfolio in this book can be computed? The second question has two
+canonical answers that do not agree: @wickham2014 defined a tidy table as one
+observation per row and one variable per column, and @zeileis2005 built the
+ordered, date-indexed matrix that `zoo` and `xts` carry and that every
+optimization function in `PortfolioAnalytics` expects. Both are used in every
+chapter of this book, and the boundary between them is crossed each time data
+are prepared for an optimizer or read back out of one, so we fix it here, once.
+
+We first list what to install and what each package is for, then set out the
+two data models and why neither can be given up, then cross the boundary
+between them on the book's own data and break it in the three ways it breaks,
+and finally read the data once in the way every later chapter will. On the
+horizon axis that @sec-03-return-risk-and-the-investor-theory defines, this
+chapter is neither strategic nor tactical: it allocates nothing.
+
+Three programs come first: R, of which the book was built on
+`r paste(R.version$major, R.version$minor, sep = ".")` and anything from 4.4
+onward will do; an editor, RStudio or Visual Studio Code with the R extension;
+and Quarto [@allaire2022], needed only to render the book's source, not to run
+its code. The packages install from CRAN in one call.
+
+```{r}
+#| label: install-cran
+#| eval: false
+install.packages(c(
+  "tidyverse", "xts", "zoo",                                  # data models
+  "PortfolioAnalytics", "PerformanceAnalytics",               # the subject
+  "ROI", "ROI.plugin.quadprog", "ROI.plugin.glpk", "quadprog", # convex solvers
+  "osqp", "CVXR", "DEoptim", "GenSA", "pso",                  # more solvers
+  "corpcor", "renv"                                           # shrinkage, pinning
+))
+```
+
+The companion package `tidypm` is not on CRAN. It holds the modeled market
+of @sec-02-notation-and-data-simulated-market, the two coercion functions this
+chapter is about, and the machinery that `PortfolioAnalytics` does not cover,
+recorded in @sec-93-package-notes; it installs from GitHub.
+
+```{r}
+#| label: install-tidypm
+#| eval: false
+pak::pak("sstoeckl/tidypm")
+```
+
+`renv.lock` records every version the book was built against, and `renv`
+[@ushey2026] restores that record, so that the printed numbers reproduce to
+the last digit rather than to whatever CRAN offers on the day.
+
+```{r}
+#| label: restore
+#| eval: false
+renv::restore()
+```
+
+```{r}
+#| label: packages
+#| echo: false
+lock <- jsonlite::read_json("renv.lock")
+n_pinned <- length(lock$Packages)
+v <- function(p) lock$Packages[[p]]$Version %||% "--"
+
+packages <- tibble::tribble(
+  ~group,        ~package,               ~role,
+  "data models", "tidyverse",            "dplyr to build, filter and join; tidyr to pivot; ggplot2 for every figure",
+  "data models", "xts, zoo",             "the date-indexed matrix every optimizer consumes",
+  "the subject", "PortfolioAnalytics",   "portfolio specification and optimization",
+  "the subject", "PerformanceAnalytics", "moments, drawdowns, performance tables, exploratory charts",
+  "solvers",     "ROI, ROI.plugin.quadprog, ROI.plugin.glpk, quadprog", "quadratic and linear programs behind `optimize_method = \"ROI\"`",
+  "solvers",     "osqp, CVXR",           "convex problems behind `optimize_method = \"CVXR\"`",
+  "solvers",     "DEoptim, GenSA, pso",  "metaheuristics for problems that are not convex",
+  "estimation",  "corpcor",              "shrinkage covariance",
+  "companion",   "tidypm",               "the modeled market and the tibble--xts boundary",
+  "tooling",     "renv",                 "pins every version in `renv.lock`"
+)
+```
+
+```{r}
+#| label: tbl-01-packages
+#| tbl-cap: "The packages this book uses, grouped by what they do. Versions are read from the lockfile."
+#| echo: false
+packages |>
+  dplyr::mutate(version = vapply(sub(",.*$", "", package), v, character(1))) |>
+  dplyr::select(group, package, version, role) |>
+  kable(align = "llll", col.names = c("", "package", "version", "used for"))
+```
+
+The tidyverse [@wickham2019] is the data-manipulation half of @tbl-01-packages,
+with @wickham2023 as its reference; `xts` [@ryan2026] on top of `zoo`
+[@zeileis2005] is the time-series half. `PortfolioAnalytics` [@peterson2026]
+and `PerformanceAnalytics` [@peterson2026a] are the subject and its engine.
+The solvers are backends that `PortfolioAnalytics` dispatches to by name:
+`ROI` [@theussl2020] for quadratic and linear programs, `CVXR` [@fu2020] for
+convex problems `ROI` cannot express, and `DEoptim` [@ardia2011], `GenSA` and
+`pso` for problems that are not convex at all. @sec-13-solvers-theory says
+which to use when, and @sec-92-solver-matrix tables which constraint each
+supports.
+
+::: {.callout-note}
+## Two functions for everything, and none for data
+
+`PortfolioAnalytics` exports more names than it has functions.
+
+```{r}
+#| label: namespace
+exports <- getNamespaceExports("PortfolioAnalytics")
+legacy  <- sort(grep("_v[12]", exports, value = TRUE))
+c(exports = length(exports), legacy = length(legacy))
+legacy
+```
+
+`r length(legacy)` of the `r length(exports)` exports carry a `_v1` or `_v2`
+suffix. They are the interface of an earlier generation of the package, kept
+so that old scripts keep running, and they are why an answer copied from an
+old forum post fails against the current release. The unsuffixed
+`add.objective()`, `add.constraint()` and `optimize.portfolio()` are the
+package; this book uses only those.
+
+```{r}
+#| label: namespace-data
+#| include: false
+n_fetch <- sum(grepl("download|getSymbols|fetch|read", exports, ignore.case = TRUE))
+pa_data <- utils::data(package = "PortfolioAnalytics")$results[, "Item"]
+```
+
+The other absence is data. Of the `r length(exports)` exports,
+`r if (n_fetch == 0L) "none" else n_fetch` fetch anything, and the package
+bundles `r length(pa_data)` dataset`r if (length(pa_data) != 1L) "s"`,
+`r paste0("\x60", pa_data, "\x60", collapse = ", ")`. It optimizes what it is
+handed, and handing it the right object is the subject of this chapter.
+:::
+
+## Two Data Models {#sec-01-setting-up-theory}
+
+A return panel is a set of numbers indexed by a date and an asset, and there
+are two ways to lay it out, each of which makes some operations natural and
+others awkward.
+
+The **tidy** layout of @wickham2014 stores one observation per row: a date, an
+asset identifier and a return. A panel of $N$ assets over $T$ periods is a
+table of $TN$ rows and three columns, and every operation of relational
+algebra applies to it directly: a sub-period is a filter on the date, a
+universe is a filter on the asset, a currency return or a yield is a join on
+the keys, and a computation that runs asset by asset is a grouped mutate.
+That is how the real data sleeves of @sec-02-notation-and-data-real-data are
+assembled, how the screens of @sec-20-sustainability-implementation are
+applied, and how every figure in the book is prepared, since `ggplot2`
+consumes long data and nothing else.
+
+The **wide** layout stores the same panel as a $T \times N$ matrix with the
+dates as an ordered index and the assets as named columns. In the notation that
+@sec-02-notation-and-data-notation fixes,
+
+$$
+\boldsymbol{R} =
+\begin{pmatrix}
+r_{1,1} & \cdots & r_{1,N} \\
+\vdots  &        & \vdots  \\
+r_{T,1} & \cdots & r_{T,N}
+\end{pmatrix},
+\qquad
+\boldsymbol{r}_t' = (r_{t,1}, \dots, r_{t,N}),
+$$ {#eq-01-matrix}
+
+where $\boldsymbol{r}_t$ is row $t$, the cross-section of returns on date $t$.
+A portfolio with weight vector $\boldsymbol{w}$ earns
+
+$$
+r_{p,t} = \boldsymbol{r}_t'\boldsymbol{w} = \sum_{i=1}^{N} w_i\, r_{t,i},
+$$ {#eq-01-portfolio-return}
+
+and the sample moments that @sec-09-mean-variance-theory optimizes over are
+matrix expressions in $\boldsymbol{R}$ and the vector of ones
+$\boldsymbol{\iota}$:
+
+$$
+\hat{\boldsymbol{\mu}} = \frac{1}{T}\,\boldsymbol{R}'\boldsymbol{\iota},
+\qquad
+\hat{\boldsymbol{\Sigma}} = \frac{1}{T-1}
+  \left(\boldsymbol{R} - \boldsymbol{\iota}\hat{\boldsymbol{\mu}}'\right)'
+  \left(\boldsymbol{R} - \boldsymbol{\iota}\hat{\boldsymbol{\mu}}'\right).
+$$ {#eq-01-moments}
+
+`zoo` [@zeileis2005] made this layout a first-class object in R by attaching
+an ordered index to a matrix, and `xts` [@ryan2026] specialized it to time, so
+that subsetting by date range, aligning two series, changing the frequency and
+rolling a window are each one call. Every function in `PortfolioAnalytics`
+and `PerformanceAnalytics` takes this object and nothing else; there is no
+method for a data frame.
+
+Neither layout can be dropped: the long table is where data are built,
+because joining, filtering and grouping are relational operations and a matrix
+has no join, and the wide matrix is where portfolios are computed, because
+@eq-01-matrix through @eq-01-moments are matrix expressions. The boundary is
+therefore crossed in a fixed direction, long to wide once after the panel is
+built, wide to long whenever a result is to be drawn. `timetk` and `tsibble`
+hide the crossing; the book does not use them, because an explicit crossing
+can be checked.
+
+The three equations also say what can go wrong, before any code does. In
+@eq-01-matrix, $T$ is one number shared by every column, so a panel in which
+one asset is missing a date has no matrix representation until the gap is
+filled or the date is dropped, and either choice changes @eq-01-moments. In
+@eq-01-portfolio-return, the $i$ that indexes $w_i$ and the $i$ that indexes
+$r_{t,i}$ must be the same asset, which a matrix product enforces by position
+and nothing else. And the map from $(t, i)$ to $r_{t,i}$ must be a function: a
+panel in which some $(t, i)$ appears twice describes no matrix at all. These
+are the three failure modes of the boundary, and @sec-01-setting-up-implementation
+produces each from the book's data.
+
+## The Tibble–xts Boundary {#sec-01-setting-up-implementation}
+
+`tidypm` provides the crossing in both directions. `as_xts_pm()` takes a long
+table and the names of its date, identifier and value columns and returns the
+matrix of @eq-01-matrix; `as_pm()` takes the matrix back to three columns.
+The book's data ship in the long form.
+
+```{r}
+#| label: long-form
+sim_class_returns_monthly |> dplyr::slice_head(n = 4)
+```
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+stopifnot(ncol(R) == 16L, nrow(R) == length(rf), !anyNA(R),
+          all(zoo::index(R) == sim_riskfree_monthly$date))
+```
+
+The assertions state what the rest of the chapter assumes about `R`; if any
+of them were false the chunk would fail here, naming the condition, rather
+than three chapters later with a plausible number.
+
+```{r}
+#| label: wide-form
+few <- c("US_equity", "US_government", "GLOBAL_commodity")
+head(R[, few], 3)
+```
+
+The reverse crossing returns a tibble with exactly three columns, and going
+round the loop changes nothing.
+
+```{r}
+#| label: back-again
+tb <- as_pm(R)
+tb
+stopifnot(identical(zoo::coredata(as_xts_pm(tb, date, asset, value)),
+                    zoo::coredata(R)))
+```
+
+### Three ways the boundary breaks
+
+Each failure below is manufactured from `sim_class_returns_monthly`, so that
+the message the reader will meet in practice is printed here first.
+
+**A ragged panel.** Drop one row, the
+`r sim_class_returns_monthly$class[5]` observation for
+`r format(sim_class_returns_monthly$date[5])`, and cross the boundary.
+
+```{r}
+#| label: ragged-build
+ragged <- sim_class_returns_monthly[-5, ]
+
+R_ragged <- withCallingHandlers(
+  as_xts_pm(ragged, date, class, return),
+  warning = function(w) { cat(conditionMessage(w), "\n"); invokeRestart("muffleWarning") }
+)
+
+na_at <- which(is.na(R_ragged), arr.ind = TRUE)
+c(row = as.character(zoo::index(R_ragged))[na_at[, "row"]],
+  column = colnames(R_ragged)[na_at[, "col"]])
+```
+
+The coercion pads rather than refuses, and says so. Two consequences follow.
+The first is that `r colnames(R_ragged)[na_at[, "col"]]` has moved from
+column `r match("EU_equity", colnames(R))` to column
+`r match("EU_equity", colnames(R_ragged))`, because `as_xts_pm()` orders
+columns by first appearance in the table and the dropped row was that asset's
+first appearance. The second is what an optimizer does with the gap. For a
+variance objective, `set.portfolio.moments()` estimates the mean with
+`na.rm = TRUE` and the covariance with `use = "pairwise.complete.obs"`, so
+one column is estimated on `r min(colSums(!is.na(R_ragged)))` months and the
+other fifteen on `r max(colSums(!is.na(R_ragged)))`, and the matrix that
+results is the covariance of no sample that exists. The minimum-variance
+problem below is the one @sec-09-mean-variance-implementation builds up
+properly; here it only shows that the optimizer accepts the padded matrix
+without comment.
+
+```{r}
+#| label: ragged-optimizer
+spec_of <- function(x) {
+  portfolio.spec(assets = colnames(x)) |>
+    add.constraint(type = "full_investment") |>
+    add.constraint(type = "long_only") |>
+    add.objective(type = "risk", name = "var")
+}
+w_full   <- extractWeights(optimize.portfolio(R,        spec_of(R),        optimize_method = "ROI"))
+w_ragged <- extractWeights(optimize.portfolio(R_ragged, spec_of(R_ragged), optimize_method = "ROI"))
+
+w_ragged <- w_ragged[names(w_full)]            # index by name: the columns moved
+max_shift <- max(abs(w_ragged - w_full))
+round(c(largest_weight_change = max_shift, cells_missing = sum(is.na(R_ragged))), 4)
+```
+
+The weights move by at most `r sprintf("%.4f", max_shift)`, small because one
+month in `r nrow(R)` is small; the same gap in the sixty-month windows of
+@sec-25-backtesting-implementation is one month in sixty, and a sleeve of
+instruments that list and delist, the setting of @sec-21-equity-sleeve-theory,
+is ragged by construction. The warning is the only notice the reader gets, and
+it comes from the coercion, not the optimizer. Handle the gap in the long
+table, before crossing.
+
+**Column order.** The sort order of the long table becomes the column order of
+the matrix. Sort it differently, as a join or a `dplyr::arrange()` might, and
+the columns come out in a different order, from the same numbers.
+
+```{r}
+#| label: column-order
+reordered <- sim_class_returns_monthly |> dplyr::arrange(date, dplyr::desc(class))
+R_rev     <- as_xts_pm(reordered, date, class, return)
+
+c(same_set = setequal(colnames(R), colnames(R_rev)),
+  same_order = identical(colnames(R), colnames(R_rev)))
+colnames(R_rev)[1:3]
+```
+
+Now take a weight vector built in the original order, a 60/40 portfolio of
+`US_equity` and `US_government`, and apply it to the reordered matrix.
+`Return.portfolio()` pairs weights with columns by position.
+
+```{r}
+#| label: column-order-cost
+w <- setNames(numeric(ncol(R)), colnames(R))
+w[c("US_equity", "US_government")] <- c(0.6, 0.4)
+
+rp <- merge(PerformanceAnalytics::Return.portfolio(R_rev, weights = w),
+            PerformanceAnalytics::Return.portfolio(R_rev[, names(w)], weights = w))
+colnames(rp) <- c("positional", "by_name")
+PerformanceAnalytics::table.AnnualizedReturns(rp, Rf = rf)
+```
+
+The positional column is a portfolio of
+`r paste(colnames(R_rev)[which(w > 0)], collapse = " and ")`, because those
+are the series that now occupy the positions the weights were written for, and
+nothing reports that it is the wrong one. The guard is the condition of
+@eq-01-portfolio-return, that the index of the weights and the index of the
+columns are the same index:
+
+```{r}
+#| label: column-order-assert
+tryCatch(stopifnot(identical(colnames(R_rev), names(w))),
+         error = function(e) cat("Error:", conditionMessage(e), "\n"))
+
+w <- w[colnames(R_rev)]                          # reindex by name, then assert
+stopifnot(identical(colnames(R_rev), names(w)))
+```
+
+The same discipline applies coming out of the optimizer. `extractWeights()`
+returns a named vector in the column order of the matrix it was fitted on, and
+a vector fitted on one ordering and applied by position to another mis-pairs
+every entry.
+
+**Duplicate keys.** If a date–asset pair appears twice, the table describes no
+matrix, and the failure surfaces in two steps.
+
+```{r}
+#| label: duplicate-keys
+dup <- dplyr::bind_rows(sim_class_returns_monthly,
+                        dplyr::slice_head(sim_class_returns_monthly, n = 1))
+
+tryCatch(
+  withCallingHandlers(
+    as_xts_pm(dup, date, class, return),
+    warning = function(w) { cat("Warning:", conditionMessage(w), "\n"); invokeRestart("muffleWarning") }),
+  error = function(e) cat("Error:", conditionMessage(e), "\n"))
+```
+
+The warning comes from `tidyr::pivot_wider()` and names the cause; the error
+comes from `xts()` and names only the symptom, and a reader who sees the error
+alone has no way back to the duplicated pair. The check belongs before the
+crossing, in the long table, where the keys are columns:
+
+```{r}
+#| label: duplicate-check
+dup |> dplyr::count(date, class) |> dplyr::filter(n > 1)
+stopifnot(!anyDuplicated(sim_class_returns_monthly[c("date", "class")]))
+```
+
+These three chunks are the first appearance of a rule the book applies
+wherever two objects have to line up and nothing in the language enforces it:
+state the invariant as an assertion that fails the render, not as a comment.
+Index by name, then assert that the names agree. The rule recurs in
+@sec-09-mean-variance-implementation, where weight vectors are indexed against
+the columns of the return matrix and group limits against the output of
+`split()`, and in @sec-25-backtesting-implementation, where a rolling
+optimization that fails in one window must not enter the record as a portfolio
+that did not move.
+
+## A First Pass Through the Data {#sec-01-setting-up-application}
+
+### How the code in this book is written
+
+Every chapter opens with the same lines, run from the project root.
+
+```{r}
+#| label: every-chapter
+#| eval: false
+source("R/_common.R")                                              # seed, options, theme
+library(tidypm)                                                    # the market, the boundary
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)   # sixteen risky classes
+rf <- sim_riskfree_monthly$return                                  # the Treasury bill
+Re <- R - rf                                                       # excess returns
+```
+
+`R/_common.R` attaches the tidyverse, `xts` and the two analytics packages,
+sets the seed to 1602, sets the printing options, registers `theme_tidyaa()`
+as the default `ggplot2` theme with the palette `tidyaa_colors` and the scale
+`scale_colour_tidyaa()`, and warns if the installed `PortfolioAnalytics` is
+not the build the lockfile records (@sec-93-package-notes). The data then load
+in two lines and a third subtracts the bill
+(@sec-03-return-risk-and-the-investor-theory); no chapter prepares data beyond
+this.
+
+Three conventions follow. Every number in the prose is computed inline from an
+object a chunk created, never typed. Every figure is built from one long data
+frame, one row per plotted thing, so that an $x$ cannot be paired with another
+row's $y$; that frame is usually the output of `as_pm()`. And `ggplot2`'s
+`colour` argument keeps its spelling in code while the prose is American. A
+reader who has not written R recently will find the language itself in
+@sec-94-r-primer.
+
+### The shape of the data
+
+The matrix built above is what @sec-04-descriptive-analysis-theory describes
+and every chapter after it consumes, so its dimensions are worth reading once.
+
+```{r}
+#| label: dimensions
+p <- xts::periodicity(R)
+c(months = nrow(R), assets = ncol(R),
+  from = as.character(start(R)), to = as.character(end(R)), scale = p$scale)
+```
+
+`r nrow(R)` months of `r ncol(R)` series, from
+`r format(start(R), "%Y-%m")` to `r format(end(R), "%Y-%m")`,
+`r nrow(R) / 12` years on a `r p$scale` grid. A figure of three of them shows
+the reverse crossing in use: the matrix goes back to long form, a grouped
+mutate compounds each series, and the plot is drawn from that one frame.
+
+```{r}
+#| label: fig-01-growth
+#| fig-cap: "Growth of one dollar in three of the sixteen series, on a log scale. Built from one long data frame, one row per date and asset, the shape as_pm() returns."
+growth <- as_pm(R[, few]) |>
+  dplyr::group_by(asset) |>
+  dplyr::mutate(growth = cumprod(1 + value)) |>
+  dplyr::ungroup()
+
+ggplot2::ggplot(growth, ggplot2::aes(date, growth, colour = asset)) +
+  ggplot2::geom_line(linewidth = 0.7) +
+  ggplot2::scale_y_log10() +
+  scale_colour_tidyaa() +
+  ggplot2::labs(x = NULL, y = "growth of one dollar, log scale", colour = NULL) +
+  theme_tidyaa()
+```
+
+```{r}
+#| label: growth-end
+#| include: false
+final <- growth |> dplyr::filter(date == max(date))
+final <- setNames(final$growth, final$asset)
+```
+
+Later chapters omit the call to `theme_tidyaa()`, which `R/_common.R` has
+already set. One dollar in `US_equity` at the start of the sample is
+`r sprintf("%.1f", final[["US_equity"]])` dollars at the end, against
+`r sprintf("%.1f", final[["US_government"]])` in `US_government` and
+`r sprintf("%.1f", final[["GLOBAL_commodity"]])` in `GLOBAL_commodity`.
+
+```{r}
+#| label: tbl-01-annualized
+#| tbl-cap: "Annualized return, volatility and Sharpe ratio for three series, from PerformanceAnalytics on the wide matrix. The bill enters as a vector aligned with the rows."
+PerformanceAnalytics::table.AnnualizedReturns(R[, few], Rf = rf) |>
+  kable(digits = 3)
+```
+
+The function annualizes the bill itself and prints the rate it used. The
+return in the first row is compounded and the Sharpe ratio divides the excess
+over the bill by the volatility; @sec-04-descriptive-analysis-theory fixes these
+conventions for the book and says where the arithmetic mean is used instead.
+
+### Reproducibility
+
+Three things are pinned so that a reader's numbers match the printed ones: the
+seed, set once in `R/_common.R`; the `r n_pinned` package versions in
+`renv.lock`, with `freeze: auto` in `_quarto.yml` so that a chapter is
+re-executed only when its source changes; and the modeled market, at dataset
+version 6.2.0. The last pin is the one to respect most, because the source
+model redraws its idiosyncratic components on every run, so a regenerated
+dataset is a different realized path rather than a refresh;
+@sec-02-notation-and-data-simulated-market explains why regenerating it is an
+event. The text is executed by `knitr` [@xie2015] and assembled by Quarto
+[@allaire2022], the arrangement of the two books this one sits beside,
+@scheuch2023 and @coqueret2020, and for the same reason: a number the reader
+cannot recompute is a number the reader cannot check.
+
+## Key Takeaways {.unnumbered}
+
+- Two data models are unavoidable. The tidy long table of @wickham2014 is
+  where a return panel is built, filtered and joined; the date-indexed matrix
+  of @zeileis2005 and `xts` is what every function in `PortfolioAnalytics` and
+  `PerformanceAnalytics` consumes, and it is the $\boldsymbol{R}$ of
+  @eq-01-matrix.
+- The boundary is crossed in a fixed direction, one call each way:
+  `as_xts_pm()` from long to wide, once, after the panel is built; `as_pm()`
+  from wide to long whenever a result is to be drawn.
+- The boundary fails in three ways, none reported downstream: a ragged panel
+  is padded and each moment is then estimated on a different sample; a
+  differently sorted table gives a differently ordered matrix, so weights
+  applied by position land on the wrong assets; a duplicated key fails with an
+  error that names only the symptom.
+- The guard is the same in every case: index by name, then assert that the
+  names agree, with a `stopifnot()` that fails the render.
+- The `_v1` and `_v2` exports of `PortfolioAnalytics` are legacy shims; the
+  book uses the unsuffixed functions. The package fetches no data and
+  optimizes what it is given.
+
+## Exercises {.unnumbered}
+
+1. The five money-market series ship beside the universe as
+   `sim_money_market_monthly`. Bring them across the boundary and attach them
+   to `R` with `merge()`, then confirm that the result has 21 columns, 372
+   rows and no `NA`. Do the same in the long form, with `dplyr::bind_rows()`
+   before a single call to `as_xts_pm()`. Which route makes the alignment
+   check unnecessary, and why?
+2. Remove every `JP_equity` row from the first three model years from
+   `sim_class_returns_monthly` and cross the boundary. Report the number of
+   observations per column, then compute the covariance matrix with
+   `use = "complete.obs"` and with `use = "pairwise.complete.obs"` and count
+   the entries that differ. Check whether the pairwise matrix is positive
+   definite from its smallest eigenvalue. Which of the two would
+   `PortfolioAnalytics` have used?
+3. For each of the legacy exports listed in the callout above, determine
+   whether an unsuffixed function of the same name exists in the namespace.
+   Which shims have no modern counterpart, and what does the name
+   `update_constraint_v1tov2()` say about how the constraint interface
+   changed?

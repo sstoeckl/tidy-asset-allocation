@@ -1,0 +1,1218 @@
+---
+title: "Higher Moments"
+metadata:
+  pagetitle: "Higher Moments"
+  description-meta: "Coskewness and cokurtosis tensors, the structured estimator behind PortfolioAnalytics' boudt method, a four-moment CRRA objective written as a custom objective, and what the third and fourth moments change on a skewed asset class."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+What does an investor lose by describing an asset class with two moments when
+its returns are skewed and fat-tailed? @kraus1976 extended the capital asset
+pricing model to a third moment and showed that investors pay for positive
+skewness and demand compensation for negative coskewness with the market;
+@harvey2000 confirmed on the cross-section of equity returns that conditional
+skewness carries a price of its own, and @dittmar2002 extended the argument to
+kurtosis. If the market prices these moments, a portfolio built on
+$\boldsymbol{\mu}$ and $\boldsymbol{\Sigma}$ alone is leaving something on the
+table, and the question of this chapter is how much, on the sixteen asset
+classes of this book.
+
+The allocation is **strategic** in the sense of
+@sec-03-return-risk-and-the-investor-theory: the moments are unconditional,
+estimated once on the full sample, and nothing is timed. We first extend the
+expected-utility expansion of @eq-03-quadratic-utility to four moments and
+define the comoment tensors that a portfolio's skewness and kurtosis are built
+from, then implement them in `PortfolioAnalytics`, including the structured
+estimator, the moment interface and a custom objective, and then compare on the
+sixteen classes what a two-moment investor, a four-moment investor and a
+minimum-modified-shortfall investor hold.
+
+The data are the sixteen risky class series of
+@sec-02-notation-and-data-simulated-market, in excess of the Treasury bill as
+in @sec-09-mean-variance-theory.
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+stopifnot(ncol(Re) == 16L, !anyNA(Re))
+N        <- ncol(Re)
+n_months <- nrow(Re)
+
+base_spec <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only")
+```
+
+The case for the chapter is one series. @sec-04-descriptive-analysis-implementation
+computed the shape moments of @eq-04-moments34 for every class, and
+`US_credit` stood out; here we recompute the two numbers that matter and the
+weight a mean-variance investor gives the series.
+
+```{r}
+#| label: credit-shape
+kind_of <- function(s) dplyr::case_when(
+  grepl("_equity$", s)     ~ "equity",
+  grepl("_government$", s) ~ "government",
+  grepl("_credit$", s)     ~ "credit",
+  TRUE                     ~ "commodity")
+
+shape <- tibble::tibble(
+  series = colnames(R),
+  skew   = as.numeric(PerformanceAnalytics::skewness(R)),
+  exkurt = as.numeric(PerformanceAnalytics::kurtosis(R, method = "excess")),
+  kind   = kind_of(colnames(R))
+)
+credit <- shape[shape$series == "US_credit", ]
+
+# Quadratic utility, gamma/2 as `risk_aversion` (appendix B), solved exactly.
+qu_weights <- function(gamma) {
+  spec <- base_spec |>
+    add.objective(type = "return", name = "mean") |>
+    add.objective(type = "risk",   name = "var", risk_aversion = gamma / 2)
+  w <- extractWeights(optimize.portfolio(Re, spec, optimize_method = "ROI"))
+  w <- pmax(w[colnames(Re)], 0)
+  w / sum(w)
+}
+w_qu5 <- qu_weights(5)
+stopifnot(shape$series[which.min(shape$skew)] == "US_credit")   # the prose says so
+
+c(skewness = credit$skew, excess_kurtosis = credit$exkurt,
+  weight_at_gamma_5 = w_qu5[["US_credit"]])
+```
+
+`US_credit` has a skewness of `r sprintf("%.2f", credit$skew)`, the most
+negative of the `r nrow(shape)` series, and an excess kurtosis of
+`r sprintf("%.1f", credit$exkurt)`, the
+`r c("highest", "second highest")[rank(-shape$exkurt)[shape$series == "US_credit"]]`.
+A mean-variance investor with relative risk aversion $\gamma = 5$, solving
+@eq-03-quadratic-utility on these sixteen series exactly as
+@sec-09-mean-variance-application did, holds
+`r sprintf("%.1f%%", 100 * w_qu5[["US_credit"]])` of it. The tangency
+portfolio of @sec-09-mean-variance-implementation holds less, and the middle of
+the frontier holds more; we return to both in
+@sec-11-higher-moments-application. The weight is not a mistake of the
+optimizer. @eq-09-problem sees a volatility of
+`r sprintf("%.1f%%", 100 * stats::sd(R[, "US_credit"]) * sqrt(12))` a year and
+nothing else, and the question is what changes once it sees the rest.
+
+## Expected Utility Beyond Two Moments {#sec-11-higher-moments-theory}
+
+### The four-moment expansion
+
+Take the investor of @eq-03-expected-utility with initial wealth normalized to
+one and returns measured in excess of the bill, so that terminal wealth is
+$W = 1 + r_{\boldsymbol{w}}$ with $r_{\boldsymbol{w}} = \boldsymbol{w}'\boldsymbol{R}^e$
+the portfolio's excess return. Write $\bar{W} = 1 + \mu_{\boldsymbol{w}}$ for
+its expectation and $m_{k,\boldsymbol{w}} = \mathbb{E}[(r_{\boldsymbol{w}} - \mu_{\boldsymbol{w}})^k]$
+for the $k$-th central moment of the portfolio return. A Taylor expansion of
+$U(W)$ around $\bar{W}$, taken through the fourth order and then averaged,
+gives
+
+$$
+\mathbb{E}\!\left[U(W)\right] \approx
+U(\bar{W})
++ \frac{U''(\bar{W})}{2}\, m_{2,\boldsymbol{w}}
++ \frac{U'''(\bar{W})}{6}\, m_{3,\boldsymbol{w}}
++ \frac{U''''(\bar{W})}{24}\, m_{4,\boldsymbol{w}} .
+$$ {#eq-11-taylor}
+
+Stopping after the second term is @eq-03-quadratic-utility, and @markowitz1959
+gave the two conditions under which stopping there is exact. @samuelson1970
+gave the reason it is usually close: for distributions that become compact as
+the holding period shrinks, the $k$-th moment is of order $\Delta t^{k/2}$, so
+each further term is smaller than the last by a factor that vanishes with the
+horizon. That is a statement about monthly returns of moderate size, and it is
+why @levy1979 and @markowitz2014 found the two-moment approximation almost
+exact on historical equity data. It says nothing about a series whose fourth
+moment is dominated by a handful of months, which is what
+@sec-04-descriptive-analysis-application found for credit.
+
+The signs of the derivatives are not free. @scott1980 showed that any investor
+with positive marginal utility, risk aversion and decreasing absolute risk
+aversion has $U''' > 0$ and $U'''' < 0$: a preference for skewness and an
+aversion to kurtosis follow from the same properties that produce an aversion
+to variance. @eq-11-taylor is therefore a four-moment objective with signs
+fixed by economics; @jondeau2006 developed its portfolio-choice form,
+@athayde2004 the maximum-skewness problem, and @mitton2007 show that an
+investor who values the right tail deliberately under-diversifies to keep it.
+
+### Coskewness and cokurtosis
+
+The portfolio moments in @eq-11-taylor are polynomials in the weights whose
+coefficients are moments of the joint distribution. Let
+$\boldsymbol{r} = \boldsymbol{R}^e - \boldsymbol{\mu}$ be the vector of
+centered excess returns. The **coskewness matrix** and the **cokurtosis matrix**
+are
+
+$$
+\boldsymbol{M}_3 = \mathbb{E}\!\left[\boldsymbol{r}\,\boldsymbol{r}' \otimes \boldsymbol{r}'\right]
+\;\in \mathbb{R}^{N \times N^2},
+\qquad
+\boldsymbol{M}_4 = \mathbb{E}\!\left[\boldsymbol{r}\,\boldsymbol{r}' \otimes \boldsymbol{r}' \otimes \boldsymbol{r}'\right]
+\;\in \mathbb{R}^{N \times N^3},
+$$ {#eq-11-tensors}
+
+with $\otimes$ the Kronecker product, so that the element of
+$\boldsymbol{M}_3$ in row $i$ and column $(j-1)N + k$ is
+$m_{ijk} = \mathbb{E}[r_i r_j r_k]$, and $\boldsymbol{M}_4$ holds
+$m_{ijkl}$ in the same unfolded arrangement. They are the third- and
+fourth-order analogues of $\boldsymbol{\Sigma}$, flattened into two dimensions
+so that the portfolio moments are matrix products,
+
+$$
+m_{3,\boldsymbol{w}} = \boldsymbol{w}'\boldsymbol{M}_3\,(\boldsymbol{w}\otimes\boldsymbol{w}),
+\qquad
+m_{4,\boldsymbol{w}} = \boldsymbol{w}'\boldsymbol{M}_4\,(\boldsymbol{w}\otimes\boldsymbol{w}\otimes\boldsymbol{w}),
+$$ {#eq-11-portfolio-moments}
+
+and the standardized skewness and excess kurtosis of the portfolio are
+$s_{\boldsymbol{w}} = m_{3,\boldsymbol{w}} / \sigma_{\boldsymbol{w}}^3$ and
+$\kappa_{\boldsymbol{w}} = m_{4,\boldsymbol{w}} / \sigma_{\boldsymbol{w}}^4 - 3$,
+the portfolio versions of @eq-04-moments34. This is the representation of
+@jondeau2006 and of @boudt2008, whose modified expected shortfall consumes
+exactly these objects, and it is the one `PerformanceAnalytics` and
+`PortfolioAnalytics` use.
+
+The price of the representation is its size. By symmetry $\boldsymbol{\Sigma}$
+has $N(N+1)/2$ distinct elements, $\boldsymbol{M}_3$ has $N(N+1)(N+2)/6$ and
+$\boldsymbol{M}_4$ has $N(N+1)(N+2)(N+3)/24$.
+
+```{r}
+#| label: parameter-count
+params <- c(covariance = N * (N + 1) / 2,
+            coskewness = N * (N + 1) * (N + 2) / 6,
+            cokurtosis = N * (N + 1) * (N + 2) * (N + 3) / 24)
+c(params, observations = n_months)
+```
+
+With $N = `r N`$ the sample coskewness matrix has `r params[["coskewness"]]`
+free parameters and the cokurtosis matrix `r params[["cokurtosis"]]`, against
+`r n_months` months of data: `r sprintf("%.1f", params[["cokurtosis"]] / n_months)`
+parameters per observation for the fourth moment alone, each estimated from a
+fourth power that a single month can dominate. @sec-07-covariance-matrix-theory
+found structure necessary for `r params[["covariance"]]` covariances; here it
+is unavoidable. @martellini2010 supplied it: impose a constant-correlation or
+a single-factor model on the comoments, and shrink the sample tensor toward
+it as @ledoit2004 shrink a covariance matrix. Under a single factor,
+$r_i = \beta_i f + \varepsilon_i$ with $\varepsilon_i$ independent of $f$ and
+of each other, the coskewness reduces to
+
+$$
+m_{ijk} = \beta_i \beta_j \beta_k\, \mathbb{E}[f^3]
+        + \mathbb{1}\{i = j = k\}\, \mathbb{E}[\varepsilon_i^3],
+$$ {#eq-11-single-factor}
+
+so that $2N + 1$ numbers replace `r params[["coskewness"]]`, and the
+cokurtosis has an analogous form in the loadings and the second and fourth
+moments of the factor and of the residuals. @boudt2015 extend this to $k$
+factors in closed form; it is what `PortfolioAnalytics` computes under
+`method = "boudt"`, with the factors taken from principal components of the
+returns. What the structure assumes is worth stating before it is used: the
+cross terms $\mathbb{E}[f^2 \varepsilon_i]$ and $\mathbb{E}[f \varepsilon_i^2]$
+are set to zero, so an asset whose residual is large precisely when the factor
+is large has its skewness removed by the structure.
+@sec-11-higher-moments-implementation shows that this is the case for credit.
+
+### The CRRA investor
+
+The utility function the rest of the literature uses, introduced in
+@sec-03-return-risk-and-the-investor-theory, is constant relative risk
+aversion, $U(W) = W^{1-\gamma}/(1-\gamma)$. Its derivatives are
+$U' = W^{-\gamma}$, $U'' = -\gamma W^{-\gamma-1}$,
+$U''' = \gamma(\gamma+1)W^{-\gamma-2}$ and
+$U'''' = -\gamma(\gamma+1)(\gamma+2)W^{-\gamma-3}$, with the sign pattern
+of @scott1980. Substituting into @eq-11-taylor gives the objective we write
+into `PortfolioAnalytics` below,
+
+$$
+\mathbb{E}\!\left[U(W)\right] \approx
+\frac{\bar{W}^{1-\gamma}}{1-\gamma}
+- \frac{\gamma}{2}\,\bar{W}^{-\gamma-1}\, m_{2,\boldsymbol{w}}
++ \frac{\gamma(\gamma+1)}{6}\,\bar{W}^{-\gamma-2}\, m_{3,\boldsymbol{w}}
+- \frac{\gamma(\gamma+1)(\gamma+2)}{24}\,\bar{W}^{-\gamma-3}\, m_{4,\boldsymbol{w}} ,
+$$ {#eq-11-crra}
+
+with the portfolio moments from @eq-11-portfolio-moments. Truncated after the
+second term it is @eq-03-quadratic-utility up to the wealth factors, which are
+close to one for monthly returns; the third and fourth terms are what this
+chapter adds. @brandt2005 use this fourth-order expansion to make a dynamic
+CRRA problem tractable, @jondeau2006 measure when the last two terms move the
+allocation, and @harvey2010 treat the same objective with uncertain comoments.
+Because expected utility has no units an investor recognizes, we report it
+through the **certainty equivalent**, the riskless excess return that gives
+the same utility,
+
+$$
+\mathrm{CE}_{\boldsymbol{w}} = \big((1-\gamma)\,\mathbb{E}[U(W)]\big)^{1/(1-\gamma)} - 1 ,
+$$ {#eq-11-ce}
+
+which is in return units and can be annualized and compared across portfolios.
+
+### The modified expected shortfall as a four-moment objective
+
+The other four-moment objective, and the one `PortfolioAnalytics` uses most,
+is the modified expected shortfall of @favre2002 and @boudt2008. It takes the
+Cornish-Fisher quantile of @eq-04-cornish-fisher with the portfolio's own
+$s_{\boldsymbol{w}}$ and $\kappa_{\boldsymbol{w}}$ substituted in, and reads
+the expected shortfall of @eq-04-es off the corrected normal. Its inputs are
+therefore $(\boldsymbol{\mu}, \boldsymbol{\Sigma}, \boldsymbol{M}_3, \boldsymbol{M}_4)$
+and the weights, nothing else, which is why the estimator of the tensors
+decides the answer. @sec-10-risk-measures-theory treats expected shortfall as a
+risk measure, its coherence and its historical estimator; here we use only the
+fact that its modified form is a function of the same four moments as
+@eq-11-crra.
+
+### Dependence that no moment describes
+
+Coskewness and cokurtosis summarize a joint distribution; they are not the
+joint distribution. A **copula** is: by Sklar's theorem any joint distribution
+is its marginals composed with a function on the unit cube that carries the
+dependence and nothing else [see @mcneil2015, ch. 7]. The property of that
+function a portfolio investor cares about is **tail dependence**,
+
+$$
+\lambda_L = \lim_{q \to 0}\; \Pr\!\left(U_1 \leq q \mid U_2 \leq q\right),
+$$ {#eq-11-tail-dep}
+
+the probability that one asset is in its worst $q$ fraction of months given
+that the other is. @embrechts2002 showed why correlation cannot carry this: a
+Gaussian copula has $\lambda_L = 0$ for every correlation below one, whereas a
+$t$ copula has $\lambda_L > 0$, rising as its degrees of freedom fall.
+@longin2001 and @ang2002 documented on equity markets that dependence is
+stronger in the lower tail than in the upper, and @patton2004 measured what
+modeling the asymmetry is worth out of sample. The cross terms that
+@eq-11-single-factor discards are the moment-based shadow of this asymmetry,
+and @sec-11-higher-moments-application measures both on the same pairs.
+
+## Comoment Tensors and Custom Objectives {#sec-11-higher-moments-implementation}
+
+### The sample tensors and their shape
+
+`set.portfolio.moments()` computes every moment a specification's objectives
+need, in one call, and returns them as a named list. Which moments it computes
+depends on the objectives, so the same returns and the same `method` yield
+different lists for different specifications.
+
+```{r}
+#| label: spec-moments
+var_spec <- base_spec |>
+  add.objective(type = "risk", name = "var")
+mes_spec <- base_spec |>
+  add.objective(type = "risk", name = "ES",
+                arguments = list(method = "modified", p = 0.95))
+
+mom_var <- set.portfolio.moments(Re, var_spec, method = "sample")
+mom_s   <- set.portfolio.moments(Re, mes_spec, method = "sample")
+
+list(variance_objective = names(mom_var), modified_ES_objective = names(mom_s))
+vapply(mom_s, function(x) paste(dim(x), collapse = " x "), character(1))
+```
+
+A variance objective produces `mu` and `sigma`; a modified expected shortfall
+objective adds `m3` of dimension $`r N` \times `r N^2`$ and `m4` of
+$`r N` \times `r N^3`$, which are @eq-11-tensors computed by
+`PerformanceAnalytics::M3.MM()` and `M4.MM()` with the $1/T$ convention. The
+tensors carry no dimnames, so every element is addressed by position, and the
+first thing to do with them is confirm that the contraction of
+@eq-11-portfolio-moments returns the moment of the portfolio's return series.
+
+```{r}
+#| label: tensor-identity
+r_qu5 <- as.numeric(Re %*% w_qu5)
+m3_w  <- PerformanceAnalytics::portm3(w_qu5, mom_s$m3)
+m4_w  <- PerformanceAnalytics::portm4(w_qu5, mom_s$m4)
+
+stopifnot(all.equal(m3_w, mean((r_qu5 - mean(r_qu5))^3)),
+          all.equal(m4_w, mean((r_qu5 - mean(r_qu5))^4)))
+
+sd_ml <- sqrt(mean((r_qu5 - mean(r_qu5))^2))      # the 1/T standard deviation
+stopifnot(m3_w / sd_ml^3 < min(shape$skew[shape$kind == "equity"]))   # as the text says
+c(skew_from_tensor = m3_w / sd_ml^3,
+  skew_from_series = as.numeric(PerformanceAnalytics::skewness(r_qu5)),
+  exkurt_from_tensor = m4_w / sd_ml^4 - 3)
+```
+
+`portm3()` and `portm4()` are the `PerformanceAnalytics` implementations of
+@eq-11-portfolio-moments, and the `stopifnot()` is the guard that the tensor
+and the series agree to machine precision. The quadratic-utility portfolio at
+$\gamma = 5$ has a skewness of
+`r sprintf("%.2f", m3_w / sd_ml^3)`, more negative than any equity market in
+@tbl-04-moments, which is the credit position doing what @eq-11-taylor says
+it does.
+
+### The structured estimator
+
+`method = "boudt"` fits a statistical factor model by principal components and
+builds the tensors from @eq-11-single-factor and its fourth-order counterpart.
+The pieces are exported and can be called separately.
+
+```{r}
+#| label: factor-fit
+fit1 <- statistical.factor.model(Re, k = 1)
+class(fit1); names(fit1)
+
+mom_b <- set.portfolio.moments(Re, mes_spec, method = "boudt")
+stopifnot(all.equal(mom_b$sigma, extractCovariance(fit1)),
+          all.equal(mom_b$m3,    extractCoskewness(fit1)),
+          all.equal(mom_b$m4,    extractCokurtosis(fit1)))
+
+beta <- setNames(as.numeric(fit1$factor_loadings), colnames(Re))
+pc_share <- prcomp(zoo::coredata(Re))$sdev^2
+stopifnot(all(grepl("_equity$", names(sort(abs(beta), decreasing = TRUE))[1:5])))
+round(sort(beta, decreasing = TRUE)[1:5], 3)
+```
+
+The single factor explains
+`r sprintf("%.0f%%", 100 * pc_share[1] / sum(pc_share))` of the total variance
+and loads most heavily on the equity markets, which is the factor
+@sec-05-factor-models-implementation found; `US_credit` has a loading of
+`r sprintf("%.3f", beta[["US_credit"]])`, and its own residual carries
+`r sprintf("%.0f%%", 100 * stats::var(fit1$residuals[, "US_credit"]) / stats::var(as.numeric(Re[, "US_credit"])))`
+of its variance.
+
+::: {.callout-note}
+## The number of factors must be a literal
+
+`set.portfolio.moments()` recovers `k` from `match.call()` rather than from its
+value, so `method = "boudt", k = 2` works and `k = n_factors` with
+`n_factors <- 2` does not: the unevaluated symbol reaches
+`statistical.factor.model()`, which fails on `k <= 0` with a message about
+language types.
+
+```{r}
+#| label: k-trap
+n_factors <- 2
+ok  <- set.portfolio.moments(Re, mes_spec, method = "boudt", k = 2)
+bad <- try(set.portfolio.moments(Re, mes_spec, method = "boudt", k = n_factors),
+           silent = TRUE)
+c(literal = class(ok), variable = class(bad))
+```
+
+Fit the model with `statistical.factor.model(R, k = n_factors)`, where `k` is
+an ordinary argument, and extract the tensors from the fit.
+:::
+
+How different the two estimators are is visible in a single element. Take the
+coskewness of `US_equity` with `US_credit` and `EU_equity`, and the own third
+moment of `US_credit`, standardized by the three volatilities so that they read
+like correlations.
+
+```{r}
+#| label: triple
+pos   <- function(s) match(s, colnames(Re))
+m3_at <- function(M3, i, j, k) M3[i, (j - 1) * N + k]      # element m_ijk of M3
+sds   <- apply(zoo::coredata(Re), 2, stats::sd)
+std_coskew <- function(M3, a, b, d) {
+  i <- pos(a); j <- pos(b); k <- pos(d)
+  m3_at(M3, i, j, k) / (sds[i] * sds[j] * sds[k])
+}
+
+triple <- tibble::tibble(
+  element    = c("US_equity, US_credit, EU_equity", "US_credit, US_credit, US_credit"),
+  sample     = c(std_coskew(mom_s$m3, "US_equity", "US_credit", "EU_equity"),
+                 std_coskew(mom_s$m3, "US_credit", "US_credit", "US_credit")),
+  structured = c(std_coskew(mom_b$m3, "US_equity", "US_credit", "EU_equity"),
+                 std_coskew(mom_b$m3, "US_credit", "US_credit", "US_credit"))
+)
+triple
+
+frob <- c(M3 = norm(mom_s$m3 - mom_b$m3, "F") / norm(mom_s$m3, "F"),
+          M4 = norm(mom_s$m4 - mom_b$m4, "F") / norm(mom_s$m4, "F"))
+round(frob, 3)
+```
+
+The structured own third moment of `US_credit` is
+`r sprintf("%.0f%%", 100 * triple$structured[2] / triple$sample[2])` of the
+sample value, and across the whole tensor the two estimates differ by
+`r sprintf("%.0f%%", 100 * frob[["M3"]])` of the sample norm for
+$\boldsymbol{M}_3$ and `r sprintf("%.0f%%", 100 * frob[["M4"]])` for
+$\boldsymbol{M}_4$. Where the difference comes from is the identity
+$\mathbb{E}[(\beta f + \varepsilon)^3] = \beta^3\mathbb{E}[f^3] + 3\beta^2\mathbb{E}[f^2\varepsilon] + 3\beta\,\mathbb{E}[f\varepsilon^2] + \mathbb{E}[\varepsilon^3]$,
+of which @eq-11-single-factor keeps the first and last terms.
+
+```{r}
+#| label: tbl-11-decomposition
+#| tbl-cap: "The own third moment of `US_credit` decomposed under the single-factor fit. The structured estimator keeps the first and last rows and sets the two cross terms to zero."
+#| echo: false
+f_c <- as.numeric(fit1$factor_realizations); f_c <- f_c - mean(f_c)
+e_c <- as.numeric(fit1$residuals[, "US_credit"])
+b_c <- beta[["US_credit"]]
+terms <- c(`beta^3 E[f^3]`          = b_c^3 * mean(f_c^3),
+           `3 beta^2 E[f^2 e]`      = 3 * b_c^2 * mean(f_c^2 * e_c),
+           `3 beta E[f e^2]`        = 3 * b_c * mean(f_c * e_c^2),
+           `E[e^3]`                 = mean(e_c^3))
+own_sample <- mean((as.numeric(Re[, "US_credit"]) - mean(Re[, "US_credit"]))^3)
+stopifnot(all.equal(sum(terms), own_sample),
+          sum(terms[2:3]) / own_sample > 0.5)     # the cross terms carry the skewness
+
+tibble::tibble(term = names(terms), value = terms,
+               share = terms / own_sample,
+               kept = c("yes", "no", "no", "yes")) |>
+  dplyr::mutate(value = sprintf("%.2e", value), share = sprintf("%.0f%%", 100 * share)) |>
+  kable(align = "lrrc", col.names = c("term", "value", "share of sample moment",
+                                      "kept by the structure"))
+```
+
+The two cross terms carry
+`r sprintf("%.0f%%", 100 * sum(terms[2:3]) / own_sample)` of the series'
+skewness. `US_credit` is not skewed because the equity factor is skewed, nor
+because its residual is; it is skewed because its residual is large and
+negative in the months when the factor is, which is the joint event
+@sec-04-descriptive-analysis-application identified and the dependence that
+@eq-11-tail-dep describes. A factor structure with independent residuals cannot
+represent it, so the estimator built to reduce the variance of the tensor
+removes the feature of this asset that the tensor was wanted for. That is the
+bias half of the trade @martellini2010 describe, and it decides the
+allocation in @sec-11-higher-moments-application.
+
+### The moment interface
+
+`optimize.portfolio()` obtains its moments from one function, `momentFUN`,
+whose default is `set.portfolio.moments`; @sec-07-covariance-matrix-implementation
+and @sec-06-expected-returns-implementation replaced it for the first two
+moments, and the same argument carries the tensors. A moment function of our
+own also removes the need to pass `method` through `...`, which is fragile for
+the reason the callout above gives.
+
+```{r}
+#| label: four-moments-fun
+four_moments <- function(R, portfolio, ...) {
+  X <- zoo::coredata(R)
+  S <- stats::cov(X)
+  list(mu = matrix(colMeans(X), ncol = 1), sigma = S,
+       m3 = PerformanceAnalytics::M3.MM(X),
+       m4 = PerformanceAnalytics::M4.MM(X),
+       mean = colMeans(X), var = S)      # both pairs of names, as chapter 7 requires
+}
+
+structured_moments <- function(R, portfolio, ...) {
+  fit <- statistical.factor.model(R, k = 1)
+  S   <- extractCovariance(fit)
+  list(mu = matrix(colMeans(zoo::coredata(R)), ncol = 1), sigma = S,
+       m3 = extractCoskewness(fit), m4 = extractCokurtosis(fit),
+       mean = colMeans(zoo::coredata(R)), var = S)
+}
+```
+
+The contract, read from `optimize.portfolio()` and `constrained_objective()`,
+is this. The function is called once, before the search, with `R` and
+`portfolio` supplied if they are among its formals and any other formal
+matched by name from the `...` of `optimize.portfolio()`; its own `...` is
+discarded. The list it returns is handed, under `DEoptim`, `random`, `pso` and
+`GenSA`, to every objective function by **name**: each element whose name
+matches a formal of the objective function is passed as that argument, `R`
+and `weights` are added if the function declares them, and the objective's
+`arguments` list is applied last and overrides anything of the same name. The
+names `mu`, `sigma`, `m3` and `m4` are therefore not special; they are the
+formals of `StdDev()`, `VaR()` and `ES()`, and a custom objective can name its
+inputs as it likes provided the moment function returns them under those
+names. A missing name fails inside the objective function,
+`ES(method = "modified")` with `M3 must be a matrix` and a function without a
+default with a missing-argument error; both are reported as a message per
+evaluation and then surface as a second, unrelated error at the end of the
+search. The convex solvers read only `mu` and `sigma`, the patched behavior
+recorded in @sec-93-package-notes.
+
+### A custom objective: the CRRA investor
+
+`PortfolioAnalytics` has no expected-utility objective beyond the quadratic
+one. It does allow an objective to be any function whose name is passed to
+`add.objective()`, so @eq-11-crra is a dozen lines. The function returns the
+negative of the expansion, because a risk objective is minimized, and takes an
+`order` argument so that the same function can be truncated after the second
+moment for comparison.
+
+```{r}
+#| label: crra-fun
+crra_utility <- function(R, weights, mu, sigma, m3, m4, gamma = 5, order = 4) {
+  w  <- as.numeric(weights)
+  Wb <- 1 + sum(w * as.numeric(mu))               # expected terminal wealth, W0 = 1
+  m2 <- as.numeric(t(w) %*% sigma %*% w)
+  eu <- Wb^(1 - gamma) / (1 - gamma) - gamma / 2 * Wb^(-gamma - 1) * m2
+  if (order >= 3)
+    eu <- eu + gamma * (gamma + 1) / 6 * Wb^(-gamma - 2) *
+      PerformanceAnalytics::portm3(w, m3)
+  if (order >= 4)
+    eu <- eu - gamma * (gamma + 1) * (gamma + 2) / 24 * Wb^(-gamma - 3) *
+      PerformanceAnalytics::portm4(w, m4)
+  -eu
+}
+
+crra_spec <- function(gamma, order = 4) base_spec |>
+  add.objective(type = "risk", name = "crra_utility",
+                arguments = list(gamma = gamma, order = order))
+```
+
+::: {.callout-important}
+## An objective the solver cannot find is skipped, not reported
+
+`constrained_objective()` resolves the objective's name with `match.fun()`
+from the solver's own frame, and that lookup reaches the global environment
+but not the environment the call was made from. A function defined at the
+console is found; one defined inside a function, a `local()` block or a
+private evaluation environment is not. The `try()` around the lookup prints an
+error and continues, the objective is skipped, the optimizer minimizes the
+constraint penalties alone, and `optimize.portfolio()` returns weights with
+no objective value attached.
+
+```{r}
+#| label: hidden-objective
+set.seed(1602)
+rp <- random_portfolios(mes_spec, permutations = 3000, rp_method = "simplex")
+
+hidden <- local({
+  crra_hidden <- crra_utility
+  spec <- base_spec |>
+    add.objective(type = "risk", name = "crra_hidden", arguments = list(gamma = 5))
+  optimize.portfolio(Re, spec, optimize_method = "random", rp = rp[1:20, ],
+                     momentFUN = four_moments)
+})
+c(objective_values_returned = length(hidden$objective_measures),
+  weights_are_first_candidate = isTRUE(all.equal(as.numeric(hidden$weights),
+                                                 as.numeric(rp[1, ]))))
+```
+
+We therefore put the function where the lookup will find it, and assert after
+every solve that the objective was evaluated.
+
+```{r}
+#| label: expose-objective
+assign("crra_utility", crra_utility, envir = globalenv())
+
+solved_for <- function(opt, name) {
+  if (is.null(opt$objective_measures[[name]]))
+    cli::cli_abort("the objective {.val {name}} was never evaluated")
+  invisible(opt)
+}
+```
+
+`momentFUN` is not affected: it is resolved once from the caller's frame, and
+a function object can be passed in place of a name, as above.
+:::
+
+The package's route for a non-convex objective is differential evolution
+[@storn1997; @ardia2011]. The population size is set from `search_size`, with
+a floor of ten times the number of assets, and `itermax` bounds the
+generations; the solver prints the raw weight vector on completion, which is
+why the chunk's output is hidden.
+
+```{r}
+#| label: crra-deoptim
+#| results: hide
+set.seed(1602)
+de5 <- optimize.portfolio(Re, crra_spec(5), optimize_method = "DEoptim",
+                          search_size = 2000, itermax = 30, traceDE = 0,
+                          momentFUN = four_moments) |>
+  solved_for("crra_utility")
+```
+
+```{r}
+#| label: crra-deoptim-out
+w_de5 <- extractWeights(de5)[colnames(Re)]
+round(w_de5[w_de5 > 0.005], 3)
+unlist(de5$objective_measures)
+```
+
+The other metaheuristic route evaluates the objective on a fixed set of random
+portfolios and keeps the best. The `simplex` method of `random_portfolios()`
+generates them in a fraction of a second where the default `sample` method
+takes seconds and discards most of what it draws, and a set generated once is
+reused below, so that comparisons across objectives are made on identical
+candidates.
+
+```{r}
+#| label: crra-random
+rn5 <- optimize.portfolio(Re, crra_spec(5), optimize_method = "random", rp = rp,
+                          momentFUN = four_moments) |>
+  solved_for("crra_utility")
+w_rn5 <- extractWeights(rn5)[colnames(Re)]
+
+c(candidates = nrow(rp),
+  objective_DEoptim = as.numeric(unlist(de5$objective_measures)),
+  objective_random  = as.numeric(unlist(rn5$objective_measures)))
+```
+
+Both routes work, and neither has converged: the best of `r nrow(rp)` random
+portfolios reaches a
+`r if (unlist(rn5$objective_measures) < unlist(de5$objective_measures)) "lower" else "higher"`
+objective value than thirty generations of differential evolution. @eq-11-crra
+is smooth in the weights and the feasible set is a simplex, so a local solver
+started from either answer finishes the job in a fraction of a second; whether
+it has found the global optimum is a separate question, and two different
+starting points reaching the same portfolio is the evidence we ask for.
+
+::: {.callout-note collapse="true"}
+## Worked: polishing the metaheuristic answer
+
+`nloptr::slsqp()` is a sequential quadratic programming solver that takes
+bounds and an equality constraint directly. The wrapper below closes over the
+moments so that the objective is a function of the weights alone.
+
+```{r}
+#| label: polish
+crra_fn <- function(mom, gamma, order = 4) function(w)
+  crra_utility(NULL, w, mom$mu, mom$sigma, mom$m3, mom$m4, gamma, order)
+
+polish <- function(f, w0) {
+  w0  <- pmax(as.numeric(w0), 0); w0 <- w0 / sum(w0)
+  sol <- nloptr::slsqp(x0 = w0, fn = f, lower = rep(0, N), upper = rep(1, N),
+                       heq = function(w) sum(w) - 1,
+                       control = list(xtol_rel = 1e-10, maxeval = 2000))
+  w <- pmax(sol$par, 0)
+  setNames(w / sum(w), colnames(Re))
+}
+turnover <- function(w1, w2) sum(abs(w1[names(w2)] - w2)) / 2
+ce_annual <- function(neg_eu, gamma) 12 * (((1 - gamma) * (-neg_eu))^(1 / (1 - gamma)) - 1)
+```
+
+Two checks before the polished answers are used. Truncated after the second
+moment, @eq-11-crra is @eq-03-quadratic-utility up to the wealth factors, so
+the polished two-moment optimum must land on the quadratic-utility portfolio
+that `ROI` solved exactly. And the four-moment optimum reached from the
+`DEoptim` answer must coincide with the one reached from the random-portfolio
+answer.
+
+```{r}
+#| label: polish-check
+f2_5 <- crra_fn(mom_s, 5, order = 2)
+f4_5 <- crra_fn(mom_s, 5, order = 4)
+
+w_o2_5    <- polish(f2_5, w_qu5)
+w_c5_de   <- polish(f4_5, w_de5)
+w_c5_rn   <- polish(f4_5, w_rn5)
+
+c(two_moment_vs_ROI = turnover(w_o2_5, w_qu5),
+  from_DEoptim_vs_from_random = turnover(w_c5_de, w_c5_rn))
+stopifnot(turnover(w_o2_5, w_qu5) < 0.05, turnover(w_c5_de, w_c5_rn) < 0.01)
+w_c5 <- w_c5_de
+# Neither metaheuristic had converged: both stopped well away from the polished answer.
+stopifnot(turnover(w_de5, w_c5) > 0.05, turnover(w_rn5, w_c5) > 0.05)
+
+tibble::tibble(
+  answer = c("DEoptim, 30 generations", "best of the random portfolios", "polished"),
+  objective = c(f4_5(w_de5), f4_5(w_rn5), f4_5(w_c5)),
+  ce_annual = ce_annual(objective, 5),
+  turnover_to_polished = c(turnover(w_de5, w_c5), turnover(w_rn5, w_c5), 0)
+)
+```
+
+The certainty equivalent of @eq-11-ce puts the solver error in the investor's
+units: the `DEoptim` answer is
+`r sprintf("%.0f", 1e4 * (ce_annual(f4_5(w_c5), 5) - ce_annual(f4_5(w_de5), 5)))`
+basis points a year below the polished optimum and
+`r sprintf("%.0f%%", 100 * turnover(w_de5, w_c5))` of the portfolio away from
+it. @sec-13-solvers-theory measures the same shortfall on a problem with a
+closed form; here the point is that on a flat objective the solver's error
+exceeds the effect being studied, which cannot be read off an unpolished
+answer.
+:::
+
+### One objective, two estimators of the tensors
+
+The modified expected shortfall of @sec-11-higher-moments-theory consumes
+$\boldsymbol{M}_3$ and $\boldsymbol{M}_4$ through @eq-04-cornish-fisher, so its
+minimum depends on which tensors it is given. We minimize it twice on the same
+candidate set, once with the sample tensors and once with the structured ones,
+and polish both.
+
+```{r}
+#| label: mes-two-estimators
+mes_fn <- function(mom) function(w)
+  as.numeric(PerformanceAnalytics::ES(NULL, p = 0.95, method = "modified",
+                                      portfolio_method = "single", weights = w,
+                                      mu = mom$mu, sigma = mom$sigma,
+                                      m3 = mom$m3, m4 = mom$m4, invert = FALSE))
+
+mes_s <- optimize.portfolio(Re, mes_spec, optimize_method = "random", rp = rp,
+                            momentFUN = four_moments) |> solved_for("ES")
+mes_b <- optimize.portfolio(Re, mes_spec, optimize_method = "random", rp = rp,
+                            momentFUN = structured_moments) |> solved_for("ES")
+
+w_mes_s <- polish(mes_fn(mom_s), extractWeights(mes_s)[colnames(Re)])
+w_mes_b <- polish(mes_fn(mom_b), extractWeights(mes_b)[colnames(Re)])
+
+w_gmv <- extractWeights(optimize.portfolio(Re, var_spec, optimize_method = "ROI"))
+w_gmv <- pmax(w_gmv[colnames(Re)], 0); w_gmv <- w_gmv / sum(w_gmv)
+
+# The prose: the sample-tensor minimum holds no credit, and the least volatile
+# series is among the least skewed.
+least_vol <- names(which.min(sds))
+stopifnot(w_mes_s[["US_credit"]] < 0.005, least_vol == "US_government",
+          rank(abs(shape$skew))[shape$series == least_vol] <= 4)
+```
+
+```{r}
+#| label: tbl-11-mes
+#| tbl-cap: "Minimum modified expected shortfall at 95% under two estimators of the tensors. Each portfolio is evaluated under both estimators; the historical shortfall is the realized tail of the portfolio's own return series."
+#| echo: false
+hist_es <- function(w) -as.numeric(PerformanceAnalytics::ES(as.numeric(Re %*% w), p = 0.95,
+                                                          method = "historical"))
+mes_tbl <- tibble::tibble(
+  portfolio       = c("sample tensors", "structured tensors", "minimum variance"),
+  US_credit       = c(w_mes_s[["US_credit"]], w_mes_b[["US_credit"]], w_gmv[["US_credit"]]),
+  US_government   = c(w_mes_s[["US_government"]], w_mes_b[["US_government"]], w_gmv[["US_government"]]),
+  mES_sample      = c(mes_fn(mom_s)(w_mes_s), mes_fn(mom_s)(w_mes_b), mes_fn(mom_s)(w_gmv)),
+  mES_structured  = c(mes_fn(mom_b)(w_mes_s), mes_fn(mom_b)(w_mes_b), mes_fn(mom_b)(w_gmv)),
+  ES_historical   = c(hist_es(w_mes_s), hist_es(w_mes_b), hist_es(w_gmv))
+)
+# The structured answer has the larger realized tail of the two, and a larger
+# one than minimum variance; the prose below and in the application says so.
+stopifnot(hist_es(w_mes_b) > hist_es(w_mes_s), hist_es(w_mes_b) > hist_es(w_gmv))
+mes_tbl |>
+  dplyr::mutate(dplyr::across(-portfolio, ~ sprintf("%.1f%%", 100 * .x))) |>
+  kable(align = "lrrrrr",
+        col.names = c("minimized with", "US_credit", "US_government",
+                      "mES, sample tensors", "mES, structured tensors", "ES, historical"))
+```
+
+The two minima are
+`r sprintf("%.0f%%", 100 * turnover(w_mes_s, w_mes_b))` of the portfolio apart.
+Under the sample tensors the minimum-shortfall portfolio holds
+`r sprintf("%.1f%%", 100 * w_mes_s[["US_credit"]])` of `US_credit` and is
+`r sprintf("%.0f%%", 100 * turnover(w_mes_s, w_gmv))` away from the
+minimum-variance portfolio of @eq-09-gmv: once the tail is priced, credit is
+out and the answer is close to the one variance gave. Under the structured
+tensors, which removed
+`r sprintf("%.0f%%", 100 * (1 - triple$structured[2] / triple$sample[2]))` of
+the series' skewness, it holds
+`r sprintf("%.1f%%", 100 * w_mes_b[["US_credit"]])`. The last column is the
+arbiter: on the realized tail of its own returns the structured answer has the
+larger shortfall, at `r sprintf("%.2f%%", 100 * hist_es(w_mes_b))` against
+`r sprintf("%.2f%%", 100 * hist_es(w_mes_s))`. On this universe the structured
+estimator is not a shrinkage toward a safer answer; it is a different
+estimator, biased in the direction the sample estimator was brought in to
+correct. The message that both solves print, asking for `full_investment` to
+be relaxed to `min_sum = 0.99, max_sum = 1.01`, concerns how the
+metaheuristics map candidates onto the constraint set and is
+@sec-13-solvers-theory's subject; the answers above sum to one.
+
+### Conditional comoments
+
+Everything above is unconditional. `CCCgarch.MM()` produces conditional
+moments from a constant-conditional-correlation GARCH fit [@bollerslev1990]:
+a GARCH(1,1) per series, the correlation matrix $\boldsymbol{R}$ of the
+standardized residuals and the one-step-ahead volatility forecasts
+$\boldsymbol{D}_{t+1}$, assembled as
+$\boldsymbol{\Sigma}_{t+1} = \boldsymbol{D}_{t+1}\boldsymbol{R}\boldsymbol{D}_{t+1}$,
+with the tensors taken from the standardized residuals rescaled to the
+forecast volatilities. @jondeau2003 show that conditional skewness and
+kurtosis themselves persist, which the CCC structure holds fixed, and
+@guidolin2008 model the same features through regimes, the route
+@sec-19-regimes-theory takes. The function requires `fGarch`, which is not in
+this book's library, so the call is shown and not run.
+
+```{r}
+#| label: ccc-garch
+#| eval: false
+conditional <- CCCgarch.MM(Re)
+str(conditional, give.attr = FALSE)     # mu, sigma, m3, m4: the same names
+```
+
+The list has the same four names, so it drops into `momentFUN` unchanged. One
+property of it matters: a series whose GARCH `alpha1` falls below 0.01 is
+silently given its unconditional volatility for every date, so a mixed
+universe receives a conditional matrix for some assets and an unconditional
+one for the rest, with nothing in the output to say which.
+
+## What the Third and Fourth Moments Buy {#sec-11-higher-moments-application}
+
+The application opens with the picture: the sixteen series in the plane that
+@eq-11-taylor cares about and @eq-09-problem does not.
+
+```{r}
+#| label: fig-11-shape
+#| fig-cap: "The sixteen risky series by skewness and excess kurtosis, total returns over the full sample. The equity markets cluster near the Gaussian origin; US and UK credit are in a region of their own."
+#| echo: false
+#| fig-asp: 0.62
+# The prose reads two facts off this picture: US_government is positively skewed
+# and has the lowest excess kurtosis of the sixteen.
+gov <- shape[shape$series == "US_government", ]
+stopifnot(gov$skew > 0, gov$exkurt == min(shape$exkurt))
+ggplot2::ggplot(shape, ggplot2::aes(skew, exkurt, colour = kind)) +
+  ggplot2::geom_hline(yintercept = 0, linewidth = 0.3, colour = tidyaa_colors[["rule"]]) +
+  ggplot2::geom_vline(xintercept = 0, linewidth = 0.3, colour = tidyaa_colors[["rule"]]) +
+  ggplot2::geom_point(size = 2.6) +
+  ggplot2::geom_text(ggplot2::aes(label = series), hjust = -0.12, size = 2.5,
+                     show.legend = FALSE) +
+  scale_colour_tidyaa() +
+  ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0.06, 0.30))) +
+  ggplot2::labs(x = "skewness", y = "excess kurtosis", colour = NULL)
+```
+
+The Jarque-Bera test of @eq-04-jb rejected normality for most of these series;
+@fig-11-shape shows that the rejections are not of one kind. The equity
+markets sit at a skewness between
+`r sprintf("%.2f", min(shape$skew[shape$kind == "equity"]))` and
+`r sprintf("%.2f", max(shape$skew[shape$kind == "equity"]))` and an excess kurtosis below
+`r sprintf("%.0f", ceiling(max(shape$exkurt[shape$kind == "equity"])))`, the
+region where @samuelson1970 and @levy1979 say two moments suffice. US and UK
+credit sit at an excess kurtosis of about
+`r sprintf("%.0f", max(shape$exkurt[shape$kind == "credit"]))`,
+`r sprintf("%.1f", max(shape$exkurt[shape$kind == "credit"]) / max(shape$exkurt[shape$kind == "equity"]))`
+times the highest equity value, and that is where the terms of @eq-11-crra
+have something to do.
+
+### Three investors and what they hold
+
+We compare the mean-variance tangency portfolio of
+@sec-09-mean-variance-implementation, computed as it was there; the
+quadratic-utility investor of @eq-03-quadratic-utility at $\gamma = 5$ and
+$\gamma = 10$; the four-moment investor of @eq-11-crra at the same two risk
+aversions; and the two minimum-shortfall portfolios of @tbl-11-mes.
+
+```{r}
+#| label: tangency
+ef_spec <- base_spec |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "StdDev")
+ef <- create.EfficientFrontier(Re, ef_spec, type = "mean-StdDev", n.portfolios = 200)
+fr <- as.data.frame(unclass(ef$frontier))
+fr$sharpe <- fr$mean / fr$StdDev
+wcols <- grep("^w[.]", colnames(fr))
+w_tan <- setNames(as.numeric(fr[which.max(fr$sharpe), wcols]),
+                  sub("^w[.]", "", colnames(fr)[wcols]))
+w_tan <- w_tan[colnames(Re)]
+
+peak <- which.max(fr$w.US_credit)
+# The opening said: the tangency portfolio holds less credit than the gamma = 5
+# investor, the middle of the frontier more.
+stopifnot(w_tan[["US_credit"]] < w_qu5[["US_credit"]],
+          fr$w.US_credit[peak] > w_qu5[["US_credit"]])
+c(tangency_credit = w_tan[["US_credit"]],
+  frontier_peak_credit = fr$w.US_credit[peak],
+  at_volatility = fr$StdDev[peak] * sqrt(12))
+```
+
+The tangency portfolio holds `r sprintf("%.1f%%", 100 * w_tan[["US_credit"]])`
+of `US_credit`, a trace; @fig-09-ef-weights showed the series swelling through
+the middle of the frontier, and it peaks at
+`r sprintf("%.0f%%", 100 * fr$w.US_credit[peak])` at an annualized volatility
+of `r sprintf("%.1f%%", 100 * fr$StdDev[peak] * sqrt(12))`, which is the
+region a $\gamma = 5$ investor occupies.
+
+```{r}
+#| label: four-moment-optima
+four_moment_weights <- function(gamma) {
+  f <- crra_fn(mom_s, gamma, order = 4)
+  starts <- list(qu_weights(gamma), w_gmv, setNames(rep(1 / N, N), colnames(Re)))
+  sols   <- lapply(starts, function(s) polish(f, s))
+  sols[[which.min(vapply(sols, f, numeric(1)))]]
+}
+w_qu10 <- qu_weights(10)
+w_c5_ms <- four_moment_weights(5)
+w_c10   <- four_moment_weights(10)
+
+# The multi-start answer at gamma = 5 must be the one the metaheuristics were
+# polished to; otherwise one of the two searches stopped in a different basin.
+stopifnot(turnover(w_c5_ms, w_c5) < 0.01)
+
+ports <- list(
+  "tangency"                     = w_tan,
+  "quadratic utility, gamma = 5"  = w_qu5,
+  "four moments, gamma = 5"       = w_c5,
+  "quadratic utility, gamma = 10" = w_qu10,
+  "four moments, gamma = 10"      = w_c10,
+  "min modified ES, sample"      = w_mes_s,
+  "min modified ES, structured"  = w_mes_b
+)
+stopifnot(all(vapply(ports, function(w) identical(names(w), colnames(Re)), logical(1))))
+```
+
+```{r}
+#| label: tbl-11-portfolios
+#| tbl-cap: "Seven portfolios on the sixteen classes, long only, in excess of the bill. Return and volatility annualized; skewness, excess kurtosis and the historical 95% shortfall from each portfolio's own return series; the certainty equivalent from @eq-11-ce with the four-moment objective at the risk aversion in the last column's header."
+#| echo: false
+port_stats <- function(w) {
+  r <- as.numeric(Re %*% w)
+  c(ret = mean(r) * 12, vol = stats::sd(r) * sqrt(12),
+    skew = as.numeric(PerformanceAnalytics::skewness(r)),
+    exkurt = as.numeric(PerformanceAnalytics::kurtosis(r, method = "excess")),
+    es_hist = hist_es(w),
+    credit = w[["US_credit"]], government = w[["US_government"]],
+    ce5 = ce_annual(f4_5(w), 5))
+}
+stats_tbl <- tibble::as_tibble(t(vapply(ports, port_stats, numeric(8)))) |>
+  dplyr::mutate(portfolio = names(ports), .before = 1)
+st <- function(col, p) stats_tbl[[col]][stats_tbl$portfolio == p]
+
+# What the prose reads off this table, so that a data change fails the render:
+# at gamma = 5 the four-moment investor holds less credit and more government
+# bonds, improves skewness and the realized tail, and gains a few basis points
+# of certainty equivalent -- fewer than the unpolished DEoptim answer gave away.
+gain5_bp <- 1e4 * (st("ce5", "four moments, gamma = 5") - st("ce5", "quadratic utility, gamma = 5"))
+de_bp    <- 1e4 * (ce_annual(f4_5(w_c5), 5) - ce_annual(f4_5(w_de5), 5))
+stopifnot(w_c5[["US_credit"]] < w_qu5[["US_credit"]],
+          w_c5[["US_government"]] > w_qu5[["US_government"]],
+          st("skew", "four moments, gamma = 5") > st("skew", "quadratic utility, gamma = 5"),
+          st("es_hist", "four moments, gamma = 5") < st("es_hist", "quadratic utility, gamma = 5"),
+          gain5_bp > 0, gain5_bp < 10, gain5_bp < de_bp)
+
+stats_tbl |>
+  dplyr::mutate(portfolio = sub("gamma = (\\d+)", "$\\\\gamma = \\1$", portfolio),
+                dplyr::across(c(ret, vol, es_hist, credit, government, ce5),
+                              ~ sprintf("%.1f%%", 100 * .x)),
+                dplyr::across(c(skew, exkurt), ~ sprintf("%.2f", .x))) |>
+  kable(align = "lrrrrrrrr",
+        col.names = c("", "return", "volatility", "skew", "exc. kurt.",
+                      "ES 95%", "US_credit", "US_government", "CE, $\\gamma = 5$"))
+```
+
+```{r}
+#| label: fig-11-weights
+#| fig-cap: "Weights of the seven portfolios, one column each, for every series that any of them holds at one percent or more. Built from a single long data frame with one row per portfolio and series."
+#| echo: false
+#| fig-asp: 0.7
+w_long <- dplyr::bind_rows(lapply(names(ports), function(p)
+  tibble::tibble(portfolio = p, series = names(ports[[p]]), weight = as.numeric(ports[[p]]))
+)) |>
+  dplyr::mutate(kind = kind_of(series),
+                portfolio = factor(portfolio, levels = names(ports)))
+held <- w_long |> dplyr::group_by(series) |>
+  dplyr::summarise(mx = max(weight), .groups = "drop") |>
+  dplyr::filter(mx >= 0.01) |> dplyr::pull(series)
+
+w_long |>
+  dplyr::filter(series %in% held) |>
+  dplyr::mutate(series = factor(series, levels = rev(sort(held)))) |>
+  ggplot2::ggplot(ggplot2::aes(portfolio, series, fill = weight)) +
+  ggplot2::geom_tile(colour = "white", linewidth = 0.6) +
+  ggplot2::geom_text(ggplot2::aes(label = ifelse(weight >= 0.005,
+                                                 sprintf("%.0f", 100 * weight), "")),
+                     size = 2.7, colour = tidyaa_colors[["ink"]]) +
+  ggplot2::scale_fill_gradient(low = "white", high = tidyaa_colors[["blue_lit"]],
+                               labels = scales::percent, guide = "none") +
+  ggplot2::scale_x_discrete(labels = function(x) gsub(", ", "\n", x)) +
+  ggplot2::labs(x = NULL, y = NULL)
+```
+
+Read @tbl-11-portfolios and @fig-11-weights by pairs. At $\gamma = 5$ the
+two-moment investor holds
+`r sprintf("%.0f%%", 100 * w_qu5[["US_credit"]])` of `US_credit` and the
+four-moment investor
+`r sprintf("%.0f%%", 100 * w_c5[["US_credit"]])`; `US_government`, the series
+with a positive skewness and the lowest excess kurtosis in @fig-11-shape, rises
+from `r sprintf("%.0f%%", 100 * w_qu5[["US_government"]])` to
+`r sprintf("%.0f%%", 100 * w_c5[["US_government"]])`, taking the whole of the
+credit weight and
+`r sprintf("%.0f", 100 * ((w_c5[["US_government"]] - w_qu5[["US_government"]]) - (w_qu5[["US_credit"]] - w_c5[["US_credit"]])))`
+percentage points from the two equity markets besides. At
+$\gamma = 10$ the same move takes the credit weight from
+`r sprintf("%.0f%%", 100 * w_qu10[["US_credit"]])` to
+`r sprintf("%.0f%%", 100 * w_c10[["US_credit"]])`. The portfolio's realized
+skewness improves from
+`r sprintf("%.2f", st("skew", "quadratic utility, gamma = 5"))`
+to `r sprintf("%.2f", st("skew", "four moments, gamma = 5"))`
+at $\gamma = 5$, and its historical shortfall from
+`r sprintf("%.1f%%", 100 * st("es_hist", "quadratic utility, gamma = 5"))`
+to `r sprintf("%.1f%%", 100 * st("es_hist", "four moments, gamma = 5"))`.
+This is the message of the chapter: the third and fourth moments move the
+portfolio away from the asset whose variance understates its risk, and toward
+the one whose variance overstates it.
+
+The size of the effect is as important as its direction. In the four-moment
+investor's own units the move from the two-moment to the four-moment portfolio
+at $\gamma = 5$ is worth
+`r sprintf("%.0f", gain5_bp)`
+basis points of certainty-equivalent return a year. That is the finding of
+@levy1979 and @markowitz2014 restated on this universe: even with the most
+skewed class in the set at
+`r sprintf("%.0f%%", 100 * w_qu5[["US_credit"]])` of the portfolio, the two-moment
+approximation costs a few basis points, because @eq-11-taylor converges
+quickly for monthly returns of this size. It is also smaller than the
+`r sprintf("%.0f", de_bp)`
+basis points the unpolished `DEoptim` answer left on the table, which is the
+order of the two errors an implementation has to respect. The shortfall
+investor is a different case. Under the sample tensors the minimum lands
+within `r sprintf("%.0f%%", 100 * turnover(w_mes_s, w_gmv))` of minimum
+variance, because the least volatile asset here, `r least_vol`, is also among
+the least skewed; under the structured tensors it buys
+`r sprintf("%.0f%%", 100 * w_mes_b[["US_credit"]])` of credit, and its realized
+shortfall of `r sprintf("%.1f%%", 100 * hist_es(w_mes_b))` exceeds both the
+`r sprintf("%.1f%%", 100 * hist_es(w_mes_s))` of the sample-tensor minimum and
+the `r sprintf("%.1f%%", 100 * hist_es(w_gmv))` of minimum variance.
+
+### What the tensors are estimated from
+
+Every tensor above was estimated on `r n_months` months, and
+@sec-04-descriptive-analysis-implementation found that the rolling skewness of
+a single series changes sign in a third of sixty-month windows. The equivalent
+question for a portfolio is how far its skewness moves when the same sample
+is resampled, and we answer it with the twelve-month block bootstrap of
+@sec-09-mean-variance-application [@kuensch1989; @politis1994], on the
+$\gamma = 5$ quadratic-utility portfolio that holds the credit.
+
+```{r}
+#| label: bootstrap
+set.seed(1602)
+block_index <- function(n, block = 12L) {
+  starts <- sample.int(n - block + 1L, ceiling(n / block), replace = TRUE)
+  as.vector(outer(0:(block - 1L), starts, "+"))[seq_len(n)]
+}
+X <- zoo::coredata(Re)
+
+boot_skew <- vapply(seq_len(1000L), function(b)
+  as.numeric(PerformanceAnalytics::skewness(r_qu5[block_index(n_months)])), numeric(1))
+
+boot_coskew <- vapply(seq_len(300L), function(b)
+  std_coskew(PerformanceAnalytics::M3.MM(X[block_index(n_months), ]),
+             "US_equity", "US_credit", "EU_equity"), numeric(1))
+
+# The prose: the portfolio skewness stays negative across the interval, the
+# single coskewness element does not.
+stopifnot(quantile(boot_skew, 0.95) < 0,
+          quantile(boot_coskew, 0.05) < 0, quantile(boot_coskew, 0.95) > 0)
+
+rbind(portfolio_skewness = c(full_sample = m3_w / sd_ml^3,
+                             quantile(boot_skew, c(0.05, 0.5, 0.95))),
+      coskewness_element = c(full_sample = triple$sample[1],
+                             quantile(boot_coskew, c(0.05, 0.5, 0.95))))
+```
+
+The portfolio skewness that @eq-11-crra prices at
+`r sprintf("%.2f", m3_w / sd_ml^3)` has a ninety-percent bootstrap interval from
+`r sprintf("%.2f", quantile(boot_skew, 0.05))` to
+`r sprintf("%.2f", quantile(boot_skew, 0.95))`, a factor of
+`r sprintf("%.0f", quantile(boot_skew, 0.05) / quantile(boot_skew, 0.95))`
+between its ends. A single standardized coskewness element, estimated at
+`r sprintf("%.2f", triple$sample[1])`, ranges from
+`r sprintf("%.2f", quantile(boot_coskew, 0.05))` to
+`r sprintf("%.2f", quantile(boot_coskew, 0.95))`: its sign is not determined.
+This is why the structured estimator exists, and why its bias on `US_credit`
+is a trade rather than a defect: the sample tensor is right on average and
+wrong in every particular draw, and @martellini2010 report that the structured
+version wins out of sample on exactly that account. It is also why the
+warnings of @sec-08-estimation-error-theory apply here with more force than to
+the mean. @eq-08-kz shows the loss from an estimated $\boldsymbol{\mu}$ rising
+with the number of parameters relative to $T$; a tensor with
+`r params[["cokurtosis"]]` parameters on `r n_months` observations is that
+argument at its limit, and @sec-26-forecast-error-cost-theory and
+@sec-28-robustness-theory are where a four-moment investor has to go next.
+
+### Dependence the tensors are a shadow of
+
+@tbl-11-decomposition traced the skewness of credit to the co-movement of its
+residual with the factor in bad months. @eq-11-tail-dep measures that
+co-movement directly, without any moment. We transform three pairs to ranks
+with `copula::pobs()`, count the months in which both series are in their
+worst decile, compare the count with what a Gaussian copula at the same
+correlation implies, and fit a $t$ copula by maximum likelihood for its
+degrees of freedom and implied $\lambda_L$.
+
+```{r}
+#| label: tail-dependence
+tail_dependence <- function(a, b, q = 0.10) {
+  U   <- copula::pobs(zoo::coredata(Re[, c(a, b)]))     # ranks: the margins are gone
+  rho <- as.numeric(stats::cor(Re[, a], Re[, b]))
+  fit <- copula::fitCopula(copula::tCopula(dim = 2), U, method = "ml")
+  c(correlation     = rho,
+    lower_empirical = mean(U[, 1] <= q & U[, 2] <= q) / q,
+    upper_empirical = mean(U[, 1] > 1 - q & U[, 2] > 1 - q) / q,
+    lower_gaussian  = copula::pCopula(c(q, q), copula::normalCopula(rho)) / q,
+    t_df            = fit@estimate[2],
+    t_lambda        = copula::lambda(fit@copula)[[1]])
+}
+pairs <- list(c("US_equity", "EU_equity"), c("US_equity", "US_credit"),
+              c("US_credit", "US_government"))
+tails <- t(vapply(pairs, function(p) tail_dependence(p[1], p[2]), numeric(6)))
+rownames(tails) <- vapply(pairs, paste, character(1), collapse = " / ")
+# The claims the prose makes, stated so that a data change fails the render:
+# two pairs have the heavier lower tail, the equity-credit pair has equal tails,
+# every pair exceeds the Gaussian lower tail, and the credit-government pair
+# has the fewest degrees of freedom.
+asym <- tails[, "lower_empirical"] > tails[, "upper_empirical"]
+stopifnot(sum(asym) == 2L, !asym[["US_equity / US_credit"]],
+          tails["US_equity / US_credit", "lower_empirical"] ==
+            tails["US_equity / US_credit", "upper_empirical"],
+          all(tails[, "lower_empirical"] > tails[, "lower_gaussian"]),
+          rownames(tails)[which.min(tails[, "t_df"])] == "US_credit / US_government")
+round(tails, 2)
+```
+
+The empirical columns are conditional probabilities: given that one series is
+in its worst tenth of months, how often the other is too, and the same in the
+best tenth. For `r paste(rownames(tails)[asym], collapse = " and for ")` the
+lower figure exceeds the upper, which is the asymmetry of @longin2001 and
+@ang2002; for `US_equity / US_credit` the two tails are equal, at
+`r round(tails["US_equity / US_credit", "lower_empirical"] * 0.10 * n_months)`
+months each, so the asymmetry is not a property of every pair. For every pair
+the lower figure exceeds what a Gaussian copula at the measured correlation
+implies, which is the failure @embrechts2002 describe.
+The fitted degrees of freedom say the same thing in a parameter: for
+`r rownames(tails)[which.min(tails[, "t_df"])]` the $t$ copula wants
+`r sprintf("%.1f", min(tails[, "t_df"]))` degrees of freedom and an asymptotic
+tail dependence of
+`r sprintf("%.2f", tails[which.min(tails[, "t_df"]), "t_lambda"])`, where the
+Gaussian copula puts zero. A credit position and a government bond position
+that fall together in their worst months, at a correlation of
+`r sprintf("%.2f", tails["US_credit / US_government", "correlation"])`, is
+what a covariance matrix cannot see, what the cross terms of
+@tbl-11-decomposition partly capture, and what a single-factor structure loses
+entirely. Modeling it directly, as @patton2004 does, is an allocation method
+of its own and beyond the strategic setting of this chapter;
+@sec-19-regimes-theory reaches the same dependence from the time-series side,
+where the comoments become properties of a regime rather than of the sample.
+
+## Key Takeaways {.unnumbered}
+
+- Expected utility expanded to four moments, @eq-11-taylor, rewards skewness
+  and penalizes kurtosis with signs fixed by @scott1980; the portfolio moments
+  it needs are contractions of the tensors of @eq-11-tensors, which
+  `PerformanceAnalytics::portm3()` and `portm4()` compute.
+- The tensors have `r params[["coskewness"]]` and `r params[["cokurtosis"]]`
+  free parameters on sixteen assets. The single-factor structure of
+  @martellini2010 and @boudt2015 behind `method = "boudt"` reduces them to a
+  few dozen and, on this universe, removes
+  `r sprintf("%.0f%%", 100 * (1 - triple$structured[2] / triple$sample[2]))`
+  of the skewness of `US_credit`, which lives in the cross terms the structure
+  sets to zero.
+- A custom objective is any function whose name `add.objective()` receives. It
+  is fed the moment list by name, must be visible from the global environment,
+  and is skipped without an error when it is not; assert after every solve
+  that it was evaluated.
+- The metaheuristics find the neighborhood of the optimum, not the optimum: on
+  @eq-11-crra the `DEoptim` answer was
+  `r sprintf("%.0f", 1e4 * (ce_annual(f4_5(w_c5), 5) - ce_annual(f4_5(w_de5), 5)))`
+  basis points of certainty equivalent below the polished one, more than the
+  effect under study. A local solver started from the metaheuristic answer is
+  part of the method.
+- At $\gamma = 5$ the four-moment investor moves about
+  `r sprintf("%.0f", 100 * (w_qu5[["US_credit"]] - w_c5[["US_credit"]]))`
+  percentage points from credit to government bonds, worth a few basis points
+  a year: the direction is what the theory predicts, the size is what
+  @levy1979 predicted. The coskewness that drives it is estimated with an
+  uncertainty that leaves the sign of a single element undetermined.
+
+## Exercises {.unnumbered}
+
+1. Take the equally weighted portfolio of `US_credit`, `US_government` and
+   `US_equity`. Compute its skewness from the three-asset coskewness tensor
+   through @eq-11-portfolio-moments and confirm it against the return series.
+   Then split $m_{3,\boldsymbol{w}}$ into the three own terms $m_{iii}$ and
+   the cross terms, and report what share of the portfolio's third moment the
+   cross terms carry. Compare with exercise 3 of
+   @sec-04-descriptive-analysis-theory.
+2. Recompute the four-moment optimum of @eq-11-crra for
+   $\gamma \in \{2, 5, 10, 20\}$ and the quadratic-utility portfolio at the
+   same values, and tabulate the `US_credit` weight and the
+   certainty-equivalent gain of the four-moment portfolio at each $\gamma$.
+   Where is the gain largest, and why does it not grow monotonically in
+   $\gamma$?
+3. Refit the statistical factor model with $k = 2$ and $k = 3$ factors,
+   rebuild the structured tensors, and minimize the modified expected shortfall
+   under each. Does the `US_credit` weight of @tbl-11-mes move toward the
+   sample answer as factors are added? Explain with @eq-11-single-factor
+   which term additional factors can and cannot recover.
+4. For each of the five regions, estimate the empirical lower-tail exceedance
+   of @eq-11-tail-dep at $q = 0.10$ between the region's credit and government
+   series and compare it with the Gaussian-implied value at the same
+   correlation. Which region's credit is most tail-dependent on its own
+   government bond, and does the ranking match the ranking by correlation?

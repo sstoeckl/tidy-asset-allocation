@@ -1,0 +1,1133 @@
+---
+title: "Estimation Error and Its Cost"
+metadata:
+  pagetitle: "Estimation Error and Its Cost"
+  description-meta: "Why optimized portfolios promise more Sharpe ratio than they deliver: the naive benchmarks, the Sharpe gap on rolling windows, the mean and covariance channels by simulation, and when 1/N stops winning, in R."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+How much is a better forecast worth, in Sharpe ratio? @demiguel2009 asked the
+question the other way round: they ran fourteen optimizing rules against the
+portfolio that forecasts nothing, equal weighting, on seven datasets, and found
+that none of them beat it reliably out of sample. The estimation window a
+mean-variance investor would need before optimization paid was measured in
+thousands of months, about three thousand for twenty-five assets and six thousand
+for fifty. That paper is the end of a line that runs through most of modern
+portfolio theory. @jobson1980 derived the sampling distribution of estimated
+efficient portfolios and showed that the estimated tangency portfolio can be
+outperformed by equal weighting; @jobson1981 gave the test for whether two
+Sharpe ratios differ at all. @michaud1989 named the mechanism: an optimizer is an
+error maximizer, because it allocates most to whatever the sample happened to
+flatter. @best1991 showed analytically that small changes in the mean vector
+move the weights by large amounts while barely moving the portfolio's own mean
+and variance. @chopra1993 priced the inputs, finding errors in means roughly
+eleven times as costly as errors in variances and twice as costly again as
+errors in covariances. @broadie1993 separated the true, the estimated and the
+actual frontier and showed that the estimated one lies above both. @frost1988
+found that constraining the weights improves realized performance, and
+@jagannathan2003 explained why: a short-sale constraint is a shrinkage of the
+covariance matrix in disguise. @kan2007 gave the expected loss in closed form
+under normality, and @ledoit2004 gave the estimator of $\boldsymbol{\Sigma}$
+that works when the sample one does not.
+
+This chapter is about **strategic allocation**: the inputs are unconditional
+moments, and the question is what estimating them costs. We first define the
+two naive benchmarks and state what is known about the loss, then measure the
+gap between the Sharpe ratio a rolling window promises and the one the next
+month delivers, for four rules on the sixteen risky class series, then simulate
+under a known truth to split the loss between the mean and the covariance and
+to find the window length at which optimization overtakes equal weighting.
+
+The data are the sixteen risky class series of
+@sec-02-notation-and-data-simulated-market, in excess of the Treasury bill for
+the reasons of @sec-03-return-risk-and-the-investor-theory.
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)   # the sixteen risky classes
+rf <- sim_riskfree_monthly$return                                  # the bill
+Re <- R - rf                                                       # excess returns
+N  <- ncol(Re)
+mu <- colMeans(Re)                                                 # full-sample moments; the
+S  <- stats::cov(Re)                                               # application treats them as the truth
+stopifnot(N == 16L, !anyNA(Re), nrow(Re) == length(rf))
+```
+
+## The Plug-In Rule and the Price of Its Inputs {#sec-08-estimation-error-theory}
+
+### What the estimator is asked to do
+
+The objective of @markowitz1952, stated in @sec-03-return-risk-and-the-investor-theory
+and solved in @sec-09-mean-variance-theory, consumes a mean vector
+$\boldsymbol{\mu}$ and a covariance matrix $\boldsymbol{\Sigma}$. Neither is
+observed. From $T$ months of excess returns $\boldsymbol{r}_1, \dots, \boldsymbol{r}_T$
+the sample estimates are
+
+$$
+\hat{\boldsymbol{\mu}} = \frac{1}{T}\sum_{t=1}^{T}\boldsymbol{r}_t,
+\qquad
+\hat{\boldsymbol{\Sigma}} = \frac{1}{T-1}\sum_{t=1}^{T}
+  (\boldsymbol{r}_t - \hat{\boldsymbol{\mu}})(\boldsymbol{r}_t - \hat{\boldsymbol{\mu}})' ,
+$$ {#eq-08-estimates}
+
+and the **plug-in rule** substitutes them into the solution as though they were
+the truth. For the tangency portfolio of @eq-09-tangency that gives
+
+$$
+\hat{\boldsymbol{w}}_{\text{tan}}
+= \frac{\hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}}
+       {\boldsymbol{\iota}'\hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}},
+\qquad
+\hat{\boldsymbol{w}}_{\text{mv}}
+= \frac{\hat{\boldsymbol{\Sigma}}^{-1}\boldsymbol{\iota}}
+       {\boldsymbol{\iota}'\hat{\boldsymbol{\Sigma}}^{-1}\boldsymbol{\iota}} ,
+$$ {#eq-08-plugin}
+
+with the minimum-variance portfolio of @eq-09-gmv beside it. The two differ in
+one respect that decides this chapter: the second needs no
+$\hat{\boldsymbol{\mu}}$. @sec-04-descriptive-analysis-theory showed, following
+@merton1980, that the precision of $\hat{\boldsymbol{\mu}}$ depends on the
+calendar span of the sample and not on how often it is observed, while the
+precision of $\hat{\boldsymbol{\Sigma}}$ improves with every observation. A
+rule that uses only $\hat{\boldsymbol{\Sigma}}$ therefore uses only the input
+that can be estimated. @sec-06-expected-returns-theory and
+@sec-07-covariance-matrix-theory treat the two estimation problems separately;
+this chapter measures what they cost together, and which of them costs more.
+
+Under a long-only constraint neither expression in @eq-08-plugin has a closed
+form and both become quadratic programs, as @sec-09-mean-variance-theory
+explains. Everything computed below is long only, and
+@sec-08-estimation-error-application shows that the constraint is not a detail.
+
+### Two rules that estimate almost nothing
+
+The benchmarks against which every optimizing rule is judged are two portfolios
+that require no optimizer. **Equal weighting** holds
+
+$$
+\boldsymbol{w}_{1/N} = \frac{\boldsymbol{\iota}}{N},
+$$ {#eq-08-ew}
+
+and estimates nothing at all: it is the same portfolio on every window, of every
+length, on every history. **Inverse-volatility weighting** holds
+
+$$
+w_i = \frac{\hat{\sigma}_i^{-1}}{\sum_{j=1}^{N}\hat{\sigma}_j^{-1}},
+$$ {#eq-08-iv}
+
+and estimates one moment per asset, the volatility, ignoring the means and every
+correlation. @sec-14-risk-based-allocation-theory treats @eq-08-iv as a
+risk-based allocation in its own right, the one-line approximation to equal
+risk contribution; here it is a benchmark, the rule that sits one estimated
+moment away from $1/N$. Both are estimators in the statistical sense, with
+@eq-08-ew the degenerate one whose variance is zero, and that is the correct
+way to read the comparison that follows: not naive against sophisticated, but a
+sequence of rules that estimate zero, one, or all of the moments the objective
+asks for.
+
+### Why the promise is inflated and the delivery is not
+
+The mechanism of @best1991 is visible in @eq-08-plugin. The unconstrained
+weights are linear in $\hat{\boldsymbol{\mu}}$ with coefficient matrix
+$\hat{\boldsymbol{\Sigma}}^{-1}$, so an error in the mean vector is multiplied
+by the inverse covariance matrix before it reaches the portfolio, and
+@sec-07-covariance-matrix-theory showed how large the entries of that inverse
+become as the matrix approaches singularity. The error in
+$\hat{\boldsymbol{\mu}}$ is not small: from @eq-04-precision its standard error
+over sixty months is of the order of the volatility divided by $\sqrt{5}$, which
+for an equity market is a few percent a year, comparable to the premium being
+estimated.
+
+Two consequences follow, and both can be written down. First, the Sharpe ratio a
+plug-in portfolio reports on its own estimation window is biased upward. With
+$\theta^2 = \boldsymbol{\mu}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$ the true
+squared maximum Sharpe ratio and $\hat{\theta}^2$ its sample counterpart,
+@kan2007 show, under independent normal returns and with
+$\hat{\boldsymbol{\Sigma}}$ scaled by $T$ rather than $T-1$, that
+
+$$
+\mathbb{E}\big[\hat{\theta}^2\big] = \frac{T\,\theta^2 + N}{T - N - 2} ,
+$$ {#eq-08-inflation}
+
+which exceeds $\theta^2$ for every finite $T$ and does so by a term of order
+$N/T$ that is present even when $\theta^2 = 0$. A window of $T$ months on $N$
+assets manufactures a squared Sharpe ratio of roughly $N/T$ from noise alone.
+Second, the portfolio built on those estimates is expected to do worse than the
+true optimum. For an investor with quadratic utility
+$U(\boldsymbol{w}) = \boldsymbol{w}'\boldsymbol{\mu} - \tfrac{\gamma}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$,
+whose unconstrained optimum $\boldsymbol{w}^* = \boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}/\gamma$
+attains $U(\boldsymbol{w}^*) = \theta^2/(2\gamma)$, @kan2007 derive the expected
+utility of the plug-in rule $\hat{\boldsymbol{w}} = \hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}/\gamma$
+in closed form:
+
+$$
+\mathbb{E}\big[U(\hat{\boldsymbol{w}})\big]
+= \frac{\theta^2}{\gamma}\,\frac{T}{T-N-2}
+\;-\;\frac{T^2 (T-2)}{2\gamma\,(T-N-1)(T-N-2)(T-N-4)}
+   \left(\theta^2 + \frac{N}{T}\right).
+$$ {#eq-08-kz}
+
+The derivation is theirs and we do not repeat it; what matters is the shape. The
+first term is the expected return of the plug-in portfolio, inflated by
+$T/(T-N-2)$ because $\hat{\boldsymbol{\Sigma}}^{-1}$ is biased upward. The
+second is its expected variance, and it carries the same $N/T$ as
+@eq-08-inflation: the noise in $\hat{\boldsymbol{\mu}}$ is converted into
+positions, and positions taken on noise have variance but no return. The loss
+$U(\boldsymbol{w}^*) - \mathbb{E}[U(\hat{\boldsymbol{w}})]$ falls with $T$ and
+rises with $N$, and for small enough $T$ relative to $N$ the expected utility is
+negative, meaning that the plug-in investor is expected to end up worse off than
+one holding the bill. @klein1976 had reached the qualitative conclusion three
+decades earlier by treating the parameters as uncertain in a Bayesian
+predictive distribution; @kan2007 put numbers on it, and the box below puts this
+universe's numbers in.
+
+::: {.callout-note collapse="true"}
+## Worked: @eq-08-kz on the sixteen series
+
+The only quantity in @eq-08-kz that belongs to the data is $\theta^2$. On the
+full sample of `r nrow(Re)` months,
+
+```{r}
+#| label: kz-numbers
+theta2 <- as.numeric(t(mu) %*% solve(S, mu))     # squared maximum Sharpe ratio, monthly
+
+# gamma = 1. Both terms scale with 1 / gamma, so the ratio to the optimum does not.
+kz_utility <- function(theta2, N, T) {
+  theta2 * T / (T - N - 2) -
+    T^2 * (T - 2) / (2 * (T - N - 1) * (T - N - 2) * (T - N - 4)) * (theta2 + N / T)
+}
+
+kz <- tibble::tibble(T = c(60L, 120L, 240L, nrow(Re), 1000L)) |>
+  dplyr::mutate(expected = kz_utility(theta2, N, T),
+                optimum  = theta2 / 2,
+                share    = expected / optimum)
+round(c(theta2 = theta2, max_sharpe_annualized = sqrt(12 * theta2)), 4)
+```
+
+so $\theta^2 = `r sprintf("%.4f", theta2)`$ a month, an unconstrained maximum
+Sharpe ratio of `r sprintf("%.2f", sqrt(12 * theta2))` a year. Substituting
+$N = `r N`$ and $T = 60$ into @eq-08-kz with $\gamma = 1$,
+
+$$
+\mathbb{E}\big[U(\hat{\boldsymbol{w}})\big]
+= \frac{60}{`r 60 - N - 2`} \times `r sprintf("%.4f", theta2)`
+ - \frac{60^2 \times `r 60 - 2`}{2 \times `r 60 - N - 1` \times `r 60 - N - 2` \times `r 60 - N - 4`}
+   \left(`r sprintf("%.4f", theta2)` + \frac{`r N`}{60}\right)
+= `r sprintf("%.4f", theta2 * 60 / (60 - N - 2))` - `r sprintf("%.4f", 60^2 * 58 / (2 * (60 - N - 1) * (60 - N - 2) * (60 - N - 4)) * (theta2 + N / 60))`
+= `r sprintf("%.4f", kz_utility(theta2, N, 60))` ,
+$$
+
+against $U(\boldsymbol{w}^*) = \theta^2 / 2 = `r sprintf("%.4f", theta2 / 2)`$.
+The expected utility of the plug-in investor is negative: on sixty months of
+sixteen assets, an unconstrained mean-variance investor is expected to do worse
+than holding cash. The sample this book uses, `r nrow(Re)` months, recovers
+`r sprintf("%.0f%%", 100 * kz$share[kz$T == nrow(Re)])` of the optimum, and a
+thousand months `r sprintf("%.0f%%", 100 * kz$share[kz$T == 1000L])`.
+
+```{r}
+#| label: tbl-08-kz
+#| tbl-cap: "Expected utility of the unconstrained plug-in rule under @eq-08-kz, as a share of the utility of the true optimum, for the sixteen series. Negative means worse than the bill."
+#| echo: false
+kz |>
+  dplyr::mutate(expected = sprintf("%.4f", expected),
+                optimum  = sprintf("%.4f", optimum),
+                share    = sprintf("%.0f%%", 100 * share)) |>
+  kable(align = "rrrr", col.names = c("T (months)", "E[U(w-hat)]", "U(w*)", "share"))
+```
+
+The formula assumes normality and independence, which
+@sec-04-descriptive-analysis-application showed this market violates. Whether
+that matters at the first decimal can be checked by drawing sixty months from a
+normal distribution with these moments, forming the plug-in portfolio and scoring
+it under the truth, two thousand times.
+
+```{r}
+#| label: kz-check
+set.seed(1602)
+L <- chol(S)                                   # X = Z L has covariance L'L = S
+mc <- vapply(seq_len(2000L), function(b) {
+  X <- matrix(rnorm(60L * N), 60L) %*% L + matrix(mu, 60L, N, byrow = TRUE)
+  m <- colMeans(X); V <- stats::cov(X) * 59 / 60         # scaled by T, as in @eq-08-kz
+  w <- solve(V, m)                                       # gamma = 1
+  c(utility    = sum(w * mu) - 0.5 * as.numeric(t(w) %*% S %*% w),
+    theta2_hat = sum(m * solve(V, m)))
+}, numeric(2))
+
+round(c(utility_simulated    = mean(mc["utility", ]),
+        utility_formula      = kz_utility(theta2, N, 60L),
+        theta2_hat_simulated = mean(mc["theta2_hat", ]),
+        theta2_hat_formula   = (60 * theta2 + N) / (60 - N - 2)), 4)
+```
+
+Both expectations agree with @eq-08-inflation and @eq-08-kz to the second
+decimal, which is the algebra working. The promised squared Sharpe ratio on a
+sixty-month window is `r sprintf("%.2f", mean(mc["theta2_hat", ]))` against a
+true `r sprintf("%.4f", theta2)`: an annualized promise of
+`r sprintf("%.2f", sqrt(12 * mean(mc["theta2_hat", ])))` for a truth of
+`r sprintf("%.2f", sqrt(12 * theta2))`.
+:::
+
+### The Sharpe gap
+
+@eq-08-inflation and @eq-08-kz make two statements about the same portfolio: it
+promises more than the truth, and it delivers less. The distance between the
+two is what this book measures, and it needs a definition that can be computed
+on data where the truth is unknown. On a rolling window ending at $t$, with
+estimates $\hat{\boldsymbol{\mu}}_t$ and $\hat{\boldsymbol{\Sigma}}_t$ and a
+rule producing $\hat{\boldsymbol{w}}_t$, the **promised** Sharpe ratio is the
+one the window itself reports,
+
+$$
+\widehat{SR}^{\,\text{promised}}_t
+= \frac{\hat{\boldsymbol{w}}_t'\hat{\boldsymbol{\mu}}_t}
+       {\sqrt{\hat{\boldsymbol{w}}_t'\hat{\boldsymbol{\Sigma}}_t\hat{\boldsymbol{w}}_t}} ,
+$$ {#eq-08-promised}
+
+and the **realized** Sharpe ratio is the one earned by the sequence of held
+portfolios, $\hat{\boldsymbol{w}}_t'\boldsymbol{r}_{t+1}$, over every month of
+the out-of-sample period. The **Sharpe gap** is the average promise minus the
+realization,
+
+$$
+\text{gap} = \overline{\widehat{SR}^{\,\text{promised}}} - SR^{\,\text{realized}} ,
+$$ {#eq-08-gap}
+
+annualized as in @sharpe1966 by $\sqrt{12}$. The gap is a property of a rule on
+a universe, not of a single window, and it aggregates over the same rolling
+scheme that @sec-25-backtesting-theory formalizes as @eq-25-backtest. For
+equal weighting the promise is not zero: @eq-08-ew estimates no weights, but the
+Sharpe ratio it reports on a window is still computed from that window's
+$\hat{\boldsymbol{\mu}}_t$ and $\hat{\boldsymbol{\Sigma}}_t$, so its gap
+measures how much a window flatters even a portfolio that did not look at it.
+That is what makes it the control.
+
+The gap is not the same thing as the loss in @eq-08-kz. The loss compares a rule
+with the optimum under a truth; the gap compares a rule with itself across time
+and needs no truth. @broadie1993's three frontiers are the picture: the promise
+is a point on the estimated frontier, the realization is a point on the actual
+one, and the true frontier between them is what a simulation can supply and a
+backtest cannot. @sec-08-estimation-error-implementation measures the gap;
+@sec-08-estimation-error-application supplies a truth and measures the loss,
+which is also where forecast error is put into the investor's own units.
+
+## Measuring the Gap on Rolling Windows {#sec-08-estimation-error-implementation}
+
+### The naive rules in `PortfolioAnalytics`
+
+Both benchmarks are exported functions, documented, and almost never used. They
+take a return matrix and a portfolio specification, exactly like
+`optimize.portfolio()`, and return an object of the same class.
+
+```{r}
+#| label: naive-rules
+base <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only")
+
+args(equal.weight)
+
+ew <- equal.weight(Re, base)
+iv <- inverse.volatility.weight(Re, base)
+c(class(ew)[1], class(iv)[1])
+names(ew)
+```
+
+The object carries the weights, the returns it was handed and the specification,
+so `extractWeights()` and everything downstream of it work unchanged.
+
+```{r}
+#| label: naive-weights
+w_ew <- extractWeights(ew)[colnames(Re)]
+w_iv <- extractWeights(iv)[colnames(Re)]
+vols <- apply(Re, 2, stats::sd)
+stopifnot(all.equal(sum(w_ew), 1), all.equal(sum(w_iv), 1),
+          all.equal(unname(w_iv), unname((1 / vols) / sum(1 / vols))))   # @eq-08-iv
+round(sort(w_iv, decreasing = TRUE)[1:4], 4)
+```
+
+The `stopifnot()` confirms that `inverse.volatility.weight()` computes
+@eq-08-iv and nothing else: `US_government`, the least volatile series, receives
+`r sprintf("%.1f%%", 100 * max(w_iv))` against the
+`r sprintf("%.1f%%", 100 / N)` of @eq-08-ew.
+
+::: {.callout-note}
+## The naive rules cannot be passed to the rebalancing loop
+
+Since both functions have the signature of an optimizer, it is natural to expect
+`optimize.portfolio.rebalancing(optimize_method = "equal.weight")` to run the
+rule on every window. It does not, and it does not say so.
+
+```{r}
+#| label: naive-in-rebalancing
+bt_naive <- suppressWarnings(optimize.portfolio.rebalancing(
+  Re, base, optimize_method = "equal.weight",
+  rebalance_on = "months", training_period = 60L, rolling_window = 59L))
+
+as_function <- try(optimize.portfolio.rebalancing(
+  Re, base, optimize_method = equal.weight,
+  rebalance_on = "months", training_period = 60L, rolling_window = 59L), silent = TRUE)
+
+tibble::tibble(
+  route   = c("name, rebalancing", "function, rebalancing", "name, single call"),
+  result  = c(class(bt_naive$opt_rebalancing[[1]])[1], class(as_function)[1],
+              class(optimize.portfolio(Re, base, optimize_method = "equal.weight"))[1]),
+  usable  = c(sum(!is.na(extractWeights(bt_naive))), NA,
+              !is.null(extractWeights(optimize.portfolio(Re, base, optimize_method = "equal.weight")))))
+```
+
+Passing the name completes normally: `r length(bt_naive$opt_rebalancing)`
+periods, each an object of class `optimize.portfolio.equal.weight`, and every one
+of them with `NA` weights, because the dispatch inside `optimize.portfolio()`
+matches the string against its solver list, finds nothing, and builds the class
+name from the string anyway. Passing the function object fails at the first
+subscript. The only route is to call the functions directly on each window, which
+is what the loop below does and what `pm_backtest()` in
+@sec-25-backtesting-application does through its `weight_fun` argument. One
+further detail: `equal.weight()` reads `max_sum` off the specification, so under
+the relaxed budget that @sec-09-mean-variance-implementation describes as a
+workaround for the `full_investment` trap it returns $1/N$ scaled by the
+relaxation.
+:::
+
+### The two optimized rules as quadratic programs
+
+The loop solves `r 2 * (nrow(Re) - 60)` optimizations and the simulation in
+@sec-08-estimation-error-application solves several thousand more, so the two
+long-only problems are written directly as the quadratic programs that
+`optimize.portfolio(optimize_method = "ROI")` hands to `quadprog` in any case.
+The minimum-variance problem is @eq-09-problem without its return constraint.
+The long-only tangency portfolio uses a standard change of variable: minimize
+$\boldsymbol{y}'\boldsymbol{\Sigma}\boldsymbol{y}$ subject to
+$\boldsymbol{y}'\boldsymbol{\mu} = 1$ and $\boldsymbol{y} \geq \boldsymbol{0}$,
+then rescale $\boldsymbol{w} = \boldsymbol{y}/\boldsymbol{\iota}'\boldsymbol{y}$;
+the rescaling leaves the Sharpe ratio unchanged and the constraint makes it the
+maximum. The trick needs one asset with a positive estimated mean, and the
+function records when there is none.
+
+```{r}
+#| label: qp-rules
+# Long-only minimum variance: min w'Sw subject to w'i = 1, w >= 0. Percent scaling
+# keeps quadprog's matrix well away from its positive-definiteness tolerance.
+gmv_qp <- function(S) {
+  n <- ncol(S)
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(rep(1, n), diag(n)),
+                            bvec = c(1, rep(0, n)), meq = 1)
+  w <- pmax(sol$solution, 0)
+  setNames(w / sum(w), colnames(S))
+}
+
+# Long-only maximum Sharpe: min y'Sy subject to y'mu = 1, y >= 0, then w = y / sum(y).
+# With no positive estimated mean the ratio has no maximum worth holding; the rule
+# then holds the minimum-variance portfolio and says so through an attribute.
+tan_qp <- function(mu, S) {
+  n <- length(mu)
+  if (max(mu) <= 0) return(structure(gmv_qp(S), fallback = TRUE))
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(mu * 1e2, diag(n)),
+                            bvec = c(1, rep(0, n)), meq = 1)
+  y <- pmax(sol$solution, 0)
+  structure(setNames(y / sum(y), names(mu)), fallback = FALSE)
+}
+
+# Annualized Sharpe ratio of w under the moments (mu, S); returns are excess already.
+sharpe_of <- function(w, mu, S) {
+  as.numeric(sum(w * mu) / sqrt(t(w) %*% S %*% w)) * sqrt(12)
+}
+```
+
+Before either function is trusted on four thousand problems it is checked
+against the package on one.
+
+```{r}
+#| label: qp-check
+w_gmv_roi <- extractWeights(optimize.portfolio(
+  Re, base |> add.objective(type = "risk", name = "var"),
+  optimize_method = "ROI"))[colnames(Re)]
+
+w_tan_roi <- extractWeights(optimize.portfolio(
+  Re, base |> add.objective(type = "return", name = "mean") |>
+              add.objective(type = "risk", name = "StdDev"),
+  optimize_method = "ROI", maxSR = TRUE))[colnames(Re)]
+
+w_gmv <- gmv_qp(S)
+w_tan <- tan_qp(mu, S)
+stopifnot(sum(abs(w_gmv - w_gmv_roi)) / 2 < 1e-4,
+          sum(abs(w_tan - w_tan_roi)) / 2 < 1e-4)
+
+round(w_tan[w_tan > 0.005], 4)
+```
+
+The two agree to a turnover below one basis point. `maxSR = TRUE` locates the
+tangency correctly here because the installed build is the patched one of
+@sec-93-package-notes; @sec-09-mean-variance-implementation explains why the
+book does not rely on it and reads the point off a computed frontier instead.
+The full-sample tangency portfolio places
+`r sprintf("%.0f%%", 100 * w_tan[["US_government"]])` in `US_government` and
+`r sprintf("%.0f%%", 100 * w_tan[["US_equity"]])` in `US_equity`, and its
+Sharpe ratio under the full-sample moments is
+`r sprintf("%.3f", sharpe_of(w_tan, mu, S))`; that number is the promise every
+shorter window will be compared with.
+
+### Three hundred and twelve windows
+
+Each window of `r 60L` months estimates @eq-08-estimates, forms the four
+portfolios, records the Sharpe ratio each promises by @eq-08-promised and the
+total return each earns in the month that follows. Weights are indexed by name
+and asserted against the columns before any return is multiplied by them.
+
+```{r}
+#| label: rolling-gap
+win  <- 60L
+ends <- seq.int(win, nrow(Re) - 1L)           # every window forecasts the month after it
+rf_by_month <- setNames(rf, as.character(zoo::index(R)))
+oos_start   <- zoo::index(R)[121]             # the first month the register scores
+stopifnot(model_year(oos_start) == 11L, model_year(zoo::index(R)[120]) == 10L)
+
+roll <- lapply(ends, function(e) {
+  X <- zoo::coredata(Re)[(e - win + 1L):e, , drop = FALSE]
+  m <- colMeans(X)
+  V <- stats::cov(X)
+  rules <- list(
+    max_sharpe   = tan_qp(m, V),
+    min_variance = gmv_qp(V),
+    equal_weight = setNames(rep(1 / N, N), colnames(Re)),
+    inverse_vol  = setNames((1 / sqrt(diag(V))) / sum(1 / sqrt(diag(V))), colnames(Re))
+  )
+  stopifnot(all(vapply(rules, function(w) identical(names(w), colnames(Re)), logical(1))))
+  nxt <- zoo::coredata(R)[e + 1L, ]           # total return in the month held
+  tibble::tibble(
+    date     = zoo::index(R)[e + 1L],
+    rule     = names(rules),
+    promised = vapply(rules, sharpe_of, numeric(1), mu = m, S = V),
+    realized = vapply(rules, function(w) sum(w * nxt), numeric(1)),
+    fallback = isTRUE(attr(rules$max_sharpe, "fallback"))
+  )
+}) |> dplyr::bind_rows()
+
+c(windows = length(ends), no_positive_mean = sum(roll$fallback[roll$rule == "max_sharpe"]))
+```
+
+The realized Sharpe ratio is computed the way the register of
+@sec-25-backtesting-application computes it, compounding the held returns and
+the bill separately and dividing their difference by the annualized volatility,
+so that the two chapters can be compared to the third decimal. The register
+scores every configuration on the same months, from `r fmt_model(oos_start)`,
+so that a longer window earns no credit for starting later; the same start is
+used here.
+
+```{r}
+#| label: realized-sharpe
+sharpe_realized <- function(r, rf) {
+  n <- length(r)
+  (prod(1 + r)^(12 / n) - prod(1 + rf)^(12 / n)) / (stats::sd(r) * sqrt(12))
+}
+
+summarise_gap <- function(d) {
+  d |>
+    dplyr::group_by(rule) |>
+    dplyr::summarise(months   = dplyr::n(),
+                     promised = mean(promised),
+                     realized = sharpe_realized(realized, rf_by_month[as.character(date)]),
+                     .groups  = "drop") |>
+    dplyr::mutate(gap = promised - realized, kept = realized / promised) |>
+    dplyr::arrange(dplyr::desc(realized))
+}
+
+gap     <- summarise_gap(dplyr::filter(roll, date >= oos_start))
+gap_all <- summarise_gap(roll)
+```
+
+```{r}
+#| label: gap-check
+sweep_all <- utils::read.csv("output/tables/oos-sweep.csv") |>      # every window of the register
+  dplyr::filter(universe == "classes", frequency == "months", basis == "gross")
+sr_sweep <- function(s, w = win) {
+  sweep_all$sharpe[match(paste(s, w), paste(sweep_all$strategy, sweep_all$window))]
+}
+sweep <- dplyr::filter(sweep_all, window == win)                    # the sixty-month rows
+
+check <- gap |>
+  dplyr::mutate(register = sr_sweep(rule), difference = realized - register)
+stopifnot(!anyNA(check$register),
+          all(abs(check$difference[check$rule %in% c("equal_weight", "max_sharpe")]) < 5e-5),
+          all(abs(check$difference) < 1e-3))
+check |> dplyr::select(rule, realized, register, difference)
+```
+
+The same experiment run through `pm_backtest()` for @sec-25-backtesting-application
+gives the same numbers: equal weighting to four decimals, the tangency portfolio
+to four decimals, and minimum variance within
+`r sprintf("%.3f", abs(check$difference[check$rule == "min_variance"]))`, which
+is the register fitting that rule on total rather than excess returns. Two
+independent implementations of a rolling backtest agreeing to within a
+thousandth is not a formality; @sec-25-backtesting-theory lists the conventions
+on which they could have differed.
+
+### The gap, rule by rule
+
+```{r}
+#| label: tbl-08-gap
+#| tbl-cap: "Promised and realized Sharpe ratios on sixty-month rolling windows, out of sample from the first month of model year 11. Promised is the average of @eq-08-promised over the windows; realized is the Sharpe ratio of the held portfolios; kept is their ratio."
+#| echo: false
+rule_label <- c(max_sharpe = "Maximum Sharpe", min_variance = "Minimum variance",
+                equal_weight = "Equal weight", inverse_vol = "Inverse volatility")
+gap |>
+  dplyr::mutate(rule = rule_label[rule],
+                dplyr::across(c(promised, realized, gap), ~ sprintf("%.3f", .x)),
+                kept = sprintf("%.0f%%", 100 * kept)) |>
+  dplyr::select(rule, promised, realized, gap, kept) |>
+  kable(align = "lrrrr", col.names = c("", "promised", "realized", "gap", "kept"))
+```
+
+```{r}
+#| label: gap-facts
+#| include: false
+g <- function(r, col, d = gap) d[[col]][d$rule == r]
+by_gap   <- function(d) d$rule[order(d$gap)]      # from the smallest gap to the largest
+rank_all <- match("max_sharpe", gap_all$rule)     # the tangency portfolio's place on all windows
+stopifnot(
+  gap$rule[1] == "min_variance", gap_all$rule[1] == "min_variance",   # first on both scoring periods
+  gap$rule[nrow(gap)] == "max_sharpe", rank_all < nrow(gap_all),      # last on one, not on the other
+  gap$rule[which.max(gap$promised)] == "max_sharpe",
+  identical(by_gap(gap), c("equal_weight", "inverse_vol", "min_variance", "max_sharpe")),
+  identical(by_gap(gap), by_gap(gap_all)))                            # the gaps keep their order
+```
+
+Read @tbl-08-gap from the bottom. The tangency portfolio promises
+`r sprintf("%.2f", g("max_sharpe", "promised"))` on the average window and
+delivers `r sprintf("%.2f", g("max_sharpe", "realized"))`, keeping
+`r sprintf("%.0f%%", 100 * g("max_sharpe", "kept"))` of its promise and
+finishing last of the four. Its gap of
+`r sprintf("%.2f", g("max_sharpe", "gap"))` is
+`r sprintf("%.1f", g("max_sharpe", "gap") / g("equal_weight", "gap"))` times the
+gap of equal weighting, whose own gap of
+`r sprintf("%.2f", g("equal_weight", "gap"))` is the control: that much of a
+promise is manufactured by the window on a portfolio that never looked at it.
+Minimum variance, which estimates only $\hat{\boldsymbol{\Sigma}}$, has the
+highest realized Sharpe ratio, `r sprintf("%.2f", g("min_variance", "realized"))`,
+and keeps `r sprintf("%.0f%%", 100 * g("min_variance", "kept"))` of what it
+promised. Inverse volatility keeps
+`r sprintf("%.0f%%", 100 * g("inverse_vol", "kept"))`. Starting the scoring in
+`r fmt_model(min(roll$date))` instead, with all
+`r length(ends)` windows, moves every number and lifts the tangency portfolio
+from last to rank `r rank_all` of `r nrow(gap_all)`: it realizes
+`r sprintf("%.2f", g("max_sharpe", "realized", gap_all))` against equal
+weighting's `r sprintf("%.2f", g("equal_weight", "realized", gap_all))`. What
+the scoring period does not change is the gap. At
+`r sprintf("%.2f", g("max_sharpe", "gap", gap_all))` the tangency portfolio's
+remains the largest of the four, and the four gaps keep their order.
+
+```{r}
+#| label: fig-08-gap
+#| fig-cap: "The Sharpe gap of @eq-08-gap for four rules. Each segment runs from the Sharpe ratio realized out of sample to the one promised on the estimation window; its length is the gap. Rules are ordered by what they realized."
+#| echo: false
+#| fig-asp: 0.45
+rule_levels <- rev(unname(rule_label[gap$rule]))       # ordered by realized Sharpe ratio
+gap_pts <- gap |>
+  dplyr::mutate(rule = factor(rule_label[rule], levels = rule_levels)) |>
+  tidyr::pivot_longer(c(promised, realized), names_to = "kind", values_to = "sharpe")
+
+ggplot2::ggplot(gap_pts, ggplot2::aes(sharpe, rule)) +
+  ggplot2::geom_line(ggplot2::aes(group = rule), colour = tidyaa_colors[["rule"]],
+                     linewidth = 1.4) +
+  ggplot2::geom_point(ggplot2::aes(colour = kind), size = 3) +
+  scale_colour_tidyaa() +
+  ggplot2::labs(x = "annualized Sharpe ratio", y = NULL)
+```
+
+@fig-08-gap is the chapter's first result. The ordering of the gaps is the
+ordering of how much each rule estimates: equal weighting, which estimates
+nothing, has the shortest segment, inverse volatility with its `r N`
+volatilities the next, minimum variance with the whole of
+$\hat{\boldsymbol{\Sigma}}$ the third, and the one rule that estimates
+$\hat{\boldsymbol{\mu}}$ and maximizes over it the longest,
+`r sprintf("%.1f", g("max_sharpe", "gap") / g("min_variance", "gap"))` times
+the third. The realizations are ordered differently: the rule with the highest
+promise realizes least, and the rule that estimates only
+$\hat{\boldsymbol{\Sigma}}$ realizes most. Whether the differences in realized
+Sharpe ratios are statistically
+distinguishable is a separate question, answered by the test of @jobson1981
+with the correction of @memmel2003 and by the error bar of @lo2002 that
+@sec-25-backtesting-application puts on the register; the differences in
+promise are not in doubt, because they are computed rather than sampled.
+
+## Where the Loss Comes From {#sec-08-estimation-error-application}
+
+### A truth to score against
+
+A backtest cannot say which input caused the gap, because the truth against
+which the estimates erred is never observed. A simulation can. We take the
+full-sample moments of the sixteen series as the truth, draw $T$ months from a
+normal distribution with those moments, estimate @eq-08-estimates on the draw,
+form the long-only tangency portfolio, and score it under the truth. Repeating
+this a few hundred times per $T$ gives the expected Sharpe ratio a $T$-month
+investor actually earns, against which the promise and the naive rules can be
+placed. A twelve-month block bootstrap of the actual returns, as in
+@sec-09-mean-variance-application, would preserve the tails that a normal draw
+loses; exercise 2 asks what changes.
+
+```{r}
+#| label: truth
+draw_months <- function(T, mu, L) {
+  matrix(rnorm(T * length(mu)), T) %*% L + matrix(mu, T, length(mu), byrow = TRUE)
+}
+
+w_star  <- tan_qp(mu, S)                       # the long-only tangency under the truth
+sr_star <- sharpe_of(w_star, mu, S)
+sr_gmv  <- sharpe_of(gmv_qp(S), mu, S)
+sr_ew   <- sharpe_of(w_ew, mu, S)
+round(c(tangency = sr_star, min_variance = sr_gmv, equal_weight = sr_ew), 3)
+```
+
+Under the truth the long-only tangency portfolio has a Sharpe ratio of
+`r sprintf("%.2f", sr_star)`, equal weighting `r sprintf("%.2f", sr_ew)`, and
+minimum variance `r sprintf("%.2f", sr_gmv)`. The first number is the ceiling:
+no estimated portfolio can exceed it under the truth, so every draw lands at or
+below it, and the average distance is the loss.
+
+### The mean channel and the covariance channel
+
+The decomposition is @chopra1993's, done by substitution rather than by
+perturbation. Three portfolios are formed on every draw: the plug-in rule with
+both moments estimated, the rule with the estimated mean and the **true**
+covariance, and the rule with the true mean and the **estimated** covariance.
+The second isolates what estimating $\boldsymbol{\mu}$ costs, the third what
+estimating $\boldsymbol{\Sigma}$ costs.
+
+```{r}
+#| label: channels
+set.seed(1602)
+Ts <- c(60L, 120L, 240L, 372L, 1000L)
+B  <- 300L
+
+one_draw <- function(T) {
+  X <- draw_months(T, mu, L); m <- colMeans(X); V <- stats::cov(X)
+  w_hat <- tan_qp(m, V)
+  c(plug_in   = sharpe_of(w_hat, mu, S),             # both estimated
+    mean_only = sharpe_of(tan_qp(m, S), mu, S),      # estimated mean, true covariance
+    cov_only  = sharpe_of(tan_qp(mu, V), mu, S),     # true mean, estimated covariance
+    promised  = sharpe_of(w_hat, m, V),              # what the draw itself claims
+    fallback  = as.numeric(isTRUE(attr(w_hat, "fallback"))))
+}
+
+sim <- lapply(Ts, function(T) {
+  d <- vapply(seq_len(B), function(b) one_draw(T), numeric(5))
+  tibble::tibble(T = T, channel = rownames(d), mean = rowMeans(d), sd = apply(d, 1, stats::sd))
+}) |> dplyr::bind_rows()
+
+sim_wide <- sim |>
+  dplyr::select(-sd) |>
+  tidyr::pivot_wider(names_from = channel, values_from = mean) |>
+  dplyr::mutate(loss = sr_star - plug_in,
+                loss_mean = sr_star - mean_only,
+                loss_cov  = sr_star - cov_only)
+stopifnot(all(sim_wide$fallback == 0), all(sim_wide$plug_in <= sr_star))
+```
+
+```{r}
+#| label: tbl-08-channels
+#| tbl-cap: "Sharpe ratio under the truth for the long-only tangency portfolio estimated on T simulated months, averaged over 300 draws. The two loss columns hold one input at its true value and estimate the other."
+#| echo: false
+sim_wide |>
+  dplyr::mutate(ratio = loss_mean / loss_cov) |>
+  dplyr::transmute(T,
+                   promised  = sprintf("%.3f", promised),
+                   delivered = sprintf("%.3f", plug_in),
+                   loss      = sprintf("%.3f", loss),
+                   loss_mean = sprintf("%.3f", loss_mean),
+                   loss_cov  = sprintf("%.3f", loss_cov),
+                   ratio     = sprintf("%.1f", ratio)) |>
+  kable(align = "rrrrrrr",
+        col.names = c("T", "promised", "delivered", "loss", "loss: mean channel",
+                      "loss: covariance channel", "ratio"))
+```
+
+```{r}
+#| label: channel-facts
+#| include: false
+at <- function(T, col) sim_wide[[col]][sim_wide$T == T]
+t_cross <- min(sim_wide$T[sim_wide$plug_in > sr_ew])
+ratio   <- function(T) at(T, "loss_mean") / at(T, "loss_cov")
+stopifnot(all(sim_wide$plug_in > sr_ew),                         # above 1/N at every T in the table
+          all(sim_wide$loss_mean > sim_wide$loss_cov),           # the mean channel is the larger one
+          ratio(60L) < 11, !is.unsorted(sim_wide$loss_mean / sim_wide$loss_cov),   # and more so as T grows
+          identical(sim_wide$T, Ts))
+```
+
+At sixty months the plug-in portfolio delivers
+`r sprintf("%.2f", at(60L, "plug_in"))` against a promise of
+`r sprintf("%.2f", at(60L, "promised"))` and a ceiling of
+`r sprintf("%.2f", sr_star)`. Of the loss of `r sprintf("%.2f", at(60L, "loss"))`,
+estimating the mean alone accounts for `r sprintf("%.2f", at(60L, "loss_mean"))`
+and estimating the covariance alone for `r sprintf("%.2f", at(60L, "loss_cov"))`:
+the mean channel costs `r sprintf("%.0f", ratio(60L))`
+times as much. That is @chopra1993's finding reproduced on this universe by
+substitution. At sixty months the ratio is smaller than their eleven, because
+the long-only constraint caps what an error in $\hat{\boldsymbol{\mu}}$ can do
+to the weights, which is @jagannathan2003's point again; it rises with the
+window and reaches `r sprintf("%.0f", ratio(1000L))` at a thousand months,
+because the covariance channel closes faster. That channel is nearly closed
+at every $T$ in the table; on sixteen series a sixty-month window already has
+nearly four observations per asset, the matrix is well conditioned by the
+measure of @sec-07-covariance-matrix-theory, and the shrinkage of
+@ledoit2004 has little to shrink. The mean channel is still open at a thousand
+months, where it costs `r sprintf("%.3f", at(1000L, "loss_mean"))`, and
+@eq-04-precision says why: a thousand months is eighty-three years, and the
+standard error of a mean falls with the square root of the span.
+
+```{r}
+#| label: fig-08-channels
+#| fig-cap: "Sharpe ratio under the truth against the length of the estimation window. Solid lines are the three estimated portfolios; dashed lines are the true tangency, true minimum-variance and equally weighted portfolios, which need no window. The mean channel accounts for almost the whole distance between the plug-in rule and its ceiling."
+#| echo: false
+#| fig-asp: 0.6
+chan_pts <- dplyr::bind_rows(
+  sim |>
+    dplyr::filter(channel %in% c("plug_in", "mean_only", "cov_only")) |>
+    dplyr::transmute(T, sharpe = mean, kind = "estimated on T months",
+                     label = c(plug_in = "both estimated", mean_only = "mean estimated, covariance true",
+                               cov_only = "covariance estimated, mean true")[channel]),
+  tidyr::expand_grid(T = Ts,
+                     tibble::tibble(label  = c("tangency under the truth", "minimum variance under the truth",
+                                               "equal weight"),
+                                    sharpe = c(sr_star, sr_gmv, sr_ew))) |>
+    dplyr::mutate(kind = "needs no window")
+)
+
+ggplot2::ggplot(chan_pts, ggplot2::aes(T, sharpe, colour = label, linetype = kind)) +
+  ggplot2::geom_line(linewidth = 0.8) +
+  ggplot2::geom_point(data = dplyr::filter(chan_pts, kind == "estimated on T months"), size = 1.8) +
+  ggplot2::scale_x_log10(breaks = Ts) +
+  scale_colour_tidyaa() +
+  ggplot2::scale_linetype_manual(values = c("solid", "22"), guide = "none") +
+  ggplot2::guides(colour = ggplot2::guide_legend(ncol = 2)) +
+  ggplot2::labs(x = "estimation window, months (log scale)", y = "Sharpe ratio under the truth")
+```
+
+One feature of @fig-08-channels deserves a sentence, because it is not what
+@demiguel2009 would lead a reader to expect. Under this truth the estimated
+tangency portfolio is above equal weighting at every window in the table,
+including `r t_cross` months: the crossover on the sixteen series is at or
+below the shortest window shown, and the subsection after the next one
+locates it. The reason is the ceiling. The true tangency portfolio's Sharpe
+ratio exceeds equal weighting's by `r sprintf("%.2f", sr_star - sr_ew)` on this
+universe, because bonds and equities sit side by side and $1/N$ cannot tell
+them apart, and a long-only estimate that loses `r sprintf("%.2f", at(60L, "loss"))`
+of that is still `r sprintf("%.2f", at(60L, "plug_in") - sr_ew)` ahead.
+
+### Forecast error in the investor's units
+
+A forecast of $\boldsymbol{\mu}$ is conventionally scored by its mean squared
+error, and the score is in the wrong units. It says how far the numbers were
+from the truth; it does not say what being that far cost, because the cost
+depends on $\boldsymbol{\Sigma}$, on the constraint set and on the rule that
+turned the forecast into positions. The idea behind the risk-adjusted forecast
+error is to measure the error in the units the investor cares about: the Sharpe
+ratio the portfolio built on the forecast gives up relative to the portfolio
+built on the truth. @tbl-08-channels contains that number for the plug-in
+tangency rule on sixty months: `r sprintf("%.2f", at(60L, "loss_mean"))` of
+annualized Sharpe ratio lost to the forecast of the mean alone, with the
+covariance held at its true value. No mean squared error can produce it, and two
+forecasts with the same mean squared error can produce very different values of
+it, which is the whole of the argument [@salcher2026; @salcher2026less].
+@sec-26-forecast-error-cost-theory derives the measure and shows which channel
+it charges, and @sec-27-decision-aware-forecasting-theory asks the question that
+follows from it, whether a forecaster should be trained on mean squared error at
+all.
+
+### When $1/N$ stops winning
+
+@demiguel2009 derive from @eq-08-kz the window length at which the unconstrained
+plug-in rule overtakes equal weighting in expected utility, holding the Sharpe
+ratios of the tangency portfolio and of $1/N$ fixed at values typical of their
+datasets, and obtain the thousands of months quoted at the start of this
+chapter. In that calculation the benefit of optimizing is held fixed and the
+cost of estimating grows with $N$ through @eq-08-kz, so the required window
+grows with $N$. On this universe nothing is held fixed. We draw sub-universes of
+four, eight and all sixteen series, and for each one and each window length
+score the long-only plug-in rule, the unconstrained plug-in rule and equal
+weighting under that sub-universe's own truth. The unconstrained rule's Sharpe
+ratio is that of the direction $\hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}$;
+leverage does not change a Sharpe ratio, so no budget normalization is needed
+and none of the sign reversals that plague the normalized version arise.
+
+```{r}
+#| label: region
+set.seed(1602)
+Ns <- c(4L, 8L, 16L)
+Tg <- c(24L, 36L, 48L, 60L, 120L, 240L, 372L, 600L, 1000L, 2000L)
+
+one_universe <- function(n, T) {
+  idx  <- if (n == N) seq_len(N) else sort(sample.int(N, n))
+  mu_n <- mu[idx]; S_n <- S[idx, idx]
+  X <- draw_months(T, mu_n, chol(S_n)); m <- colMeans(X); V <- stats::cov(X)
+  c(long_only     = sharpe_of(tan_qp(m, V), mu_n, S_n),
+    unconstrained = sharpe_of(solve(V, m), mu_n, S_n),
+    equal_weight  = sharpe_of(rep(1 / n, n), mu_n, S_n),
+    ceiling       = sharpe_of(tan_qp(mu_n, S_n), mu_n, S_n),
+    ceiling_unc   = sqrt(12 * sum(mu_n * solve(S_n, mu_n))))
+}
+
+cells  <- tidyr::expand_grid(n_assets = Ns, T = Tg)
+region <- lapply(seq_len(nrow(cells)), function(i) {
+  n <- cells$n_assets[i]; T <- cells$T[i]
+  d <- vapply(seq_len(B), function(b) one_universe(n, T), numeric(5))
+  tibble::tibble(n_assets = n, T = T,
+                 long_only     = mean(d["long_only", ]     - d["equal_weight", ]),
+                 unconstrained = mean(d["unconstrained", ] - d["equal_weight", ]),
+                 share_long_only = mean(d["long_only", ] > d["equal_weight", ]),
+                 benefit       = mean(d["ceiling", ]       - d["equal_weight", ]),
+                 benefit_unc   = mean(d["ceiling_unc", ]   - d["equal_weight", ]))
+}) |> dplyr::bind_rows()
+
+cross <- region |>
+  dplyr::group_by(n_assets) |>
+  dplyr::summarise(T_long_only     = min(T[long_only > 0]),
+                   T_unconstrained = min(T[unconstrained > 0]),
+                   benefit         = mean(benefit),
+                   benefit_unc     = mean(benefit_unc),
+                   .groups = "drop")
+```
+
+```{r}
+#| label: tbl-08-crossover
+#| tbl-cap: "The shortest window on the grid at which the estimated tangency portfolio's expected Sharpe ratio under the truth exceeds equal weighting's, for sub-universes of N series drawn from the sixteen. The benefit columns give the true tangency portfolio's Sharpe advantage over equal weighting, long only and unconstrained."
+#| echo: false
+cross |>
+  dplyr::mutate(dplyr::across(c(benefit, benefit_unc), ~ sprintf("%.2f", .x))) |>
+  kable(align = "rrrrr",
+        col.names = c("N", "crossover, long only", "crossover, unconstrained",
+                      "benefit, long only", "benefit, unconstrained"))
+```
+
+```{r}
+#| label: fig-08-region
+#| fig-cap: "Expected Sharpe ratio of the estimated tangency portfolio minus equal weighting's, under the truth, by window length and universe size. Above the line optimization pays. The left panel is the long-only rule; the right is the unconstrained rule of @eq-08-plugin, whose loss is what @eq-08-kz prices."
+#| echo: false
+#| fig-asp: 0.5
+region_pts <- region |>
+  tidyr::pivot_longer(c(long_only, unconstrained), names_to = "rule", values_to = "difference") |>
+  dplyr::mutate(rule = c(long_only = "long only", unconstrained = "unconstrained")[rule],
+                n_assets = factor(n_assets))
+
+ggplot2::ggplot(region_pts, ggplot2::aes(T, difference, colour = n_assets)) +
+  ggplot2::geom_hline(yintercept = 0, colour = tidyaa_colors[["ink"]], linewidth = 0.4) +
+  ggplot2::geom_line(linewidth = 0.8) +
+  ggplot2::geom_point(size = 1.6) +
+  ggplot2::facet_wrap(~ rule) +
+  ggplot2::scale_x_log10(breaks = c(24L, 60L, 120L, 372L, 1000L, 2000L)) +   # months
+  scale_colour_tidyaa(name = "N") +
+  ggplot2::theme(legend.title = ggplot2::element_text()) +
+  ggplot2::labs(x = "estimation window, months (log scale)",
+                y = "Sharpe ratio under the truth, minus 1/N")
+```
+
+```{r}
+#| label: region-facts
+#| include: false
+cr <- function(n, col) cross[[col]][cross$n_assets == n]
+share_60 <- region$share_long_only[region$n_assets == 16L & region$T == 60L]
+stopifnot(identical(cross$n_assets, Ns),
+          all(cross$T_long_only < cross$T_unconstrained),      # the constraint shortens the window,
+          !is.unsorted(rev(cross$T_long_only)),                # which does not lengthen with N,
+          !is.unsorted(rev(cross$T_unconstrained)),
+          !is.unsorted(cross$benefit_unc), !is.unsorted(cross$benefit))   # while the benefit grows
+
+# The backtest's side, from the register: @eq-25-se annualized, and the two shared windows.
+se_tan <- sqrt((1 + (g("max_sharpe", "realized") / sqrt(12))^2 / 2) / g("max_sharpe", "months")) * sqrt(12)
+stopifnot(share_60 > 0.5, cr(16L, "T_long_only") < 60,
+          sr_sweep("max_sharpe", 60)  < sr_sweep("equal_weight", 60),    # behind 1/N on sixty months,
+          sr_sweep("max_sharpe", 120) > sr_sweep("equal_weight", 120),   # ahead of it on 120,
+          sr_sweep("max_sharpe", c(60, 120)) < c(at(60L, "plug_in"), at(120L, "plug_in")))   # below the simulation
+```
+
+Two things in @fig-08-region and @tbl-08-crossover are consistent with
+@demiguel2009 and one is not, and the one that is not is instructive. The
+unconstrained rule loses to $1/N$ at every short window and by a wide margin: at
+twenty-four months on sixteen series it is
+`r sprintf("%.2f", -region$unconstrained[region$n_assets == 16L & region$T == 24L])`
+of Sharpe ratio behind, which is @eq-08-kz in Sharpe units. The long-only rule
+crosses far earlier than the unconstrained one at every $N$, at
+`r cr(16L, "T_long_only")` rather than `r cr(16L, "T_unconstrained")` months on
+the sixteen, which is the constraint acting as the shrinkage @jagannathan2003
+describe and @demiguel2009b generalize to a bound on the norm of the weights.
+What differs is the direction in $N$. The unconstrained crossover is
+`r cr(4L, "T_unconstrained")` months at four series and
+`r cr(16L, "T_unconstrained")` at sixteen, and the long-only one falls from
+`r cr(4L, "T_long_only")` to `r cr(16L, "T_long_only")`: the required window
+does not grow with $N$ here, because the benefit of optimizing grows with it.
+The true tangency portfolio's advantage over $1/N$ rises from
+`r sprintf("%.2f", cr(4L, "benefit_unc"))` at four series to
+`r sprintf("%.2f", cr(16L, "benefit_unc"))` at sixteen, since a larger draw from
+this universe is more likely to hold government bonds beside equities, which is
+exactly the heterogeneity that equal weighting cannot exploit. The mechanism is
+the same in both calibrations: the cost of estimating is of order $N/T$, and the
+benefit is whatever the universe offers. @demiguel2009 hold the benefit at the
+level of a typical equity universe; on a multi-asset universe it is larger, and
+the crossover moves accordingly. @tu2011 show that a combination of the two
+rules dominates both, and @kirby2012 that much of $1/N$'s advantage in the
+original comparison came from the turnover of the rules it was set against,
+which @sec-23-rebalancing-application prices on this universe.
+
+The simulation says that on sixty months the long-only tangency portfolio beats
+equal weighting under this truth in
+`r sprintf("%.0f%%", 100 * share_60)` of draws. The rolling backtest of
+@tbl-08-gap says it did not: `r sprintf("%.2f", g("max_sharpe", "realized"))`
+against `r sprintf("%.2f", g("equal_weight", "realized"))`. On 120-month
+windows the register has the order the simulation expects,
+`r sprintf("%.2f", sr_sweep("max_sharpe", 120))` against
+`r sprintf("%.2f", sr_sweep("equal_weight", 120))`, so in the backtest the
+tangency portfolio overtakes $1/N$ between sixty and 120 months and not at the
+`r cr(16L, "T_long_only")` of @tbl-08-crossover. At both windows the tangency
+portfolio realizes less than the `r sprintf("%.2f", at(60L, "plug_in"))` and
+`r sprintf("%.2f", at(120L, "plug_in"))` that @tbl-08-channels expects of it.
+Part of that shortfall is sampling error in the realized figure, which
+@eq-25-se puts at about `r sprintf("%.2f", se_tan)` of Sharpe ratio over
+`r g("max_sharpe", "months")` months. The rest is that
+$\boldsymbol{\mu}$ and $\boldsymbol{\Sigma}$ are not constants:
+@sec-05-factor-models-application measured the betas of these series drifting
+through the sample, @sec-04-descriptive-analysis-application measured the
+average correlation rising in the credit crisis and the rates shock, and
+@sec-19-regimes-theory takes the drift as its subject. Estimation error under a
+fixed truth is therefore a lower bound on what estimating costs, and the
+mean-based rule is the one that pays the rest, because it is the one whose
+positions depend on the input that moves most. @garlappi2007 and
+@sec-28-robustness-theory treat that as uncertainty about the model rather than
+about its parameters.
+
+### The register line
+
+Every construction chapter in this book ends by reading its strategy off the
+register that @sec-25-backtesting-application computes with `pm_backtest()`,
+so that no chapter carries a number another chapter could contradict.
+
+```{r}
+#| label: register
+reg     <- sweep |> dplyr::arrange(dplyr::desc(sharpe))
+reg_120 <- sweep_all |> dplyr::filter(window == 120) |> dplyr::arrange(dplyr::desc(sharpe))
+rank_of <- function(s, r = reg) match(s, r$strategy)
+reg |> dplyr::select(label, sharpe, ann_vol, ann_turnover)
+```
+
+```{r}
+#| label: register-facts
+#| include: false
+# The order the text states, window by window: the tangency portfolio's lead over 1/N,
+# and minimum variance's over this chapter's other three rules.
+windows <- c(36, 60, 120)
+lead    <- sr_sweep("max_sharpe", windows) - sr_sweep("equal_weight", windows)
+others  <- c("max_sharpe", "equal_weight", "inverse_vol")
+order_at <- function(w) { r <- sweep_all[sweep_all$window == w, ]; r$strategy[order(-r$sharpe)] }
+stopifnot(
+  setequal(windows, sweep_all$window),
+  identical(order_at(36), reg$strategy), !identical(order_at(120), reg$strategy),   # 36 as 60, 120 not
+  rank_of("max_sharpe") == nrow(reg), reg$strategy[1] == "min_cvar",   # sixty months: last, below
+  identical(setdiff(reg$strategy, "min_cvar"), gap$rule),              # the order of @tbl-08-gap
+  rank_of("max_sharpe", reg_120) < rank_of(c("equal_weight", "inverse_vol"), reg_120),   # 120: not last
+  lead[windows < 120] < 0, lead[windows == 120] > 0, abs(lead) < se_tan,
+  vapply(windows, function(w) all(sr_sweep("min_variance", w) > sr_sweep(others, w)), logical(1)))
+```
+
+Out of sample on sixty-month windows the order is
+`r paste(reg$label, collapse = ", ")`. The rules that estimate no mean occupy
+the first four places and the one that does is last, which is the ordering of
+@tbl-08-gap with minimum conditional value at risk, the strategy of
+@sec-10-risk-measures-application, added at the top. That order holds on
+thirty-six-month windows as well and not on 120-month ones, where it is
+`r paste(reg_120$label, collapse = ", ")`, with the tangency portfolio ranking
+`r rank_of("max_sharpe", reg_120)` of `r nrow(reg_120)`, ahead of both naive
+rules. Of this chapter's four rules minimum variance is the strongest at every
+window, ranking `r rank_of("min_variance")` of `r nrow(reg)` here, and that is
+@jagannathan2003's result: it estimates only $\boldsymbol{\Sigma}$, the input
+that can be estimated, and its short-sale constraint shrinks that estimate
+further.
+
+Equal weighting is not the winner here, ranking
+`r rank_of("equal_weight")` of `r nrow(reg)`, behind two rules that estimate
+risk alone. That differs from what @demiguel2009 report, and the two
+findings are consistent. Their claim is about the mean: no rule that estimates
+$\boldsymbol{\mu}$ beat $1/N$ reliably, and none does here. The tangency
+portfolio is behind $1/N$ on thirty-six- and sixty-month windows and ahead of
+it on 120-month ones, each time by less than the standard error of
+`r sprintf("%.2f", se_tan)` that @eq-25-se attaches to its Sharpe ratio.
+Whether $1/N$ also beats a rule that estimates
+$\boldsymbol{\Sigma}$ alone is a different question, about how well the
+covariance matrix is estimated, and on sixteen series with
+`r nrow(Re)` months it is estimated well: @sec-07-covariance-matrix-application
+showed shrinkage buying nothing once the sample matrix becomes estimable, and
+@tbl-08-channels showed the covariance channel costing a few hundredths of a
+Sharpe ratio. On the larger universes of @demiguel2009 the matrix is the
+problem and the ranking is theirs, and on the one-hundred-and-eighty-one
+instruments of @sec-21-equity-sleeve-theory the matrix is the problem again.
+The lesson is not that optimization fails. It is that the cost of an input is
+set by how well it can be estimated, and that the mean cannot.
+
+## Key Takeaways {.unnumbered}
+
+- A plug-in portfolio promises more than the truth and delivers less. Under
+  normality @eq-08-inflation gives the size of the promise's inflation and
+  @eq-08-kz the expected shortfall, both driven by $N/T$ [@kan2007]. On sixty
+  months of sixteen series the unconstrained rule's expected utility is
+  negative.
+- The Sharpe gap of @eq-08-gap, promised minus realized on rolling windows, is
+  computable without a truth. On this universe the tangency portfolio keeps
+  `r sprintf("%.0f%%", 100 * g("max_sharpe", "kept"))` of its promise; minimum
+  variance keeps `r sprintf("%.0f%%", 100 * g("min_variance", "kept"))`; equal
+  weighting's own gap of `r sprintf("%.2f", g("equal_weight", "gap"))` is what a
+  window manufactures on a portfolio that never used it.
+- Splitting the loss by substitution, the mean channel costs
+  `r sprintf("%.0f", at(60L, "loss_mean") / at(60L, "loss_cov"))` times the
+  covariance channel at sixty months and is still open at a thousand
+  [@chopra1993]. The covariance channel is nearly closed on sixteen series.
+- The window at which optimization overtakes $1/N$ depends on the cost, of
+  order $N/T$, and on the benefit, which the universe sets. A long-only
+  constraint shortens it several-fold [@jagannathan2003], and on a multi-asset
+  universe the benefit grows with $N$, so the window does not lengthen with $N$
+  the way it does in the calibration of @demiguel2009.
+- Estimation error under a fixed truth is a lower bound. The simulated
+  sixty-month tangency portfolio beats $1/N$ in
+  `r sprintf("%.0f%%", 100 * share_60)` of draws; the actual one trailed $1/N$
+  on sixty-month windows and overtook it only on 120-month ones, realizing less
+  than the simulation expects at both.
+- Out of sample on sixty-month windows the register reads
+  `r paste(reg$label, collapse = ", ")`: the rules that estimate no mean lead.
+  On 120-month windows the tangency portfolio ranks
+  `r rank_of("max_sharpe", reg_120)` of `r nrow(reg_120)`, ahead of both naive
+  rules, and minimum variance, which estimates only $\boldsymbol{\Sigma}$, is
+  the strongest of this chapter's four rules at every window.
+- `equal.weight()` and `inverse.volatility.weight()` are exported, take a
+  return matrix and a specification, and return an `optimize.portfolio` object.
+  Passed to `optimize.portfolio.rebalancing()` by name they produce
+  `r length(bt_naive$opt_rebalancing)` periods of `NA` weights and no error.
+
+## Exercises {.unnumbered}
+
+1. Rerun the rolling loop with a window of 120 months and recompute
+   @tbl-08-gap, scoring from the first month of model year 11 as before.
+   Compare the realized Sharpe ratios with the `window == 120` rows of
+   `output/tables/oos-sweep.csv`.
+   Does the longer window close the tangency portfolio's gap, and by how much
+   relative to the other three rules?
+2. Replace `draw_months()` with a twelve-month block bootstrap of `Re`, as in
+   the bootstrap of @sec-09-mean-variance-application, and recompute the channel
+   split at $T = 60$ with the full-sample moments still serving as the truth.
+   Does the mean channel still dominate, and does the plug-in portfolio still
+   beat equal weighting?
+3. Using @eq-08-kz with $\theta^2$ fixed at this universe's value, find the $T$
+   at which the expected utility of the unconstrained plug-in rule turns
+   positive and the $T$ at which it reaches ninety percent of the optimum, for
+   $N = 16$ and for $N = 50$. How do the two thresholds scale with $N$?
+4. In the rolling loop, replace $\hat{\boldsymbol{\mu}}_t$ by
+   $(1 - \delta)\hat{\boldsymbol{\mu}}_t + \delta\,\bar{\mu}_t\boldsymbol{\iota}$
+   with $\bar{\mu}_t$ the cross-sectional average and $\delta = 0.5$, a crude
+   version of the shrinkage of @jorion1986 that
+   @sec-06-expected-returns-theory develops properly. Remeasure the gap of the
+   tangency portfolio. Does shrinking the mean help more than the long-only
+   constraint already did?

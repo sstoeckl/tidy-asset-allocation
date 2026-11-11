@@ -1,0 +1,1107 @@
+---
+title: "Benchmarks and Active Risk"
+metadata:
+  pagetitle: "Benchmarks and Active Risk"
+  description-meta: "Active weights, tracking error and the information ratio in R; a tracking-error-constrained allocation around a policy portfolio built in CVXR; Brinson attribution across sleeves; and the error bar an information ratio needs."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+Did the portfolio beat its benchmark, and if it did, was that skill? @grinold1989
+gave the question its modern form: the value an active manager adds is the
+product of the quality of each decision and the number of independent decisions
+taken, so that a small edge applied often is worth as much as a large edge
+applied rarely. @grinold2000 built the practice of active management on that law,
+and the vocabulary they fixed, active weights, tracking error and the information
+ratio, is the vocabulary every real mandate is written in.
+
+We first define that vocabulary and ask what an information ratio is estimating
+and how much data it needs; then implement the measures in
+`PerformanceAnalytics`, find that `PortfolioAnalytics` carries an active
+weight-sum constraint but neither a tracking-error budget nor an
+information-ratio objective, and build both in `CVXR`; then attribute the active
+return across sleeves, show that the benchmark is itself a bet, and put an error
+bar on the result. On the horizon axis of
+@sec-03-return-risk-and-the-investor-theory this chapter is about evaluation
+rather than about either horizon; the one construction it introduces, an
+allocation anchored to a policy portfolio under a tracking-error budget, is
+strategic, because the policy portfolio it tilts from is the long-run allocation
+of @sec-15-hierarchical-allocation-application.
+
+The data are the sixteen risky class series of
+@sec-02-notation-and-data-simulated-market, in excess of the Treasury bill where
+a moment is estimated and in total-return form where a return series is formed,
+because a tracking error is the same on either basis and a compounded return is
+not.
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+stopifnot(ncol(Re) == 16L, !anyNA(Re), length(rf) == nrow(R))
+```
+
+## Active Weights, Tracking Error, and the Information Ratio {#sec-24-benchmarks-and-active-risk-theory}
+
+Write $\boldsymbol{w}$ for the portfolio held and $\boldsymbol{b}$ for the
+benchmark, both fully invested. The **active weights** are their difference,
+
+$$
+\boldsymbol{x} = \boldsymbol{w} - \boldsymbol{b},
+\qquad
+\boldsymbol{\iota}'\boldsymbol{x} = 0,
+$$ {#eq-24-active}
+
+and they sum to zero because both portfolios sum to one. Every overweight is
+funded by an underweight, which is why an active portfolio is a long-short
+portfolio whatever the mandate says about shorting. The **active return** in
+period $t$ is $r^{A}_t = \boldsymbol{x}'\boldsymbol{r}_t = r^{p}_t - r^{b}_t$,
+and its two moments are
+
+$$
+\alpha = \boldsymbol{x}'\boldsymbol{\mu},
+\qquad
+\text{TE} = \sqrt{\boldsymbol{x}'\boldsymbol{\Sigma}\boldsymbol{x}} ,
+$$ {#eq-24-te}
+
+the expected active return and the **tracking error**, the volatility of the
+active return. Their ratio is the **information ratio**,
+
+$$
+\text{IR} = \frac{\alpha}{\text{TE}}
+          = \frac{\boldsymbol{x}'\boldsymbol{\mu}}
+                 {\sqrt{\boldsymbol{x}'\boldsymbol{\Sigma}\boldsymbol{x}}} ,
+$$ {#eq-24-ir}
+
+which stands to the active return exactly as the Sharpe ratio of @sharpe1966 and
+@sharpe1994 stands to the excess return: the same statistic with the benchmark in
+place of the bill. @treynor1973 defined the older cousin, the appraisal ratio,
+as the alpha of @jensen1968 divided by the residual volatility of the regression
+that produced it; it is an information ratio against a beta-adjusted benchmark,
+and the distinction matters in @sec-24-benchmarks-and-active-risk-application,
+because the beta is an estimate too.
+
+@grinold1989 showed that, for a manager whose forecasts have a correlation
+$\text{IC}$ with realized returns and who takes $\text{BR}$ independent bets a
+year, the attainable information ratio is approximately
+
+$$
+\text{IR} \approx \text{IC} \cdot \sqrt{\text{BR}} \cdot \text{TC},
+$$ {#eq-24-law}
+
+where the transfer coefficient $\text{TC}$ of @clarke2002 is the correlation
+between the active weights the forecasts call for and the ones the constraints
+allow, equal to one for an unconstrained manager and well below it for a
+long-only one. A strategic allocator resetting sixteen class weights once a year
+has a breadth of sixteen, so an information ratio of one half needs an
+information coefficient of $0.5 / \sqrt{16} = `r sprintf("%.3f", 0.5 / sqrt(16))`$
+before any constraint takes its share. That number is the reason active
+asset allocation is hard: a stock picker with a thousand names needs a
+correlation thirty times smaller for the same result. @sharpe1991 adds the
+arithmetic that frames every information ratio: before costs the average active
+dollar earns the passive return, so after costs it earns less, and a positive
+information ratio is something to be shown rather than assumed.
+
+Tracking error measures the deviation in risk units. @cremers2009 measure it in
+holdings, as **active share**,
+$\tfrac{1}{2}\sum_i |w_i - b_i|$, which is the turnover formula of
+@eq-23-turnover with the benchmark as the reference portfolio; the two agree
+when the underweights and overweights are in uncorrelated assets and disagree
+when they are not, so a portfolio can have a large active share and a small
+tracking error at once.
+
+### Tracking error as a constraint
+
+A mandate rarely asks for a maximal information ratio. It gives the manager a
+tracking-error **budget** $\tau$ and asks for as much active return as the
+budget buys. @roll1992 wrote that problem down,
+
+$$
+\max_{\boldsymbol{x}} \; \boldsymbol{x}'\boldsymbol{\mu}
+\quad \text{subject to} \quad
+\boldsymbol{x}'\boldsymbol{\Sigma}\boldsymbol{x} \leq \tau^2,
+\quad
+\boldsymbol{\iota}'\boldsymbol{x} = 0,
+$$ {#eq-24-roll}
+
+and solved it. With the three constants of @merton1972 from
+@sec-09-mean-variance-theory,
+$A = \boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\iota}$,
+$B = \boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$ and
+$C = \boldsymbol{\mu}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$, the solution is
+
+$$
+\boldsymbol{x}^{*}(\tau)
+= \tau \, \frac{\boldsymbol{\Sigma}^{-1}(\boldsymbol{\mu} - \lambda\boldsymbol{\iota})}
+               {\sqrt{(\boldsymbol{\mu} - \lambda\boldsymbol{\iota})'
+                      \boldsymbol{\Sigma}^{-1}
+                      (\boldsymbol{\mu} - \lambda\boldsymbol{\iota})}},
+\qquad
+\lambda = \frac{B}{A},
+$$ {#eq-24-roll-solution}
+
+the same Lagrangian as @eq-09-gmv with a second multiplier for the budget, and
+the derivation is two lines. Two things follow from the form of
+@eq-24-roll-solution, and both are Roll's point. The direction of the tilt does
+not involve $\boldsymbol{b}$ at all: every manager with the same estimates adds
+the same long-short portfolio to whatever benchmark they were given, so the
+total portfolio $\boldsymbol{b} + \boldsymbol{x}^{*}$ is mean-variance
+efficient only if the benchmark already was, and a tracking-error-constrained
+optimizer otherwise picks portfolios that @sec-09-mean-variance-theory would
+call dominated. And the information ratio along the whole family is a constant,
+
+$$
+\text{IR}^{*} = \frac{\boldsymbol{x}^{*\prime}\boldsymbol{\mu}}{\tau}
+              = \sqrt{C - \frac{B^2}{A}} ,
+$$ {#eq-24-maxir}
+
+which is the maximum information ratio attainable under the zero-sum constraint
+alone: it is reached at every budget, and $\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$
+up to a scale and a shift is the portfolio that reaches it. @jorion2003 supplied
+the repair for the first problem. Adding a bound on total risk,
+
+$$
+\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w} \leq \sigma_{\max}^2 ,
+$$ {#eq-24-jorion}
+
+pulls the solution back toward the frontier, because the tilt now has to lower
+variance somewhere in order to raise return elsewhere. Both constraints are
+quadratic, the feasible set is convex, and the problem is a second-order cone
+program that a modern solver handles in milliseconds [@boyd2004];
+@sec-24-benchmarks-and-active-risk-implementation builds it, because the
+package does not carry it.
+
+### Where the active return came from
+
+Once an active return has been earned, the question is which decisions earned
+it. Writing $w_s$ and $b_s$ for the portfolio and benchmark weights in segment
+$s$, $r_s$ and $\beta_s$ for the segment returns of each, and $r^{b}$ for the
+total benchmark return, @brinson1985 and @brinson1986 decompose the active
+return of one period as
+
+$$
+r^{p} - r^{b} =
+\underbrace{\sum_s (w_s - b_s)(\beta_s - r^{b})}_{\text{allocation}}
++ \underbrace{\sum_s b_s\,(r_s - \beta_s)}_{\text{selection}}
++ \underbrace{\sum_s (w_s - b_s)(r_s - \beta_s)}_{\text{interaction}} .
+$$ {#eq-24-brinson}
+
+The allocation term rewards overweighting a segment that beat the benchmark as a
+whole; the selection term rewards holding the right things inside a segment at
+the benchmark's weight; the interaction term is what is left, the product of
+two decisions with no decision of its own behind it. @eq-25-brinson writes the
+allocation term without the $r^{b}$; the two sum to the same total because
+active segment weights sum to zero, and the form above is the one whose
+segment-level signs mean something. @brinson1991 applied it to a decade of
+pension funds, and @ibbotson2000 is the standing reminder, made in
+@sec-25-backtesting-application, that its famous ninety percent answers a
+different question from the one it is usually quoted for.
+
+### What an information ratio is estimating
+
+An information ratio is a ratio of two sample moments of one series, so it has
+the standard error of a Sharpe ratio. For $T$ periods of independent and
+identically distributed active returns, @lo2002 gives
+
+$$
+\operatorname{se}(\widehat{\text{IR}})
+\approx \sqrt{\frac{1 + \tfrac{1}{2}\text{IR}^2}{T}} ,
+$$ {#eq-24-se}
+
+per period, and @goodwin1998 works through what that implies for the ratios
+reported in practice. The arithmetic is unforgiving.
+
+```{r}
+#| label: months-needed
+# Months of data before an information ratio has a t-statistic of two,
+# by eq-24-se applied per month and the ratio quoted per year.
+months_needed <- function(ir_annual, t_stat = 2) {
+  ir_m <- ir_annual / sqrt(12)
+  (1 + ir_m^2 / 2) / (ir_m / t_stat)^2
+}
+round(c(months = months_needed(0.5), years = months_needed(0.5) / 12), 1)
+```
+
+An information ratio of one half, which @grinold2000 describe as good, needs
+`r sprintf("%.0f", months_needed(0.5))` months, about
+`r sprintf("%.0f", months_needed(0.5) / 12)` years of monthly data, before a
+t-statistic of two separates it from zero; an information ratio of one quarter
+needs `r sprintf("%.0f", months_needed(0.25) / 12)`. Few managers are observed
+that long under one process, and the returns are not independent, which
+@eq-24-se assumes and @sec-04-descriptive-analysis-application showed this
+market violates, so the true intervals are wider still. The appraisal ratio has
+a second problem on top of the first: it divides by a beta, and
+@sec-05-factor-models-application measured that betas on this market travel
+across rolling windows and that the small ones change sign; we recompute one of
+those numbers in @sec-24-benchmarks-and-active-risk-application, where the
+market proxy is rebuilt. An information ratio against a beta-adjusted benchmark
+therefore needs an error bar before it needs a decimal place.
+
+## Implementation {#sec-24-benchmarks-and-active-risk-implementation}
+
+### A policy portfolio and a manager
+
+A benchmark has to be chosen before anything can be measured against it. We fix
+a policy portfolio across the four sleeves of
+@sec-15-hierarchical-allocation-application, equity, government, credit and
+commodity, with each sleeve's weight spread equally over its members. The
+sleeve weights are a stated capital-market decision rather than an estimate,
+which is what makes the portfolio a policy, and stating them here rather than
+importing them keeps this chapter's numbers independent of that chapter's.
+
+```{r}
+#| label: policy
+sleeve_of <- function(a) dplyr::case_when(
+  grepl("_equity$", a)     ~ "equity",
+  grepl("_government$", a) ~ "government",
+  grepl("_credit$", a)     ~ "credit",
+  TRUE                     ~ "commodity")
+
+sleeve_policy <- c(equity = 0.50, government = 0.30, credit = 0.15, commodity = 0.05)
+sl <- sleeve_of(colnames(R))
+
+# each sleeve's weight spread equally over its members, and indexed by name so
+# that b can never be paired with the wrong column of R
+b <- setNames(sleeve_policy[sl] / as.numeric(table(sl)[sl]), colnames(R))
+stopifnot(abs(sum(b) - 1) < 1e-12, identical(names(b), colnames(R)))
+```
+
+```{r}
+#| label: tbl-24-policy
+#| tbl-cap: "The policy benchmark. Sleeve weights are stated, not estimated; within a sleeve the members are equally weighted."
+#| echo: false
+tibble::tibble(sleeve = names(sleeve_policy),
+               members = as.integer(table(sl)[names(sleeve_policy)]),
+               sleeve_weight = sleeve_policy,
+               per_class = sleeve_policy / as.integer(table(sl)[names(sleeve_policy)])) |>
+  dplyr::mutate(dplyr::across(c(sleeve_weight, per_class), ~ sprintf("%.1f%%", 100 * .x))) |>
+  kable(align = "lrrr", col.names = c("", "classes", "sleeve weight", "weight per class"))
+```
+
+```{r}
+#| label: register-rank
+#| include: false
+# the manager's place in the register of chapter 25 is read, not typed
+reg <- read.csv("output/tables/oos-sweep.csv") |>
+  dplyr::filter(universe == "classes", window == 60L, frequency == "months", basis == "gross")
+stopifnot(nrow(reg) == 5L, "min_variance" %in% reg$strategy)
+rank_mv <- rank(-reg$sharpe)[reg$strategy == "min_variance"]
+stopifnot(rank_mv == 2L)
+```
+
+The manager is the book's own: the long-only minimum-variance portfolio of
+@sec-09-mean-variance-implementation re-estimated every month on the trailing
+sixty months, which is the strategy that finishes
+`r c("first", "second", "third", "fourth", "fifth")[rank_mv]` in the register of
+@sec-25-backtesting-application. It is a genuinely active portfolio against this
+benchmark, because it estimates nothing about means and holds whatever the
+covariance matrix says is least volatile. The call is the one
+@sec-25-backtesting-theory dissects, and the failure count is asserted rather
+than assumed.
+
+```{r}
+#| label: active-portfolio
+#| warning: false
+win <- 60L
+spec_mv <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only") |>
+  add.objective(type = "risk", name = "var")
+
+bt <- optimize.portfolio.rebalancing(
+  Re, spec_mv, optimize_method = "ROI",
+  rebalance_on = "months", training_period = win, rolling_window = win - 1L)
+
+W_act <- extractWeights(bt)
+stopifnot(all(diagnose_rebalancing(bt)$status == "converged"),
+          identical(colnames(W_act), colnames(R)))
+c(rebalances = nrow(W_act), first = fmt_model(zoo::index(W_act)[1]))
+```
+
+### Two return series, and the trap between them
+
+`Return.portfolio()` turns a weight history into a return series. The first
+weight vector is dated at the end of month `r win`, because it needed sixty
+months to estimate, and the return data begin at month one.
+
+```{r}
+#| label: backfill
+msg <- tryCatch(Return.portfolio(R, weights = W_act),
+                warning = function(w) conditionMessage(w))
+msg
+```
+
+::: {.callout-important}
+## The benchmark comparison starts with a portfolio nobody chose
+
+The warning is the trap of @sec-23-rebalancing-implementation, met from the
+other side. For the `r win - 1L` months before the first weight vector the
+series is an equally weighted portfolio, and a tracking error measured on the
+full length compares the benchmark with that for its first five years. Cut
+both series to the months a weight vector precedes, and assert the accounting
+by hand: with monthly rebalancing the portfolio return is
+$\boldsymbol{w}_{t-1}'\boldsymbol{r}_t$ and nothing else.
+:::
+
+```{r}
+#| label: returns
+first_w <- zoo::index(W_act)[1]
+R_oos   <- R[zoo::index(R) > first_w]             # the months a weight vector precedes
+rf_oos  <- xts::xts(rf[zoo::index(R) > first_w], order.by = zoo::index(R_oos))
+
+Rp <- Return.portfolio(R_oos, weights = W_act)                       # rebalanced monthly
+Rb <- Return.portfolio(R_oos, weights = b, rebalance_on = "months")  # to constant b
+colnames(Rp) <- "active"; colnames(Rb) <- "policy"
+
+# the last weight vector has no month after it; every other one is used once
+W_used <- zoo::coredata(W_act)[-nrow(W_act), ]
+stopifnot(nrow(W_used) == nrow(R_oos),
+          all.equal(as.numeric(Rp), rowSums(W_used * zoo::coredata(R_oos))),
+          all.equal(as.numeric(Rb), as.numeric(zoo::coredata(R_oos) %*% b)))
+
+a <- Rp - Rb                                    # the active return of eq-24-te
+colnames(a) <- "active_return"
+c(months = nrow(a), from = fmt_model(zoo::index(a)[1]))
+```
+
+### The measures in PerformanceAnalytics
+
+Everything in @eq-24-te and @eq-24-ir exists as a function, and each takes the
+two series and nothing else.
+
+```{r}
+#| label: measures
+te_pa <- TrackingError(Rp, Rb)
+ap_pa <- ActivePremium(Rp, Rb)
+ir_pa <- InformationRatio(Rp, Rb)
+ir_ar <- InformationRatio(Rp, Rb, geometric = FALSE)
+ir_hand <- mean(a) / stats::sd(a) * sqrt(12)
+stopifnot(all.equal(as.numeric(ir_ar), ir_hand),
+          ir_ar < 0)                      # the prose below reads the sign
+
+round(c(tracking_error = te_pa, active_premium = ap_pa,
+        IR_default = ir_pa, IR_arithmetic = ir_ar), 4)
+```
+
+::: {.callout-note}
+## The default information ratio is not @eq-24-ir
+
+`InformationRatio()` is `ActivePremium()` over `TrackingError()`, and
+`ActivePremium()` is the difference between two *compounded* annual returns,
+not the annualized mean of the active-return series. The denominator is the
+volatility of that series, so the default divides a geometric numerator by an
+arithmetic denominator. On these two series the two versions differ by
+`r sprintf("%.3f", abs(ir_pa - ir_ar))`, which is small here and is not small
+when the two portfolios differ in volatility, because the variance drag of
+@tbl-09-drag then enters the numerator asymmetrically. `geometric = FALSE`
+passes through to `Return.annualized()` and gives @eq-24-ir, and the
+`stopifnot()` above is the check that it does.
+:::
+
+The manager's tracking error against the policy is
+`r sprintf("%.1f%%", 100 * te_pa)` a year, which is not a budget anyone would
+write into a mandate, and its information ratio is
+`r sprintf("%.2f", ir_ar)`: it earned
+`r sprintf("%.1f", 100 * abs(mean(a) * 12))` percentage points a year less than
+the policy. The capture ratios say how.
+
+```{r}
+#| label: capture
+capture <- table.CaptureRatios(Rp, Rb)
+up_months <- UpDownRatios(Rp, Rb, method = "Number", side = "Up")
+dn_months <- UpDownRatios(Rp, Rb, method = "Number", side = "Down")
+round(c(up_capture = capture[["Up Capture"]], down_capture = capture[["Down Capture"]],
+        share_up_when_bench_up = up_months, share_down_when_bench_down = dn_months), 3)
+```
+
+The portfolio captures `r sprintf("%.0f%%", 100 * capture[["Up Capture"]])` of the
+benchmark's return in months the benchmark rises and
+`r sprintf("%.0f%%", 100 * capture[["Down Capture"]])` in months it falls: a
+low-volatility portfolio measured against an equity-heavy one, and both numbers
+say the same thing as the beta.
+
+```{r}
+#| label: capm
+#| message: false
+beta_b  <- CAPM.beta(Rp, Rb, Rf = rf_oos)
+alpha_b <- CAPM.alpha(Rp, Rb, Rf = rf_oos)           # per month
+appr    <- AppraisalRatio(Rp, Rb, Rf = rf_oos)       # Jensen alpha over residual risk
+stopifnot(alpha_b > 0, appr > 0, ir_ar < 0)          # the two signs the prose reconciles
+round(c(beta = beta_b, alpha_annual = 12 * alpha_b, appraisal_ratio = appr), 4)
+```
+
+```{r}
+#| label: tbl-24-capm
+#| tbl-cap: "`table.CAPM()` against the policy benchmark, bill subtracted from both. The robust rows fit the same regression with the estimator of the `RobStatTM` package; the last three rows repeat the active-management measures."
+#| echo: false
+table.CAPM(Rp, Rb, Rf = rf_oos) |>
+  kable(align = "lr", col.names = c("", "active vs policy"))
+```
+
+Two of these numbers point in opposite directions, and reconciling them is the
+whole content of a benchmark comparison. The beta is
+`r sprintf("%.2f", beta_b)` and the annualized alpha of @jensen1968 is
+`r sprintf("%+.1f%%", 100 * 12 * alpha_b)`, so relative to what a quarter of
+the policy portfolio would have earned, the manager added return; the appraisal
+ratio of @treynor1973 is `r sprintf("%.2f", appr)` and positive. The
+information ratio is negative because it asks a different question, whether the
+portfolio earned more than the policy *at the policy's weights*, and a portfolio
+with a quarter of the benchmark's beta cannot, over a sample in which equities
+rose. Which of the two answers is the right one depends on what the mandate
+promised, and neither statistic knows.
+
+```{r}
+#| label: sharpe-both
+both <- table.AnnualizedReturns(cbind(Rp, Rb), Rf = rf_oos)
+stopifnot(both[3, "active"] > both[3, "policy"])
+round(both, 3)
+```
+
+The manager's Sharpe ratio is `r sprintf("%.2f", both[3, "active"])` against
+the policy's `r sprintf("%.2f", both[3, "policy"])`. A higher Sharpe ratio and a
+negative information ratio at once is not a contradiction: it is @roll1992 read
+backwards, a portfolio that is better against cash and worse against a
+benchmark that is not itself efficient. The active share makes the size of the
+departure explicit.
+
+```{r}
+#| label: active-share
+active_share <- rowSums(abs(sweep(zoo::coredata(W_act), 2, b[colnames(W_act)]))) / 2
+round(c(mean = mean(active_share), lowest = min(active_share),
+        highest = max(active_share)), 3)
+```
+
+On average `r sprintf("%.0f%%", 100 * mean(active_share))` of the portfolio is
+somewhere other than where the policy puts it, which by the scale of
+@cremers2009 is a portfolio that shares a universe with its benchmark and little
+else.
+
+### Active weights in PortfolioAnalytics
+
+`weight_sum_constraint()` accepts `type = "active"`, and on the installed build
+that is all it does with the word: the branch sets `min_sum` and `max_sum` to
+zero, identically to `dollar_neutral`, and no other function in the package
+reads the type or knows what a benchmark is. The decision vector is then
+$\boldsymbol{x}$ of @eq-24-active, the return objective is $\alpha$ of
+@eq-24-te, and the variance objective is the squared tracking error, provided
+the box constraint is shifted by hand so that $\boldsymbol{b} + \boldsymbol{x}$
+stays long-only.
+
+```{r}
+#| label: active-sum
+spec_active <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "active") |>                      # min_sum = max_sum = 0
+  add.constraint(type = "box", min = -b, max = 1 - b) |>  # so that b + x >= 0
+  add.objective(type = "risk", name = "var")              # x' Sigma x: squared TE
+
+unlist(spec_active$constraints[[1]][c("type", "min_sum", "max_sum")])
+```
+
+With a `return` constraint on top, the package minimizes tracking error at a
+target active return, which is @eq-24-roll in its dual form: for each target
+the least tracking error that reaches it, traced over targets.
+
+```{r}
+#| label: roll-dual
+mu <- colMeans(Re); S <- stats::cov(Re)
+p_vol <- function(w) sqrt(as.numeric(t(w) %*% S %*% w)) * sqrt(12)
+p_ret <- function(w) sum(mu * w) * 12
+p_te  <- function(w) p_vol(w - b)         # tracking error against b, annualized
+p_ar  <- function(w) p_ret(w - b)         # expected active return, annualized
+
+min_te_at <- function(target) {           # target: active return per year
+  sp <- spec_active |>
+    add.constraint(type = "return", return_target = target / 12)
+  x  <- extractWeights(optimize.portfolio(Re, sp, optimize_method = "ROI"))
+  if (is.null(x) || anyNA(x)) stop("no solution at an active return of ", target)
+  b + x[colnames(Re)]
+}
+
+dual <- lapply(seq(0.005, 0.04, by = 0.005), function(tg) {
+  w <- min_te_at(tg)
+  tibble::tibble(target = tg, active_return = p_ar(w), tracking_error = p_te(w),
+                 sum_active = sum(w - b), min_weight = min(w))
+}) |> dplyr::bind_rows()
+stopifnot(all(abs(dual$active_return - dual$target) < 1e-6),
+          all(abs(dual$sum_active) < 1e-8), all(abs(dual$min_weight) < 1e-6))
+dual |> dplyr::mutate(dplyr::across(-target, ~ round(.x, 4)))
+```
+
+Every row hits its target, the active weights sum to zero to machine precision,
+and the smallest total weight is zero in every row: the long-only bound binds
+from the first target onward, which @eq-24-roll-solution will explain.
+
+::: {.callout-warning}
+## What the package cannot express
+
+Three things a real mandate contains are missing, and each has to be built. A
+tracking-error *budget* is a quadratic constraint, and `ROI` accepts one
+quadratic term only, in the objective; the dual trace above reaches a budget
+only by searching over targets. Jorion's total-risk bound of @eq-24-jorion is a
+second quadratic constraint, which no backend of `optimize.portfolio()` takes.
+And there is no information-ratio objective, because @eq-24-ir is a ratio; the
+transformation that turns a ratio into a quadratic program exists, but the
+package applies it only to the Sharpe ratio, through `maxSR`, and
+@sec-09-mean-variance-implementation gives the reasons this book does not rely on
+that. A fourth gap is quieter: the package does not know $\boldsymbol{b}$, so
+the box was shifted by hand above, and a group constraint of
+@sec-12-constraints-theory would have to be shifted the same way.
+:::
+
+### The tracking-error budget, built
+
+@eq-24-roll with a long-only constraint, and optionally @eq-24-jorion, is a few
+lines in `CVXR`. The status is asserted because a solver that returns something
+other than `optimal` still returns numbers.
+
+```{r}
+#| label: te-tilt
+te_tilt <- function(tau, sigma_max = NULL) {
+  w <- CVXR::Variable(length(mu))
+  x <- w - b
+  cons <- list(sum(w) == 1, w >= 0,
+               CVXR::quad_form(x, S) <= (tau / sqrt(12))^2)      # the budget
+  if (!is.null(sigma_max))
+    cons <- c(cons, CVXR::quad_form(w, S) <= (sigma_max / sqrt(12))^2)  # Jorion
+  problem <- CVXR::Problem(CVXR::Maximize(t(mu) %*% x), cons)
+  CVXR::psolve(problem, solver = "CLARABEL")
+  stopifnot(CVXR::status(problem) == "optimal")
+  setNames(as.numeric(CVXR::value(w)), colnames(Re))
+}
+
+taus <- c(0.005, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.10, 0.12)
+te_frontier <- lapply(taus, function(tau) {
+  w <- te_tilt(tau)
+  tibble::tibble(tau = tau, tracking_error = p_te(w), active_return = p_ar(w),
+                 IR = p_ar(w) / p_te(w), vol = p_vol(w), ret = p_ret(w),
+                 held = sum(w > 1e-4), active_share = sum(abs(w - b)) / 2)
+}) |> dplyr::bind_rows()
+```
+
+The primal and the dual are the same problem, so the package's answer and the
+solver's must agree where they meet: at the tracking error the dual reached for
+a given target, the primal must reach that target and no more.
+
+```{r}
+#| label: primal-dual-check
+i <- 3L
+w_primal <- te_tilt(dual$tracking_error[i])
+stopifnot(abs(p_ar(w_primal) - dual$target[i]) < 1e-4)
+round(c(dual_target = dual$target[i], primal_active_return = p_ar(w_primal)), 5)
+```
+
+The closed form of @eq-24-roll-solution can be checked the same way, and the
+check says how far it reaches.
+
+```{r}
+#| label: closed-form
+iota <- rep(1, length(mu)); Sinv <- solve(S)
+A <- as.numeric(t(iota) %*% Sinv %*% iota)
+B <- as.numeric(t(iota) %*% Sinv %*% mu)
+C <- as.numeric(t(mu)   %*% Sinv %*% mu)
+
+d <- as.numeric(Sinv %*% (mu - (B / A) * iota))       # Roll's direction
+stopifnot(abs(sum(d)) < 1e-8)                          # it is dollar neutral
+d_unit <- d / sqrt(as.numeric(t(d) %*% S %*% d))       # one unit of monthly TE
+ir_max <- sqrt(C - B^2 / A) * sqrt(12)                 # eq-24-maxir, annualized
+
+# the ray b + tau * d_unit stays long-only until the first weight reaches zero
+tau_bind    <- min((b / -d_unit)[d_unit < 0]) * sqrt(12)
+binds_first <- names(b)[which.min(ifelse(d_unit < 0, b / -d_unit, Inf))]
+
+tau_chk  <- 0.9 * tau_bind
+w_closed <- b + (tau_chk / sqrt(12)) * d_unit
+w_solver <- te_tilt(tau_chk)
+stopifnot(min(w_closed) >= 0, abs(p_ar(w_closed) - p_ar(w_solver)) < 1e-6)
+
+round(c(IR_max = ir_max, IR_closed_form = p_ar(w_closed) / p_te(w_closed),
+        IR_solver = p_ar(w_solver) / p_te(w_solver),
+        binding_tau = tau_bind), 4)
+```
+
+Below a tracking error of `r sprintf("%.2f%%", 100 * tau_bind)` a year the
+closed form and the solver agree to six decimals and both deliver the maximum
+information ratio of @eq-24-maxir, `r sprintf("%.3f", ir_max)`. At that
+tracking error `r binds_first` reaches zero, because the direction
+$\boldsymbol{\Sigma}^{-1}(\boldsymbol{\mu} - \lambda\boldsymbol{\iota})$ shorts
+it hard and the policy holds only `r sprintf("%.0f%%", 100 * b[[binds_first]])`
+of it. From there on the long-only constraint bends the frontier, and the
+information ratio falls with every increase in the budget.
+
+```{r}
+#| label: tbl-24-te-frontier
+#| tbl-cap: "The tracking-error frontier under a long-only constraint, traced over the budget. The gap is the return the mean-variance frontier of chapter 9 offers at the same total volatility, less the return this portfolio earns: Roll's inefficiency, measured."
+#| echo: false
+ef <- create.EfficientFrontier(
+  Re,
+  portfolio.spec(assets = colnames(Re)) |>
+    add.constraint(type = "full_investment") |>
+    add.constraint(type = "long_only") |>
+    add.objective(type = "return", name = "mean") |>
+    add.objective(type = "risk",   name = "StdDev"),
+  type = "mean-StdDev", n.portfolios = 100)
+fr <- as.data.frame(unclass(ef$frontier))
+frontier_ret_at <- function(v) stats::approx(fr$StdDev * sqrt(12), fr$mean * 12, xout = v)$y
+
+te_frontier <- te_frontier |>
+  dplyr::mutate(gap = frontier_ret_at(vol) - ret)
+stopifnot(all(diff(te_frontier$IR) < 0),        # the ratio falls with every budget
+          all(diff(te_frontier$held) <= 0))     # and the holdings only shrink
+
+te_frontier |>
+  dplyr::transmute(tau = sprintf("%.1f%%", 100 * tau),
+                   active_return = sprintf("%.2f%%", 100 * active_return),
+                   IR = sprintf("%.3f", IR),
+                   vol = sprintf("%.1f%%", 100 * vol),
+                   ret = sprintf("%.2f%%", 100 * ret),
+                   gap = sprintf("%.2f%%", 100 * gap),
+                   held = held,
+                   active_share = sprintf("%.0f%%", 100 * active_share)) |>
+  kable(align = "rrrrrrrr",
+        col.names = c("budget", "active return", "IR", "volatility",
+                      "excess return", "gap to frontier", "held", "active share"))
+```
+
+Read @tbl-24-te-frontier down. The information ratio starts at
+`r sprintf("%.3f", te_frontier$IR[1])` at a half-percent budget and ends at
+`r sprintf("%.3f", te_frontier$IR[nrow(te_frontier)])` at twelve, which is the
+transfer coefficient of @eq-24-law falling as the constraint bites; the number
+of classes held falls from `r te_frontier$held[1]` to
+`r te_frontier$held[nrow(te_frontier)]`, and the largest budget is the corner
+solution of @fig-09-ef-weights reached from the other side. The gap column is
+Roll's result in numbers: at a four percent budget the tracking-error frontier
+sits `r sprintf("%.2f", 100 * te_frontier$gap[te_frontier$tau == 0.04])`
+percentage points of return below the mean-variance frontier at the same
+volatility, and the portfolio is dominated in the sense of
+@sec-09-mean-variance-theory by one the manager was not allowed to hold.
+
+### Jorion's repair, and the anchored allocation
+
+Add @eq-24-jorion with the bound set to the benchmark's own volatility, so
+that the manager may spend a four percent budget only in ways that do not raise
+total risk.
+
+```{r}
+#| label: jorion
+tau_budget <- 0.04
+w_roll   <- te_tilt(tau_budget)
+w_jorion <- te_tilt(tau_budget, sigma_max = p_vol(b))
+```
+
+```{r}
+#| label: tbl-24-jorion
+#| tbl-cap: "The same four percent budget spent two ways. The Sharpe ratio is the excess return over the volatility; the frontier column is the mean-variance frontier's return at that volatility."
+#| echo: false
+describe <- function(label, w) tibble::tibble(
+  portfolio = label, vol = p_vol(w), ret = p_ret(w), te = p_te(w), ar = p_ar(w),
+  IR = if (p_te(w) > 1e-8) p_ar(w) / p_te(w) else NA_real_,
+  sharpe = p_ret(w) / p_vol(w), frontier = frontier_ret_at(p_vol(w)),
+  held = sum(w > 1e-4))
+anchored <- dplyr::bind_rows(describe("policy benchmark", b),
+                             describe("Roll: budget only", w_roll),
+                             describe("Jorion: budget and total risk", w_jorion))
+stopifnot(anchored$frontier[1] > anchored$ret[1],         # the policy is not efficient
+          anchored$sharpe[2] > anchored$sharpe[1],
+          anchored$sharpe[3] > anchored$sharpe[2], anchored$IR[3] < anchored$IR[2])
+anchored |>
+  dplyr::mutate(dplyr::across(c(vol, ret, te, ar, frontier), ~ sprintf("%.2f%%", 100 * .x)),
+                dplyr::across(c(IR, sharpe), ~ ifelse(is.na(.x), "", sprintf("%.3f", .x)))) |>
+  kable(align = "lrrrrrrrr",
+        col.names = c("", "volatility", "excess return", "TE", "active return",
+                      "IR", "Sharpe", "frontier", "held"))
+```
+
+The benchmark has a Sharpe ratio of
+`r sprintf("%.3f", anchored$sharpe[1])` and sits
+`r sprintf("%.2f", 100 * (anchored$frontier[1] - anchored$ret[1]))` percentage
+points below the frontier at its own volatility, so it is not efficient and
+Roll's warning applies. Spending the budget on return alone raises the Sharpe
+ratio to `r sprintf("%.3f", anchored$sharpe[2])` and the volatility from
+`r sprintf("%.1f%%", 100 * anchored$vol[1])` to
+`r sprintf("%.1f%%", 100 * anchored$vol[2])`. Spending it under Jorion's bound
+holds volatility at the benchmark's, earns
+`r sprintf("%.2f", 100 * anchored$ar[3])` percentage points of active return
+instead of `r sprintf("%.2f", 100 * anchored$ar[2])`, and lands
+`r sprintf("%.2f", 100 * (anchored$frontier[3] - anchored$ret[3]))` percentage
+points from the frontier: a lower information ratio, a higher Sharpe ratio, and
+the portfolio an investor who owns the whole balance sheet would prefer.
+
+```{r}
+#| label: fig-24-te-frontier
+#| fig-cap: "One picture, one data frame. The upper curve is the long-only mean-variance frontier of chapter 9; the lower curve is the tracking-error frontier, which starts at the policy benchmark and bends toward the same corner. The two diamonds spend the same four percent budget, with and without Jorion's bound on total risk; the dashed line is that bound."
+#| echo: false
+#| fig-asp: 0.66
+named <- function(label, w, kind) {
+  tibble::tibble(label = label, vol = p_vol(w), ret = p_ret(w), kind = kind)
+}
+pts <- dplyr::bind_rows(
+  tibble::tibble(label = NA_character_, vol = fr$StdDev * sqrt(12), ret = fr$mean * 12,
+                 kind = "mean-variance frontier"),
+  named("policy", b, "tracking-error frontier"),
+  te_frontier |> dplyr::transmute(label = sprintf("%.0f%%", 100 * tau), vol, ret,
+                                  kind = "tracking-error frontier"),
+  named("policy benchmark", b, "anchor"),
+  named("budget only", w_roll, "solution"),
+  named("budget and total risk", w_jorion, "solution")
+)
+ggplot2::ggplot() +
+  ggplot2::geom_vline(xintercept = p_vol(b), linetype = "22", linewidth = 0.4,
+                      colour = tidyaa_colors[["ink_soft"]]) +
+  ggplot2::geom_line(data = dplyr::filter(pts, kind == "mean-variance frontier"),
+                     ggplot2::aes(vol, ret), colour = tidyaa_colors[["ink"]],
+                     linewidth = 0.8) +
+  ggplot2::geom_line(data = dplyr::filter(pts, kind == "tracking-error frontier"),
+                     ggplot2::aes(vol, ret), colour = tidyaa_colors[["blue"]],
+                     linewidth = 0.8) +
+  ggplot2::geom_point(data = dplyr::filter(pts, kind == "tracking-error frontier"),
+                      ggplot2::aes(vol, ret), colour = tidyaa_colors[["blue"]],
+                      size = 1.4) +
+  ggplot2::geom_point(data = dplyr::filter(pts, kind == "solution"),
+                      ggplot2::aes(vol, ret), shape = 23, size = 2.8,
+                      fill = tidyaa_colors[["caution"]], colour = tidyaa_colors[["ink"]]) +
+  ggplot2::geom_point(data = dplyr::filter(pts, kind == "anchor"),
+                      ggplot2::aes(vol, ret), shape = 21, size = 3.4,
+                      fill = tidyaa_colors[["blue_lit"]], colour = tidyaa_colors[["ink"]]) +
+  ggplot2::geom_text(data = dplyr::filter(pts, kind %in% c("anchor", "solution")),
+                     ggplot2::aes(vol, ret, label = label), size = 2.5,
+                     hjust = -0.12, vjust = 1.5) +
+  ggplot2::scale_x_continuous(labels = scales::percent) +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  ggplot2::labs(x = "annualized volatility", y = "annualized excess return")
+```
+
+This is the anchored formulation, and it is how a strategic allocation is run
+in practice. The policy portfolio of @sec-15-hierarchical-allocation-application
+is the anchor; the budget $\tau$ is the mandate's statement of how far the
+manager may depart from it; the total-risk bound keeps the departure from
+becoming a leverage decision in disguise; and the estimates
+$\boldsymbol{\mu}, \boldsymbol{\Sigma}$ that drive the tilt carry every error
+that @sec-08-estimation-error-theory measures. Nothing in @fig-24-te-frontier
+is out of sample, which is the same warning @sec-09-mean-variance-theory issued
+about the frontier above it.
+
+## Attribution, the Benchmark Bet, and the Error Bar {#sec-24-benchmarks-and-active-risk-application}
+
+### Where the active return came from, by sleeve
+
+@eq-24-brinson needs, for each month, the weights the manager actually held in
+each sleeve, the sleeve's return at those weights, and the sleeve's return at
+the policy's weights. The segments are the four sleeves of @tbl-24-policy and
+the segment benchmarks are the equally weighted sleeves the policy holds.
+
+```{r}
+#| label: brinson
+sleeves <- sort(unique(sl))
+W_used_x <- xts::xts(W_used, order.by = zoo::index(R_oos))   # weights applied in month t
+
+brinson_month <- function(t) {
+  r <- as.numeric(R_oos[t, ]); w <- as.numeric(W_used_x[t, ]); r_b <- sum(b * r)
+  out <- vapply(sleeves, function(s) {
+    i  <- sl == s
+    bs <- sum(b[i]); ws <- sum(w[i])
+    beta_s <- sum(b[i] * r[i]) / bs                             # sleeve at policy weights
+    r_s    <- if (ws > 1e-10) sum(w[i] * r[i]) / ws else beta_s  # sleeve as held
+    c(allocation  = (ws - bs) * (beta_s - r_b),
+      selection   = bs * (r_s - beta_s),
+      interaction = (ws - bs) * (r_s - beta_s))
+  }, numeric(3))
+  t(out)
+}
+
+effects <- lapply(seq_len(nrow(R_oos)), brinson_month)
+
+# the identity of eq-24-brinson must hold every month, not on average
+stopifnot(all.equal(vapply(effects, sum, numeric(1)), as.numeric(a)))
+
+attribution <- Reduce(`+`, effects) / length(effects) * 12     # annualized average
+held_by_sleeve <- tapply(colMeans(W_used), sl, sum)[sleeves]
+```
+
+```{r}
+#| label: tbl-24-brinson
+#| tbl-cap: "The Brinson decomposition of the manager's active return, summed over the sample and annualized. Weights are the manager's average holding in each sleeve against the policy's."
+#| echo: false
+attr_tbl <- tibble::tibble(
+  sleeve = sleeves,
+  held = held_by_sleeve, policy = sleeve_policy[sleeves],
+  allocation = attribution[, "allocation"],
+  selection = attribution[, "selection"],
+  interaction = attribution[, "interaction"]) |>
+  dplyr::mutate(total = allocation + selection + interaction)
+attr_tbl |>
+  dplyr::bind_rows(tibble::tibble(sleeve = "all", held = 1, policy = 1,
+                                  allocation = sum(attr_tbl$allocation),
+                                  selection = sum(attr_tbl$selection),
+                                  interaction = sum(attr_tbl$interaction),
+                                  total = sum(attr_tbl$total))) |>
+  dplyr::mutate(dplyr::across(c(held, policy), ~ sprintf("%.0f%%", 100 * .x)),
+                dplyr::across(c(allocation, selection, interaction, total),
+                              ~ sprintf("%+.2f%%", 100 * .x))) |>
+  kable(align = "lrrrrrr",
+        col.names = c("", "held", "policy", "allocation", "selection",
+                      "interaction", "total"))
+```
+
+```{r}
+#| label: attribution-readout
+#| include: false
+worst_alloc <- attr_tbl$sleeve[which.min(attr_tbl$allocation)]
+stopifnot(abs(sum(attr_tbl$total) - mean(a) * 12) < 1e-10,
+          sum(attr_tbl$allocation) < sum(attr_tbl$total),   # allocation cost more than the total
+          sum(attr_tbl$selection) > 0,
+          all(attr_tbl$allocation[attr_tbl$sleeve %in% c("equity", "government")] < 0),
+          all(abs(attr_tbl$selection) < abs(attr_tbl$allocation)))
+```
+
+The total is the annualized mean active return of
+`r sprintf("%+.2f%%", 100 * mean(a) * 12)`, as the identity requires.
+Allocation cost `r sprintf("%.2f", 100 * abs(sum(attr_tbl$allocation)))`
+percentage points a year, more than the whole shortfall, and selection gave
+`r sprintf("%.2f", 100 * sum(attr_tbl$selection))` of them back. The
+manager held `r sprintf("%.0f%%", 100 * held_by_sleeve[["government"]])` in
+government bonds against a policy weight of
+`r sprintf("%.0f%%", 100 * sleeve_policy[["government"]])`, and
+`r sprintf("%.0f%%", 100 * held_by_sleeve[["equity"]])` in equities against
+`r sprintf("%.0f%%", 100 * sleeve_policy[["equity"]])`: in a sample in which
+equities outran the policy and bonds did not, both decisions cost, and the
+`r worst_alloc` line is the larger. Selection, what was held inside each sleeve
+at the policy's weight, is smaller than allocation in every sleeve, which is the
+result @brinson1986 report for pension funds and the one @ibbotson2000 warn
+against over-reading: it says the manager's sleeve weights explain the active
+return of this manager, not that sleeve weights explain the difference between
+managers.
+
+Two things the decomposition cannot see. The interaction term is
+`r sprintf("%+.2f%%", 100 * sum(attr_tbl$interaction))` a year and has no
+decision behind it; the usual practice of folding it into selection makes the
+selection line look like a choice that was never made. And every series here is
+in dollars unhedged, so an overweight in `JP_government` is an overweight in yen
+as well, and the decomposition books the currency return under whichever sleeve
+the position sits in; separating it requires the currency-aware form of
+@karnosky1994, and the hedged series of @sec-02-notation-and-data-simulated-market
+are what it would run on.
+
+### The benchmark is a bet
+
+The policy's equity sleeve weights five markets equally. A capitalization
+weight is the other natural choice, and the difference between the two is a
+decision the yardstick makes before the manager makes any. Both are built from
+the same five series; the capitalization weights come from the instrument-level
+market values, lagged one month so that a weight is one an investor could have
+held, exactly as the market proxy of @sec-05-factor-models-implementation was
+built.
+
+```{r}
+#| label: cap-weights
+eq  <- sim_assets$asset_id[sim_assets$asset_class == "equity"]
+Ra  <- as_xts_pm(sim_asset_returns_monthly[sim_asset_returns_monthly$asset %in% eq, ],
+                 date, asset, return)
+stopifnot(identical(zoo::index(Ra), zoo::index(R)), ncol(Ra) == length(eq))
+
+cap <- sim_marketcap_weekly[sim_marketcap_weekly$asset %in% eq, ] |>
+  tidyr::pivot_wider(names_from = asset, values_from = market_cap) |>
+  dplyr::arrange(date)
+capm <- zoo::na.locf(as.matrix(cap[, colnames(Ra)]), na.rm = FALSE)  # by name, carried forward
+stopifnot(identical(colnames(capm), colnames(Ra)))
+
+# the weight for month t is the last capitalization observed before month t began
+cutoff <- c(zoo::index(R)[1] - 40, zoo::index(R)[-nrow(R)])
+Wc <- capm[findInterval(cutoff, cap$date), , drop = FALSE]
+Wc[is.na(Wc)] <- 0
+Wc <- Wc / rowSums(Wc)
+
+region <- sim_assets$region[match(colnames(Ra), sim_assets$asset_id)]
+stopifnot(!anyNA(region))
+share <- vapply(c("CH", "EU", "JP", "UK", "US"),
+                function(rg) rowSums(Wc[, region == rg, drop = FALSE]), numeric(nrow(Wc)))
+stopifnot(all(abs(rowSums(share) - 1) < 1e-10))
+round(colMeans(share), 3)
+```
+
+```{r}
+#| label: two-benchmarks
+eq_cls <- paste0(colnames(share), "_equity")
+stopifnot(all(eq_cls %in% colnames(R)))
+Req  <- zoo::coredata(R[, eq_cls])
+r_cw <- rowSums(share * Req)       # the same five series, capitalization weighted
+r_ew <- rowMeans(Req)              # and equally weighted: the policy's equity sleeve
+
+bench <- tibble::tibble(
+  benchmark = c("equal weight", "capitalization weight"),
+  return = c(mean(r_ew), mean(r_cw)) * 12,
+  vol    = c(stats::sd(r_ew), stats::sd(r_cw)) * sqrt(12),
+  sharpe = c(mean(r_ew - rf) / stats::sd(r_ew - rf),
+             mean(r_cw - rf) / stats::sd(r_cw - rf)) * sqrt(12))
+te_ew_cw <- stats::sd(r_ew - r_cw) * sqrt(12)
+ir_ew_cw <- mean(r_ew - r_cw) / stats::sd(r_ew - r_cw) * sqrt(12)
+size_bet <- 1 / ncol(share) - colMeans(share)     # equal weight's overweight, by market
+stopifnot(bench$return[2] > bench$return[1], bench$sharpe[2] > bench$sharpe[1],
+          size_bet[["US"]] < 0, all(size_bet[names(size_bet) != "US"] > 0))
+```
+
+```{r}
+#| label: tbl-24-two-benchmarks
+#| tbl-cap: "Two yardsticks built from the same five equity series. The last column is the equally weighted sleeve's average overweight relative to capitalization, by market."
+#| echo: false
+dplyr::bind_rows(
+  bench |> dplyr::mutate(dplyr::across(c(return, vol), ~ sprintf("%.2f%%", 100 * .x)),
+                         sharpe = sprintf("%.3f", sharpe)),
+  tibble::tibble(benchmark = "tracking error between them",
+                 return = sprintf("%.2f%%", 100 * te_ew_cw), vol = "", sharpe = "")
+) |>
+  kable(align = "lrrr", col.names = c("", "return", "volatility", "Sharpe"))
+```
+
+```{r}
+#| label: size-bet
+round(size_bet, 3)
+```
+
+The two benchmarks have a tracking error of
+`r sprintf("%.1f%%", 100 * te_ew_cw)` a year against each other, which is
+larger than the budget most mandates allow the manager, and over this sample
+the capitalization-weighted one earns more,
+`r sprintf("%.2f%%", 100 * bench$return[2])` against
+`r sprintf("%.2f%%", 100 * bench$return[1])`, at a higher Sharpe ratio,
+`r sprintf("%.3f", bench$sharpe[2])` against
+`r sprintf("%.3f", bench$sharpe[1])`. The equal-weighted sleeve is
+`r sprintf("%.0f", 100 * abs(size_bet[["US"]]))` percentage points underweight the
+United States and overweight every smaller market by between
+`r sprintf("%.1f", 100 * min(size_bet[names(size_bet) != "US"]))` and
+`r sprintf("%.1f", 100 * max(size_bet[names(size_bet) != "US"]))` points, so
+choosing it embeds a permanent bet against the largest market in the yardstick
+itself, and a manager measured against it is being asked to beat that bet before
+being asked to beat the market. Whether the bet is a good one is the subject of
+@sec-21-equity-sleeve-theory; that it is a bet is the point here.
+
+### The error bar
+
+The proxy just rebuilt is the one @sec-05-factor-models-implementation used,
+and it is `r sprintf("%.0f%%", 100 * mean(share[, "US"]))` United States on
+average and `r sprintf("%.0f%%", 100 * share[nrow(share), "US"])` at the end,
+so a beta against it is largely a beta on one market [@roll1977]. That beta
+moves.
+
+```{r}
+#| label: beta-instability
+MKT   <- rowSums(Wc * zoo::coredata(Ra))          # the proxy of chapter 5
+mkt_e <- MKT - rf
+
+roll_beta <- function(y, x) {
+  zoo::rollapply(cbind(y, x), win,
+                 function(z) stats::cov(z[, 1], z[, 2]) / stats::var(z[, 2]),
+                 by.column = FALSE, align = "right")
+}
+travel_jp <- diff(range(roll_beta(as.numeric(R[, "JP_equity"]) - rf, mkt_e)))
+full_beta <- vapply(colnames(R), function(s)
+  stats::cov(as.numeric(R[, s]) - rf, mkt_e) / stats::var(mkt_e), numeric(1))
+flips <- vapply(colnames(R), function(s)
+  mean(sign(roll_beta(as.numeric(R[, s]) - rf, mkt_e)) != sign(full_beta[[s]])), numeric(1))
+
+# and the beta that the appraisal ratio above divided by
+beta_pb <- roll_beta(as.numeric(Rp) - as.numeric(rf_oos), as.numeric(Rb) - as.numeric(rf_oos))
+round(c(JP_equity_travel = travel_jp,
+        JP_government_sign_flips = flips[["JP_government"]],
+        US_credit_sign_flips = flips[["US_credit"]],
+        manager_beta_lowest = min(beta_pb), manager_beta_highest = max(beta_pb)), 3)
+```
+
+The sixty-month beta of `JP_equity` travels `r sprintf("%.2f", travel_jp)`
+across the sample, `JP_government` disagrees with the sign of its full-sample
+beta in `r sprintf("%.0f%%", 100 * flips[["JP_government"]])` of windows and
+`US_credit` in `r sprintf("%.0f%%", 100 * flips[["US_credit"]])`, which is
+@blume1971's regularity as @sec-05-factor-models-application found it. The
+manager's own beta to the policy runs from `r sprintf("%.2f", min(beta_pb))` to
+`r sprintf("%.2f", max(beta_pb))` over the same windows, so the appraisal ratio
+of `r sprintf("%.2f", appr)` reported above divides by a number that is not
+constant, and a version computed on any five-year stretch would say something
+different. The information ratio needs no beta, and its error bar is @eq-24-se.
+
+```{r}
+#| label: error-bar
+Tn   <- nrow(a)
+ir_m <- mean(a) / stats::sd(a)                  # per month
+se_m <- sqrt((1 + ir_m^2 / 2) / Tn)             # eq-24-se
+ci   <- (ir_m + c(-1.96, 1.96) * se_m) * sqrt(12)
+stopifnot(ir_m < 0, ci[1] < 0, ci[2] > 0)         # negative, and the interval holds zero
+round(c(months = Tn, IR = ir_m * sqrt(12), se = se_m * sqrt(12),
+        lower = ci[1], upper = ci[2], t = ir_m / se_m), 3)
+```
+
+Over `r Tn` months the manager's information ratio is
+`r sprintf("%.2f", ir_m * sqrt(12))` with a standard error of
+`r sprintf("%.2f", se_m * sqrt(12))`, and the 95 percent interval runs from
+`r sprintf("%.2f", ci[1])` to `r sprintf("%+.2f", ci[2])`. The interval
+contains zero, `r if (ci[2] < se_m * sqrt(12)) "narrowly" else "with room to spare"`,
+and it was computed under an independence assumption this market does not meet,
+so the true interval is wider. The honest sentence is that after `r Tn`
+months of data the evidence that this manager subtracted skill is
+`r if (abs(ir_m / se_m) < 1.96) "not" else ""` strong enough to state at the
+conventional level, and the evidence that it added any does not exist. That is
+not a defect of the sample. It is what @eq-24-se says about a ratio of this
+size at this length, it is what @sharpe1991 says the average manager should
+expect, and it is why the register of @sec-25-backtesting-application prints an
+interval beside every Sharpe ratio rather than a ranking alone. The test for a
+difference between two ratios, rather than for each one separately, is
+@jobson1981 with the correction of @memmel2003, and it widens nothing here
+because the two portfolios share most of their variance.
+
+## Key Takeaways {.unnumbered}
+
+- Active weights sum to zero, so every active portfolio is long-short whatever
+  the mandate says. Tracking error is the volatility of the active return, the
+  information ratio is @eq-24-ir, and @eq-24-law says how much skill per
+  decision a given ratio requires: a sixteen-class allocator needs an
+  information coefficient of `r sprintf("%.3f", 0.5 / sqrt(16))` for an
+  information ratio of one half [@grinold1989; @clarke2002].
+- A tracking-error budget alone produces mean-variance-inefficient portfolios,
+  because the tilt of @eq-24-roll-solution does not depend on the benchmark
+  [@roll1992]; a bound on total risk repairs it [@jorion2003], and at a four
+  percent budget the repaired portfolio lands within
+  `r sprintf("%.2f", 100 * (anchored$frontier[3] - anchored$ret[3]))`
+  percentage points of the frontier at the benchmark's volatility.
+- `PortfolioAnalytics` has an `active` weight-sum type, which sets the sum to
+  zero and nothing more, and a return constraint that gives Roll's frontier in
+  dual form. A tracking-error budget, a second quadratic constraint and an
+  information-ratio objective are not in the package; each is a few lines of
+  `CVXR`.
+- `InformationRatio()` divides a difference of compounded returns by an
+  arithmetic volatility; `geometric = FALSE` gives @eq-24-ir. A higher Sharpe
+  ratio and a negative information ratio can describe the same portfolio,
+  because the two statistics compare it with different things.
+- The benchmark is a decision: equal and capitalization weighting of the same
+  five equity markets differ by a tracking error of
+  `r sprintf("%.1f%%", 100 * te_ew_cw)` a year and embed a
+  `r sprintf("%.0f", 100 * abs(size_bet[["US"]]))`-point bet against the
+  largest market in the yardstick [@cremers2009].
+- An information ratio of one half needs about
+  `r sprintf("%.0f", months_needed(0.5) / 12)` years of monthly data before it
+  is two standard errors from zero [@lo2002; @goodwin1998]. After
+  `r Tn` months this manager's interval still contains zero.
+
+## Exercises {.unnumbered}
+
+1. Replace the policy of @tbl-24-policy with the equally weighted portfolio
+   over all sixteen classes and recompute the tracking error, the information
+   ratio and @tbl-24-brinson for the same manager. Which sleeve's allocation
+   effect moves the most, and why does the whole of the change land in the
+   allocation line?
+2. Trace @eq-24-jorion with the total-risk bound at 1.1 times the benchmark's
+   volatility for budgets of two, four and six percent. Report where each
+   portfolio lands relative to the mean-variance frontier and say at which
+   budget the total-risk bound stops binding.
+3. Compute the information ratio of the equally weighted portfolio against the
+   policy over the same `r Tn` months, with its interval by @eq-24-se. Is it
+   distinguishable from zero, and is it distinguishable from the manager's?
+4. Rebuild the policy with a capitalization-weighted equity sleeve, using the
+   monthly shares of the `cap-weights` chunk, and measure the same manager
+   against it. Does the manager's information ratio improve or worsen, and what
+   does the answer say about who bears the size bet of
+   @tbl-24-two-benchmarks?

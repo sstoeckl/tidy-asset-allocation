@@ -1,0 +1,1081 @@
+---
+title: "Decision-Aware Forecasting"
+metadata:
+  pagetitle: "Decision-Aware Forecasting"
+  description-meta: "Why a return forecast trained on mean squared error is trained on the wrong loss, and three corrections in R: shrinking the mean in risk units, acting on fewer forecast dimensions, and tuning on the certainty equivalent."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+Should a return forecaster be trained on mean squared error at all? The
+investor who uses the forecast does not pay for its error in squared
+percentage points but in the units of the decision it feeds, and
+@stoeckl2026means show that for a mean-variance investor those units are
+known exactly: the certainty equivalent lost to a forecast error is the error
+measured in risk units, so the forecast can be corrected in those units after
+the fact, with an intensity that follows from the number of assets and the
+length of the sample alone. The general form of the question is the
+operations-research one, where @elmachtoub2022 propose training a predictor
+on the regret of the decision it induces rather than on its own accuracy;
+the finance case is the one in which that regret has a closed form.
+
+This chapter sits on neither side of the horizon axis of
+@sec-03-return-risk-and-the-investor-theory: it is about estimation, and the
+same corrections apply to a long-run mean and to a conditional one. We first
+derive the mismatch between the statistical loss and the decision loss and
+three answers to it, then implement each on the sixteen class series in
+excess of the bill, scored out of sample from the first month of model year
+11, and finally ask which of the three buys most on this market and where
+each fails.
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+stopifnot(ncol(Re) == 16L, !anyNA(Re))
+N <- ncol(Re); Tn <- nrow(Re); dates <- zoo::index(R)
+rf_by_month <- setNames(rf, as.character(dates))
+mu <- colMeans(Re); S <- stats::cov(Re)
+gamma <- 5
+```
+
+## Two Losses for One Forecast {#sec-27-decision-aware-forecasting-theory}
+
+### The statistical loss and the decision loss
+
+Let $\boldsymbol{\mu}$ be the vector of expected excess returns on $N$
+assets, $\boldsymbol{\Sigma}$ their covariance matrix, and
+$\hat{\boldsymbol{\mu}}$ a forecast of $\boldsymbol{\mu}$ from any source, a
+sample mean or the predictive regression of
+@sec-16-signals-and-forecasts-theory. A forecaster is trained and judged on
+the statistical loss
+
+$$
+L_{\text{stat}}(\hat{\boldsymbol{\mu}})
+= (\hat{\boldsymbol{\mu}} - \boldsymbol{\mu})'(\hat{\boldsymbol{\mu}} - \boldsymbol{\mu}),
+$$ {#eq-27-mse}
+
+the squared error summed over assets. The investor of
+@sec-03-return-risk-and-the-investor-theory with risk aversion $\gamma$
+maximizes the certainty equivalent
+$CE(\boldsymbol{w}) = \boldsymbol{w}'\boldsymbol{\mu} - \tfrac{\gamma}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$,
+attains $CE^* = \boldsymbol{\mu}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}/(2\gamma)$
+at $\boldsymbol{w}^* = \boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}/\gamma$, and
+holds the plug-in position
+$\hat{\boldsymbol{w}} = \boldsymbol{\Sigma}^{-1}\hat{\boldsymbol{\mu}}/\gamma$
+when handed the forecast. Expanding
+$CE(\hat{\boldsymbol{w}}) = \hat{\boldsymbol{\mu}}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}/\gamma - \hat{\boldsymbol{\mu}}'\boldsymbol{\Sigma}^{-1}\hat{\boldsymbol{\mu}}/(2\gamma)$
+and subtracting it from $CE^*$ leaves a perfect square:
+
+$$
+CE^* - CE(\hat{\boldsymbol{w}})
+= \frac{1}{2\gamma}\,
+  (\hat{\boldsymbol{\mu}} - \boldsymbol{\mu})'\boldsymbol{\Sigma}^{-1}(\hat{\boldsymbol{\mu}} - \boldsymbol{\mu})
+= \frac{\text{RAFE}(\hat{\boldsymbol{\mu}})^2}{2\gamma}.
+$$ {#eq-27-decision}
+
+The quadratic form is the squared risk-adjusted forecast error of
+@salcher2026, and @sec-26-forecast-error-cost-theory derives it and the
+bound it places on the Sharpe-ratio gap; we take it from there. In the
+language of @elmachtoub2022, @eq-27-decision is the regret of the
+mean-variance decision, and their proposal to train on regret instead of on
+accuracy is, for this decision, the proposal to train on @eq-27-decision
+instead of on @eq-27-mse.
+
+The two losses are quadratic forms in the same error under two metrics, the
+identity and $\boldsymbol{\Sigma}^{-1}$, and they rank forecasts
+differently. In the eigenbasis of $\boldsymbol{\Sigma}$, with eigenvalues
+$\lambda_1 \geq \cdots \geq \lambda_N$ and eigenvectors $\boldsymbol{u}_j$, the
+error $\boldsymbol{e} = \hat{\boldsymbol{\mu}} - \boldsymbol{\mu}$ has
+$L_{\text{stat}} = \sum_j (\boldsymbol{u}_j'\boldsymbol{e})^2$ while
+$2\gamma$ times the decision loss is
+$\sum_j (\boldsymbol{u}_j'\boldsymbol{e})^2/\lambda_j$: the same squared
+error costs $\lambda_1/\lambda_N$ times more in the least volatile direction
+of the universe than in the most volatile one, and that ratio is the
+condition number @sec-07-covariance-matrix-theory measured.
+
+```{r}
+#| label: metric
+ev <- eigen(S, symmetric = TRUE)
+unit_cost <- function(u) as.numeric(t(u) %*% solve(S, u))   # 2 gamma times the decision loss of a unit error
+cost_top <- unit_cost(ev$vectors[, 1]); cost_bottom <- unit_cost(ev$vectors[, N])
+c(top = cost_top, bottom = cost_bottom, log10_ratio = log10(cost_bottom / cost_top))
+```
+
+On the sixteen classes a unit error along the first eigenvector costs
+`r sprintf("%.0f", cost_top)` in the units of @eq-27-decision and the same
+error along the last costs `r sprintf("%.2g", cost_bottom)`, a ratio of
+$10^{`r sprintf("%.1f", log10(cost_bottom / cost_top))`}$. A forecaster that
+minimizes @eq-27-mse spends its accuracy where the variance is large; the
+optimizer needs it where the variance is small, because
+$\boldsymbol{\Sigma}^{-1}$ places its largest weights there, the mechanism of
+@best1991 in @sec-08-estimation-error-theory. That a forecaster should be
+trained on the loss its user bears is an old point [@granger1969;
+@elliott2008]; the mean-variance case adds that the loss is known in closed
+form. A forecaster trained on
+@eq-27-mse can be reconciled with a decision scored by @eq-27-decision in
+three places: after the forecast, by correcting its output in risk units and
+leaving the model alone, the post-optimal moment correction of
+@stoeckl2026means; between forecast and decision, by acting on fewer of its
+dimensions, which @salcher2026less price; and inside the training loop, by
+replacing the loss with the certainty equivalent of the portfolio the
+forecast implies, the parametric policy of
+@sec-18-parametric-policies-theory taken one step further.
+
+### Correcting the mean in risk units
+
+Take the setting of @kan2007: excess returns independent
+$\mathcal{N}(\boldsymbol{\mu}, \boldsymbol{\Sigma})$ over $T \geq N + 1$
+months, $\hat{\boldsymbol{\mu}}$ the sample mean and
+$\hat{\boldsymbol{\Sigma}}$ the unbiased sample covariance matrix, so that
+$(T-1)\hat{\boldsymbol{\Sigma}}$ is Wishart and independent of
+$\hat{\boldsymbol{\mu}}$. In risk units, with
+$\boldsymbol{m} = \boldsymbol{\Sigma}^{-1/2}\boldsymbol{\mu}$ and
+$\hat{\boldsymbol{m}} = \boldsymbol{\Sigma}^{-1/2}\hat{\boldsymbol{\mu}}$, the
+forecast is $\hat{\boldsymbol{m}} \sim \mathcal{N}(\boldsymbol{m}, \boldsymbol{I}/T)$
+and its risk, the expected squared RAFE, is the trace of that covariance:
+
+$$
+\mathbb{E}\,\text{RAFE}(\hat{\boldsymbol{\mu}})^2 = \frac{N}{T}.
+$$ {#eq-27-price}
+
+Each of the $N$ dimensions costs $1/T$, the variance of an estimated Sharpe
+ratio, whatever signal it carries; this $N/T$ is what inflates the promised
+Sharpe ratio in @eq-08-inflation.
+
+The correction is Stein estimation in these units. Fix a target in advance
+as $\boldsymbol{P}\hat{\boldsymbol{\mu}}$ with $\boldsymbol{P}$ idempotent of
+rank $r$; the two targets used here are zero, $\boldsymbol{P} = \boldsymbol{0}$,
+and the grand mean, $\boldsymbol{P} = \boldsymbol{\iota}\boldsymbol{\iota}'/N$,
+$\boldsymbol{P}\hat{\boldsymbol{\mu}} = \bar{\mu}\boldsymbol{\iota}$ with
+$\bar{\mu}$ the average of the sixteen sample means. Whiten the forecast with
+any square root of $\hat{\boldsymbol{\Sigma}}^{-1}$, shrink its residual from
+the target by a James-Stein factor, and map back. @stoeckl2026means show that
+the square root cancels and the estimated covariance matrix enters through one
+scalar, the sample Mahalanobis length of the residual:
+
+$$
+\tilde{\boldsymbol{\mu}}_c
+= \hat{\boldsymbol{\mu}} - \frac{c}{T}\,\frac{(\boldsymbol{I} - \boldsymbol{P})\hat{\boldsymbol{\mu}}}{\hat{q}},
+\qquad
+\hat{q} = \big((\boldsymbol{I} - \boldsymbol{P})\hat{\boldsymbol{\mu}}\big)'\hat{\boldsymbol{\Sigma}}^{-1}\big((\boldsymbol{I} - \boldsymbol{P})\hat{\boldsymbol{\mu}}\big).
+$$ {#eq-27-corrector}
+
+For the grand mean this reads
+$\tilde{\boldsymbol{\mu}}_c = \bar{\mu}\boldsymbol{\iota} + \big(1 - c/(T\hat{q})\big)(\hat{\boldsymbol{\mu}} - \bar{\mu}\boldsymbol{\iota})$:
+the deviation of each sample mean from the average is scaled down by a factor
+that depends on how long that deviation is in estimated risk units. The
+risk follows from two facts. First, with $q$ the same quadratic form under
+the true $\boldsymbol{\Sigma}$, the ratio $\psi = q/\hat{q}$ satisfies
+$(T-1)\psi \sim \chi^2_{T-N}$ and is independent of $\hat{\boldsymbol{\mu}}$,
+a property of the Wishart distribution, so the feasible corrector is the
+oracle corrector with its constant randomly rescaled to $c\psi$. Second,
+conditional on $\psi$, the identity of @stein1981 turns the cross term between
+the error and the shrinkage direction into the divergence of that direction,
+which for an idempotent
+$\boldsymbol{R} = \boldsymbol{\Sigma}^{-1/2}(\boldsymbol{I} - \boldsymbol{P})\boldsymbol{\Sigma}^{1/2}$
+is $(\operatorname{tr}\boldsymbol{R} - 2)/\|\boldsymbol{R}\hat{\boldsymbol{m}}\|^2$
+with $\operatorname{tr}\boldsymbol{R} = N - r$. Taking the expectation over
+$\psi$ gives the exact risk,
+
+$$
+\mathbb{E}\,\text{RAFE}(\tilde{\boldsymbol{\mu}}_c)^2
+= \frac{N}{T} - \frac{\tau_P}{T^2}\Big[2c\,(N - r - 2)\,\mathbb{E}\psi - c^2\,\mathbb{E}\psi^2\Big],
+\quad
+\mathbb{E}\psi = \frac{T-N}{T-1},\;
+\mathbb{E}\psi^2 = \frac{(T-N)(T-N+2)}{(T-1)^2},
+$$ {#eq-27-risk}
+
+where $\tau_P = \mathbb{E}\|\boldsymbol{R}\hat{\boldsymbol{m}}\|^{-2}$ is
+finite whenever $N - r \geq 3$. Everything about
+$\hat{\boldsymbol{\Sigma}}$ that matters is in the two moments of $\psi$, and
+they depend on $N$ and $T$ only. The bracket is a concave quadratic in $c$,
+positive on $0 < c < 2(N-r-2)(T-1)/(T-N+2)$ and largest at
+
+$$
+c_f = (N - r - 2)\,\frac{T-1}{T-N+2},
+$$ {#eq-27-constant}
+
+a function of $N$, $T$ and the target's rank alone: no tuning, no
+validation window. It exceeds the oracle constant $N - r - 2$
+because $\psi$ has mean below one, so the feasible corrector shrinks less at
+the same $c$. For the grand mean the risk is below $N/T$ for every
+$N \geq 4$ and $T \geq N + 1$: the corrected mean dominates the sample mean,
+the input of every plug-in rule in this book, whenever the sample is longer
+than the number of assets.
+
+The lineage matters because the result is easy to mistake for an old one.
+@stein1956 showed that the sample mean of three or more normal means is
+inadmissible; @james1961 gave the estimator and, for an unknown covariance
+matrix, the constant $(N-2)/(T-N+2)$, which is @eq-27-constant with $r = 0$
+divided by $T - 1$; @efron1975 moved the target to the grand mean; and
+@jorion1986 brought the idea into portfolio choice as the Bayes-Stein
+estimator of @sec-06-expected-returns-theory, whose target is the expected
+return of the minimum-variance portfolio. What @eq-27-risk adds is that the
+target projection need not be orthogonal in risk units: the grand mean's
+is symmetric only if $\boldsymbol{\Sigma}\boldsymbol{\iota} \propto \boldsymbol{\iota}$,
+which no covariance matrix with a
+`r sprintf("%.1f", max(apply(Re, 2, stats::sd)) / min(apply(Re, 2, stats::sd)))`-fold
+spread of volatilities comes near, and the proof uses only
+$\boldsymbol{R}^2 = \boldsymbol{R}$ and $\operatorname{tr}\boldsymbol{R} = N - r$.
+The Bayes-Stein target depends on $\hat{\boldsymbol{\Sigma}}$, and the
+theorem does not cover it. Two further things it says. The zero target
+rescales the forecast and leaves the direction of the plug-in position
+unchanged, so its gain is in the certainty equivalent and not in the Sharpe
+ratio; a target of rank one moves the direction. And the theorem ranks the
+corrected mean against the sample mean, not against rules that use no mean,
+such as $1/N$ or minimum variance, whose gap to the optimum is a population
+quantity rather than an estimation error.
+
+### Using less of the forecast
+
+The second answer keeps the forecast and acts on fewer of its dimensions.
+@salcher2026less start from the same identity. With
+$\boldsymbol{a} = \boldsymbol{\Sigma}^{-1/2}\boldsymbol{\mu}$ the truth in
+risk units and $\hat{\boldsymbol{b}} = \boldsymbol{a} + \boldsymbol{\eta}$ the
+forecast, an investor who acts only on the projection
+$\boldsymbol{Q}\hat{\boldsymbol{b}}$ onto a $k$-dimensional subspace loses
+$\|(\boldsymbol{I} - \boldsymbol{Q})\boldsymbol{a}\|^2 + \|\boldsymbol{Q}\boldsymbol{\eta}\|^2$
+on every path, because the cross term carries
+$(\boldsymbol{I} - \boldsymbol{Q})\boldsymbol{Q} = \boldsymbol{0}$; in
+expectation, with the isotropic error of the sample mean,
+
+$$
+2\gamma\,\mathbb{E}[\text{loss}]
+= \underbrace{\|(\boldsymbol{I} - \boldsymbol{Q})\boldsymbol{a}\|^2}_{\text{signal discarded}}
++ \underbrace{\frac{k}{T}}_{\text{noise retained}} .
+$$ {#eq-27-hard}
+
+A dimension is worth acting on if and only if its squared Sharpe ratio
+exceeds $1/T$, the squared standard error of an estimated Sharpe ratio
+[@jobson1981; @lo2002]. Shrinkage of the kind in @eq-27-corrector, or the
+two-fund scalar of @kan2007 and the combination with $1/N$ of @tu2011, is a
+soft reduction: it pays the price on every one of the $N$ dimensions whether
+or not the dimension carries signal, and loses to a hard reduction whenever
+the signal is concentrated on a few. The familiar rules are fixed cells of
+the grid spanned by the number of covariance dimensions estimated and the
+number of forecast dimensions acted on: the plug-in rule of
+@sec-08-estimation-error-theory keeps $N$ and $N$, minimum variance the
+level alone inside a basis of $N$, $1/N$ of @demiguel2009 one and one, the
+decile sort of @fama1993 the sign of the ranking and no covariance matrix,
+the parametric tilt of @brandt2009 a slope inside a basis of two, and
+covariance shrinkage [@ledoit2004] every forecast dimension with the other
+side reduced. None sets its granularity from what the forecast can deliver.
+
+The cell that moves does. Order the assets by the forecast, let $\rho$ be
+the cross-sectional rank correlation between the forecast and the next
+month's return in risk units, the information coefficient of @grinold1989,
+and suppose the true profile is linear in the rank. Then the slope of that
+profile in risk units is $\tau^2 = \rho^2/(1 - \rho^2)$, cutting the ranking
+into $G$ equal groups and acting on the group averages discards about
+$N\tau^2/G^2$ of signal and retains $G/T$ of noise, and the loss is minimized
+at
+
+$$
+G^* = \left(\frac{2\,N\,T\,\rho^2}{1 - \rho^2}\right)^{1/3}.
+$$ {#eq-27-groups}
+
+The cube root is the rate @cattaneo2020 derive for the number of
+characteristic-sorted portfolios, but the price per
+group here is $1/T$ regardless of how many assets the group averages, because
+averaging lowers the noise of a portfolio's mean and its risk in the same
+proportion; $G^*$ is therefore small, and it falls to one group, which is
+$1/N$, when the forecast cannot rank.
+
+### The decision loss inside the training loop
+
+The third answer changes the loss the forecaster is trained on. Let
+$f_{\boldsymbol{\theta}}(\boldsymbol{x}_t)$ be a forecaster with parameters
+$\boldsymbol{\theta}$ and conditioning variables $\boldsymbol{x}_t$, and let
+$\boldsymbol{w}(\cdot)$ be the map from a forecast to a weight vector: the
+plug-in map, or the clipped tilt of @eq-16-tilt. The decision-aware
+estimator maximizes the sample certainty equivalent of the portfolio the
+forecast implies,
+
+$$
+\hat{\boldsymbol{\theta}}
+= \arg\max_{\boldsymbol{\theta}}\;
+\frac{1}{T}\sum_{t}\Big[r_{p,t+1}(\boldsymbol{\theta}) - \frac{\gamma}{2}\,r_{p,t+1}(\boldsymbol{\theta})^2\Big],
+\qquad
+r_{p,t+1}(\boldsymbol{\theta}) = \boldsymbol{w}\big(f_{\boldsymbol{\theta}}(\boldsymbol{x}_t)\big)'\boldsymbol{r}_{t+1},
+$$ {#eq-27-loop}
+
+and the parametric policy of @brandt2009 in @eq-18-estimator is the special
+case in which the forecast is the weight itself, $\boldsymbol{w}(f) = f$;
+@bertsimas2020 call this prescriptive rather than predictive analytics, and
+@elmachtoub2022 give the loss its name. The connection to the first answer is
+exact in one case. With the plug-in map, a known $\boldsymbol{\Sigma}$ and
+$\boldsymbol{r}_{t+1} = \boldsymbol{\mu}_t + \boldsymbol{\varepsilon}_{t+1}$,
+the expected certainty equivalent of month $t$ is
+$[\boldsymbol{\mu}_t'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}_t - (f_t - \boldsymbol{\mu}_t)'\boldsymbol{\Sigma}^{-1}(f_t - \boldsymbol{\mu}_t)]/(2\gamma)$
+by the algebra of @eq-27-decision, so that
+
+$$
+\max_{\boldsymbol{\theta}}\;\mathbb{E}\,CE
+\;\Longleftrightarrow\;
+\min_{\boldsymbol{\theta}}\;\mathbb{E}\,\big(f_{\boldsymbol{\theta}}(\boldsymbol{x}_t) - \boldsymbol{\mu}_t\big)'\boldsymbol{\Sigma}^{-1}\big(f_{\boldsymbol{\theta}}(\boldsymbol{x}_t) - \boldsymbol{\mu}_t\big):
+$$ {#eq-27-gls}
+
+the decision-trained forecaster is the least-squares forecaster with its
+errors reweighted by $\boldsymbol{\Sigma}^{-1}$, generalized least squares in
+the metric the optimizer uses. That is also why the third answer generalizes
+beyond mean-variance: nothing in @eq-27-loop uses the quadratic form. Replace
+the certainty equivalent by any utility, the plug-in map by any map with
+clipping, constraints or costs, and the forecaster by any model of @gu2020,
+and only the closed form of @eq-27-gls is lost.
+
+What is also lost is precision. A certainty equivalent realized over $T$
+months carries the noise of a Sharpe ratio, whose standard error is of order
+$\sqrt{(1 + SR^2/2)/T}$ [@lo2002], and a tuning parameter chosen by that
+criterion is a further estimated quantity whose cost none of the displays
+above contains; @salcher2026less make the same point for a number of
+groups chosen from the window. Each answer therefore comes with the condition
+under which it does not help. The correction of @eq-27-corrector drops every
+deviation from the target when $c_f \geq T\hat{q}$, which happens when $T$ is
+small relative to $N$; the corrected mean is then the grand mean, the
+tangency rule becomes minimum variance, and the correction cannot do better
+than a rule that never looked at the mean. The rule of @eq-27-groups returns
+one group when the forecast cannot rank, and buys nothing when the forecast's
+cross-sectional content is small to begin with. And the loop of @eq-27-loop
+can choose worse on both counts when the certainty equivalent it tunes on is
+noisier than the gain it chases. One of the three partially falsifies its own
+prediction on this market, and the implementation says which.
+
+## Three Corrections on Sixteen Classes {#sec-27-decision-aware-forecasting-implementation}
+
+### The corrected mean in a few lines
+
+@eq-27-corrector and @eq-27-constant are a function of
+$\hat{\boldsymbol{\mu}}$, $\hat{\boldsymbol{\Sigma}}$, $N$, $T$ and the
+target, with the positive part of the factor taken as implementations do.
+
+```{r}
+#| label: correct-mean
+correct_mean <- function(R, target = c("grand", "zero"), c = NULL) {
+  target <- match.arg(target)
+  X <- zoo::coredata(R); T <- nrow(X); N <- ncol(X)
+  mu <- colMeans(X); S <- stats::cov(X)
+  r   <- if (target == "grand") 1L else 0L                 # rank of the target projection
+  Pmu <- if (target == "grand") rep(mean(mu), N) else rep(0, N)
+  d   <- mu - Pmu                                          # (I - P) mu_hat
+  q   <- as.numeric(t(d) %*% solve(S, d))                  # its length in estimated risk units
+  if (is.null(c)) c <- (N - r - 2) * (T - 1) / (T - N + 2) # c_f of @eq-27-constant
+  h   <- max(1 - c / (T * q), 0)                           # the James-Stein factor, positive part
+  list(mu = setNames(Pmu + h * d, colnames(X)), factor = h, c = c, q = q, N = N, T = T)
+}
+
+cm_full <- correct_mean(Re)
+round(c(c_f = cm_full$c, Tq = cm_full$T * cm_full$q, factor = cm_full$factor), 4)
+```
+
+On the full sample of `r Tn` months, @eq-27-constant with $N = `r N`$ and
+$r = 1$ is
+
+$$
+c_f = (`r N` - 1 - 2)\,\frac{`r Tn - 1`}{`r Tn - N + 2`} = `r sprintf("%.2f", cm_full$c)`,
+\qquad
+1 - \frac{c_f}{T\hat{q}} = 1 - \frac{`r sprintf("%.2f", cm_full$c)`}{`r sprintf("%.2f", cm_full$T * cm_full$q)`} = `r sprintf("%.3f", cm_full$factor)`,
+$$
+
+so that even on thirty-one model years the deviation of each sample mean from
+the grand mean is kept at `r sprintf("%.0f%%", 100 * cm_full$factor)` of its
+size. The Bayes-Stein estimator of @sec-06-expected-returns-implementation is
+the natural comparison and is copied here unchanged.
+
+```{r}
+#| label: bayes-stein
+bayes_stein <- function(R) {
+  X <- zoo::coredata(R); T <- nrow(X); N <- ncol(X)
+  mu   <- colMeans(X)
+  S    <- stats::cov(X) * (T - 1) / (T - N - 2)   # Jorion's unbiased scaling
+  Sinv <- solve(S); iota <- rep(1, N)
+  mu0  <- as.numeric(t(iota) %*% Sinv %*% mu) / as.numeric(t(iota) %*% Sinv %*% iota)
+  d    <- mu - mu0
+  v    <- (N + 2) / ((N + 2) + T * as.numeric(t(d) %*% Sinv %*% d))
+  list(mu = setNames((1 - v) * mu + v * mu0, colnames(X)), mu0 = mu0, v = v)
+}
+bs_full <- bayes_stein(Re)
+```
+
+Bayes-Stein shrinks `r sprintf("%.0f%%", 100 * bs_full$v)` of the way toward
+the minimum-variance mean, the corrected mean
+`r sprintf("%.0f%%", 100 * (1 - cm_full$factor))` of the way toward the grand
+mean, and only the second has the exact risk of @eq-27-risk behind it;
+exercise 2 checks it by simulation.
+
+```{r}
+#| label: tbl-27-intensity
+#| tbl-cap: "The constant of @eq-27-constant for sixteen classes and four window lengths, its ratio to the oracle constant N - 3, and the factor of @eq-27-corrector averaged over every window of that length, with the share of windows on which the positive part binds."
+#| echo: false
+pct <- function(x, d = 2) sprintf(paste0("%.", d, "f%%"), 100 * x)
+num <- function(x, d = 3) sprintf(paste0("%.", d, "f"), x)
+intensity <- lapply(c(36L, 60L, 120L, Tn), function(T) {
+  ends <- seq.int(T, Tn)
+  h <- vapply(ends, function(e) correct_mean(Re[(e - T + 1L):e, ])$factor, numeric(1))
+  tibble::tibble(T = T, c_f = (N - 3) * (T - 1) / (T - N + 2), ratio = (T - 1) / (T - N + 2),
+                 factor = mean(h), at_zero = mean(h == 0))
+}) |> dplyr::bind_rows()
+stopifnot(all(diff(intensity$c_f) < 0), all(intensity$factor < 0.5))
+at_T <- function(T, col) intensity[[col]][intensity$T == T]
+
+intensity |>
+  dplyr::transmute(T, num(c_f, 2), num(ratio, 2), num(factor, 2), pct(at_zero, 0)) |>
+  kable(align = "rrrrr", col.names = c("T", "c_f", "c_f / (N - 3)", "mean factor", "factor at zero"))
+```
+
+The constant falls with $T$ toward the oracle value $N - 3 = `r N - 3`$, and
+at $T = 36$ it is `r sprintf("%.2f", at_T(36L, "ratio"))` times that value:
+the shorter the window, the further $\psi$ sits below one. The factor
+applied in practice is small at every window, between
+`r sprintf("%.2f", min(intensity$factor))` and
+`r sprintf("%.2f", max(intensity$factor))` on average, and on
+`r sprintf("%.0f%%", 100 * at_T(60L, "at_zero"))` of the sixty-month windows
+the positive part binds and every deviation from the grand mean is removed.
+
+### Four means in the tangency rule
+
+The correction is scored where @sec-08-estimation-error-implementation scored
+the sample mean: the long-only tangency portfolio on rolling windows, as the
+quadratic program of that chapter, so that the register of
+@sec-25-backtesting-application is reproduced, with the same estimated
+covariance matrix for every mean.
+
+```{r}
+#| label: qp-rules
+gmv_qp <- function(S) {
+  n <- ncol(S)
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(rep(1, n), diag(n)), bvec = c(1, rep(0, n)), meq = 1)
+  w <- pmax(sol$solution, 0)
+  setNames(w / sum(w), colnames(S))
+}
+tan_qp <- function(mu, S) {
+  n <- length(mu)
+  if (max(mu) <= 0) return(structure(gmv_qp(S), fallback = TRUE))
+  sol <- quadprog::solve.QP(Dmat = 2 * S * 1e4, dvec = rep(0, n),
+                            Amat = cbind(mu * 1e2, diag(n)), bvec = c(1, rep(0, n)), meq = 1)
+  y <- pmax(sol$solution, 0)
+  structure(setNames(y / sum(y), names(mu)), fallback = FALSE)
+}
+# The register's Sharpe ratio: compounded, in excess of the bill. The certainty
+# equivalent is annualized from monthly excess returns at the chapter's gamma.
+sharpe_realized <- function(r, rf) {
+  n <- length(r)
+  (prod(1 + r)^(12 / n) - prod(1 + rf)^(12 / n)) / (stats::sd(r) * sqrt(12))
+}
+ce_annual <- function(e) 12 * mean(e) - gamma / 2 * 12 * stats::var(e)
+
+oos <- seq.int(121L, Tn)                        # the months the register scores
+stopifnot(model_year(dates[oos[1]]) == 11L, model_year(dates[120]) == 10L)
+```
+
+Each window supplies five fully invested rules: the tangency portfolio on
+the sample mean, on Bayes-Stein and on the corrected mean, equal weighting
+and minimum variance. One assertion inside the loop states the theory's
+claim about the zero target: its unconstrained position is a scalar multiple
+of the sample mean's in every window, so the long-only tangency rule, which
+is invariant to that scalar, cannot see it.
+
+```{r}
+#| label: rolling-means
+run_rules <- function(win) {
+  lapply(oos, function(m) {
+    X  <- Re[(m - win):(m - 1L), ]
+    Xm <- zoo::coredata(X); V <- stats::cov(Xm); mh <- colMeans(Xm)
+    cm_g <- correct_mean(X, "grand"); cm_0 <- correct_mean(X, "zero"); bs <- bayes_stein(X)
+    stopifnot(isTRUE(all.equal(solve(V, cm_0$mu), cm_0$factor * solve(V, mh))))   # same direction
+    means <- list(sample = mh, bayes_stein = bs$mu, corrected = cm_g$mu)
+    rules <- c(lapply(means, tan_qp, S = V),
+               list(equal_weight = setNames(rep(1 / N, N), colnames(Re)), min_variance = gmv_qp(V)))
+    stopifnot(all(vapply(rules, function(w) identical(names(w), colnames(Re)), logical(1))))
+    tibble::tibble(
+      date = dates[m], rule = names(rules), factor = cm_g$factor,
+      total  = vapply(rules, function(w) sum(w * zoo::coredata(R)[m, ]), numeric(1)),
+      excess = vapply(rules, function(w) sum(w * zoo::coredata(Re)[m, ]), numeric(1)))
+  }) |> dplyr::bind_rows() |> dplyr::mutate(window = win)
+}
+roll <- dplyr::bind_rows(run_rules(60L), run_rules(120L))
+
+res_means <- roll |>
+  dplyr::group_by(window, rule) |>
+  dplyr::summarise(sharpe = sharpe_realized(total, rf_by_month[as.character(date)]),
+                   ce = ce_annual(excess), vol = stats::sd(excess) * sqrt(12), .groups = "drop")
+
+# The register: tangency and equal weight to the fourth decimal, minimum variance
+# within a few thousandths (the register fits it on total returns).
+sweep_all <- utils::read.csv("output/tables/oos-sweep.csv") |>
+  dplyr::filter(universe == "classes", frequency == "months", basis == "gross")
+sr_register <- function(s, w) sweep_all$sharpe[sweep_all$strategy == s & sweep_all$window == w]
+g_m <- function(rule, w, col = "sharpe") res_means[[col]][res_means$rule == rule & res_means$window == w]
+for (w in c(60L, 120L)) stopifnot(
+  abs(g_m("sample", w) - sr_register("max_sharpe", w)) < 5e-5,
+  abs(g_m("equal_weight", w) - sr_register("equal_weight", w)) < 5e-5,
+  abs(g_m("min_variance", w) - sr_register("min_variance", w)) < 5e-3)
+```
+
+```{r}
+#| label: means-facts
+#| include: false
+share_gmv <- function(w) mean(roll$factor[roll$window == w & roll$rule == "sample"] == 0)
+for (w in c(60L, 120L)) stopifnot(
+  g_m("corrected", w) > g_m("bayes_stein", w), g_m("bayes_stein", w) > g_m("sample", w),
+  g_m("corrected", w) < g_m("min_variance", w),
+  g_m("equal_weight", w, "ce") > g_m("corrected", w, "ce"))
+se_sr <- sqrt((1 + (g_m("equal_weight", 60L) / sqrt(12))^2 / 2) / length(oos)) * sqrt(12)
+```
+
+```{r}
+#| label: tbl-27-means
+#| tbl-cap: "The long-only tangency rule on three estimates of the mean, with equal weighting and minimum variance beside them, on sixty- and 120-month windows over the register's months. The Sharpe ratio is the register's; the certainty equivalent is annual at gamma = 5, gross of costs."
+#| echo: false
+lab_full <- c(sample = "tangency, sample mean", bayes_stein = "tangency, Bayes-Stein",
+              corrected = "tangency, corrected mean", equal_weight = "equal weight",
+              min_variance = "minimum variance")
+res_means |>
+  dplyr::mutate(rule = factor(lab_full[rule], levels = lab_full)) |>
+  dplyr::transmute(rule, window, sharpe = num(sharpe), ce = pct(ce), vol = pct(vol, 1)) |>
+  tidyr::pivot_wider(names_from = window, values_from = c(sharpe, ce, vol)) |>
+  dplyr::arrange(rule) |>
+  dplyr::select(rule, dplyr::ends_with("_60"), dplyr::ends_with("_120")) |>
+  kable(align = "lrrrrrr",
+        col.names = c("", "Sharpe, 60", "CE, 60", "vol, 60", "Sharpe, 120", "CE, 120", "vol, 120"))
+```
+
+Down the Sharpe columns of @tbl-27-means the correction works as a
+direction: on sixty-month windows the tangency portfolio earns
+`r sprintf("%.3f", g_m("sample", 60L))` on the sample mean, the register's
+figure, `r sprintf("%.3f", g_m("bayes_stein", 60L))` on Bayes-Stein and
+`r sprintf("%.3f", g_m("corrected", 60L))` on the corrected mean, and on 120
+months `r sprintf("%.3f", g_m("sample", 120L))`,
+`r sprintf("%.3f", g_m("bayes_stein", 120L))` and
+`r sprintf("%.3f", g_m("corrected", 120L))`; the assertions above would fail
+the render if the order did not hold at both windows. What the corrected
+mean converges to is in the last row: it stays below minimum variance's
+`r sprintf("%.3f", g_m("min_variance", 60L))` and
+`r sprintf("%.3f", g_m("min_variance", 120L))`, and on
+`r sprintf("%.0f%%", 100 * share_gmv(60L))` of the sixty-month windows and
+`r sprintf("%.0f%%", 100 * share_gmv(120L))` of the 120-month ones it *is*
+minimum variance, because the factor is zero and a tangency portfolio on a
+constant mean is @eq-09-gmv; the theorem ranks the corrected mean against the
+sample mean and says nothing about a rule that never estimated one.
+
+Across the certainty-equivalent columns the ranking changes, and the reason
+is the length rather than the direction. Equal weighting has the highest
+certainty equivalent of the five at both windows,
+`r sprintf("%.2f%%", 100 * g_m("equal_weight", 60L, "ce"))` against
+`r sprintf("%.2f%%", 100 * g_m("corrected", 60L, "ce"))` for the corrected
+tangency at sixty months, because a fully invested tangency portfolio with a
+volatility of `r sprintf("%.1f%%", 100 * g_m("corrected", 60L, "vol"))` is
+far below the risk an investor with $\gamma = `r gamma`$ would choose, and
+the certainty equivalent charges for that while the Sharpe ratio cannot see
+it. The unconstrained position that @eq-27-risk prices, whose length is its
+own choice, is left to exercise 1: the correction lowers its
+certainty-equivalent loss and leaves the covariance channel of @eq-08-kz
+untouched.
+
+### Granularity on the term-spread tilt
+
+The second answer needs a forecast with a cross-section, and the one forecast
+in @sec-16-signals-and-forecasts-application that survived out of sample is
+the term spread, rebuilt here exactly as there: the US slope read off the
+weekly curve at each month end, lagged once, and an expanding regression of
+each series' excess return on it from the first month of model year 11. The
+other six predictors of that chapter's elastic net are built beside it for
+the third answer.
+
+```{r}
+#| label: term-forecast
+cv <- sim_curve_weekly |>
+  dplyr::filter(series %in% c("US_Level", "US_Slope", "US_IG_Spread", "US_HY_Spread")) |>
+  tidyr::pivot_wider(names_from = series, values_from = value) |>
+  dplyr::arrange(date)
+i_last <- findInterval(dates, cv$date)
+stopifnot(all(cv$date[i_last] <= dates), all(dates - cv$date[i_last] < 8))
+curve <- xts::xts(cbind(level = cv$US_Level[i_last], term = -cv$US_Slope[i_last],
+                        ig = 100 * cv$US_IG_Spread[i_last], hy = 100 * cv$US_HY_Spread[i_last]),
+                  order.by = dates)
+P    <- cumprod(1 + R)
+mom  <- xts::lag.xts(P, 1) / xts::lag.xts(P, 12) - 1
+turb <- uncertaintymeasures::OSturbulence(R, rolling = TRUE, roll.obs = 60)$turb
+colnames(turb) <- "turb"
+common <- merge(curve, turb); stopifnot(identical(zoo::index(common), dates))
+common_lag <- xts::lag.xts(common, 1); mom_lag <- xts::lag.xts(mom, 1); rev_lag <- xts::lag.xts(Re, 1)
+pairs_of <- function(s) {
+  data.frame(date = dates, y = as.numeric(Re[, s]), mom = as.numeric(mom_lag[, s]),
+             rev = as.numeric(rev_lag[, s]), zoo::coredata(common_lag))
+}
+ols_fc <- function(d, v, m) {
+  tr <- which(!is.na(d[[v]]) & seq_len(nrow(d)) < m)
+  b  <- stats::lm.fit(cbind(1, d[[v]][tr]), d$y[tr])$coefficients
+  unname(b[1] + b[2] * d[[v]][m])
+}
+F_term <- vapply(colnames(Re), function(s) {
+  d <- pairs_of(s); vapply(oos, function(m) ols_fc(d, "term", m), numeric(1))
+}, numeric(length(oos)))
+dimnames(F_term) <- list(as.character(dates[oos]), colnames(Re))
+stopifnot(!anyNA(F_term))
+```
+
+The forecast becomes a weight through the tilt of @eq-16-tilt, with the same
+band $\delta = 1/(2N)$ and scale, and the reduction is inserted where
+@eq-27-hard says it belongs: after the forecast has been put into volatility
+units and demeaned, before it is clipped. Four cells come from one function:
+every magnitude is chapter 16's tilt; three rank groups replaces each
+forecast by the average of its tercile; the sign keeps top minus bottom at
+the largest tilt the band allows, the long-short sort of @fama1993 around the
+policy; equal weighting discards the forecast.
+
+```{r}
+#| label: tilt
+vol60 <- zoo::rollapply(Re, 60, stats::sd, align = "right", fill = NA)
+band  <- 0.5 / N
+kappa <- band / (0.5 / sqrt(12))
+w_policy <- setNames(rep(1 / N, N), colnames(Re))
+
+tilt_from <- function(F, idx, reduce = identity) {
+  stopifnot(identical(colnames(F), colnames(Re)), nrow(F) == length(idx))
+  W <- t(vapply(seq_along(idx), function(i) {
+    m  <- idx[i]
+    s  <- F[i, ] / as.numeric(vol60[m - 1L, ])   # volatility units, known at m - 1
+    s  <- reduce(s - mean(s))                    # relative view, then the reduction
+    tl <- pmin(pmax(kappa * s, -band), band)
+    w  <- w_policy + tl - mean(tl); w <- pmax(w, 0); w / sum(w)
+  }, numeric(N)))
+  dimnames(W) <- list(as.character(dates[idx]), colnames(Re))
+  stopifnot(all(abs(rowSums(W) - 1) < 1e-12), all(W >= 0))
+  W
+}
+steps <- function(G) function(s) {                         # group averages
+  if (G <= 1L) return(s * 0)
+  stats::ave(s, ceiling(rank(s, ties.method = "first") * G / length(s)))
+}
+sign_only <- function(s) {                                 # top third +band, bottom third -band
+  g <- ceiling(rank(s, ties.method = "first") * 3 / length(s))
+  (band / kappa) * (as.numeric(g == 3L) - as.numeric(g == 1L))
+}
+
+cost_rate <- pm_costs_default()[sub(".*_", "", colnames(Re))]
+stopifnot(!anyNA(cost_rate)); names(cost_rate) <- colnames(Re)
+score_W <- function(W, idx) {
+  Rm <- zoo::coredata(R)[idx, colnames(Re), drop = FALSE]
+  Em <- zoo::coredata(Re)[idx, colnames(Re), drop = FALSE]
+  stopifnot(identical(colnames(W), colnames(Re)), nrow(W) == nrow(Rm))
+  r <- rowSums(W * Rm); e <- rowSums(W * Em)
+  drifted <- W * (1 + Rm) / (1 + r)
+  trade   <- abs(W[-1, , drop = FALSE] - drifted[-nrow(W), , drop = FALSE])
+  cost    <- c(as.numeric(trade %*% cost_rate), 0)
+  c(sharpe = sharpe_realized(r, rf_by_month[as.character(dates[idx])]),
+    ce = ce_annual(e), ce_net = ce_annual(e - cost),
+    turnover = 12 * mean(c(rowSums(trade) / 2, 0)))
+}
+```
+
+The cell that moves needs the information coefficient. At each
+out-of-sample month the regression is fit on the months before it, its fitted
+values are ranked against the realized returns of those months, both in
+volatility units, and the Spearman correlations are averaged: the ranking
+ability an investor standing at that month could measure. @eq-27-groups then
+gives the number of groups, rounded and capped at `r N %/% 2L`.
+
+```{r}
+#| label: information-coefficient
+ic_of <- function(m) {
+  tr <- seq.int(61L, m - 1L)
+  Fhat <- vapply(colnames(Re), function(s) {
+    d  <- pairs_of(s); ok <- which(!is.na(d$term) & seq_len(Tn) < m)
+    b  <- stats::lm.fit(cbind(1, d$term[ok]), d$y[ok])$coefficients
+    b[1] + b[2] * d$term[tr]
+  }, numeric(length(tr)))
+  V60 <- zoo::coredata(vol60)[tr - 1L, ]; Y60 <- zoo::coredata(Re)[tr, ]
+  mean(vapply(seq_along(tr), function(i)
+    stats::cor(Fhat[i, ] / V60[i, ], Y60[i, ] / V60[i, ], method = "spearman"), numeric(1)))
+}
+ic      <- vapply(oos, ic_of, numeric(1))
+G_star  <- (2 * N * (oos - 1L) * ic^2 / (1 - ic^2))^(1 / 3)
+G_rule  <- pmax(1L, pmin(N %/% 2L, as.integer(round(G_star))))
+
+# The same coefficient on the forecasts actually made, over the register's months.
+V60_oos <- zoo::coredata(vol60)[oos - 1L, ]; Y_oos <- zoo::coredata(Re)[oos, ]
+ic_oos  <- mean(vapply(seq_along(oos), function(i)
+  stats::cor(F_term[i, ] / V60_oos[i, ], Y_oos[i, ] / V60_oos[i, ], method = "spearman"), numeric(1)))
+G_oos   <- (2 * N * length(oos) * ic_oos^2 / (1 - ic_oos^2))^(1 / 3)
+stopifnot(ic_oos < min(ic))
+c(ic_window_mean = mean(ic), ic_realized = ic_oos, G_star_mean = mean(G_star), G_at_realized = G_oos)
+```
+
+```{r}
+#| label: tbl-27-granularity
+#| tbl-cap: "The term-spread forecast acted on at four granularities, and at the number of groups @eq-27-groups chooses each month, over the register's months. The Sharpe ratio is the register's, gross; the certainty equivalent is annual at gamma = 5, gross and net of the per-class costs of chapter 23."
+#| echo: false
+cells <- list(
+  every_magnitude = tilt_from(F_term, oos),
+  three_groups    = tilt_from(F_term, oos, steps(3L)),
+  sign_only       = tilt_from(F_term, oos, sign_only),
+  equal_weight    = tilt_from(F_term, oos, function(s) s * 0))
+cells$rule <- t(vapply(seq_along(oos), function(i)
+  tilt_from(F_term[i, , drop = FALSE], oos[i], steps(G_rule[i]))[1, ], numeric(N)))
+dimnames(cells$rule) <- dimnames(cells$every_magnitude)
+
+lab_cells <- c(every_magnitude = "every magnitude (chapter 16)", three_groups = "three rank groups",
+               sign_only = "sign only", equal_weight = "equal weight (1/N)",
+               rule = "the rule: G from the information coefficient")
+res_gran <- t(vapply(cells, score_W, numeric(4), idx = oos)) |>
+  as.data.frame() |> tibble::rownames_to_column("cell")
+stopifnot(abs(res_gran$sharpe[res_gran$cell == "equal_weight"] - sr_register("equal_weight", 60L)) < 5e-5)
+
+res_gran |>
+  dplyr::mutate(cell = lab_cells[cell], G = c("16", "3", "1", "0", paste(range(G_rule), collapse = " to "))) |>
+  dplyr::transmute(cell, G, num(sharpe), pct(ce), pct(ce_net), pct(turnover, 0)) |>
+  kable(align = "lrrrrr", col.names = c("", "dimensions", "Sharpe", "CE, gross", "CE, net", "turnover"))
+```
+
+```{r}
+#| label: granularity-facts
+#| include: false
+g_c <- function(cell, col = "sharpe") res_gran[[col]][res_gran$cell == cell]
+fc_cells  <- c("every_magnitude", "three_groups", "sign_only", "rule")
+gain_sr   <- res_gran$sharpe[res_gran$cell %in% fc_cells] - g_c("equal_weight")
+gain_ce   <- res_gran$ce_net[res_gran$cell %in% fc_cells] - g_c("equal_weight", "ce_net")
+spread_sr <- diff(range(res_gran$sharpe[res_gran$cell %in% fc_cells]))
+spread_ce <- diff(range(res_gran$ce[res_gran$cell %in% fc_cells]))
+stopifnot(all(gain_sr > 0), all(gain_ce > 0), spread_sr < 0.02, spread_ce < 2e-3,
+          g_c("sign_only", "turnover") > g_c("every_magnitude", "turnover"), all(G_rule >= 3L))
+```
+
+The forecast cells all stand above equal weighting, by
+`r sprintf("%.3f", min(gain_sr))` to `r sprintf("%.3f", max(gain_sr))` in
+Sharpe ratio and by `r sprintf("%.0f", 1e4 * min(gain_ce))` to
+`r sprintf("%.0f", 1e4 * max(gain_ce))` basis points of certainty equivalent
+net of costs, the order of gain @sec-16-signals-and-forecasts-application
+found. Among themselves they are indistinguishable: the spread across the four
+forecast cells is `r sprintf("%.3f", spread_sr)` in Sharpe ratio and
+`r sprintf("%.0f", 1e4 * spread_ce)` basis points of certainty equivalent,
+against a standard error of the Sharpe ratio over these months of about
+`r sprintf("%.2f", se_sr)` by the formula of @lo2002. The information
+coefficient on the estimation windows averages `r sprintf("%.3f", mean(ic))`,
+so @eq-27-groups asks for `r paste(range(G_rule), collapse = " to ")` groups,
+and the rule's cell earns `r sprintf("%.3f", g_c("rule"))`, inside the same
+spread. The coefficient realized on the forecasts actually made is
+`r sprintf("%.3f", ic_oos)`, lower than on any estimation window, and at that
+value the formula gives `r sprintf("%.1f", G_oos)` groups: the number read
+from fitted values overstates what the forecast delivers, at no visible
+cost here because nothing in the granularity has one. The sign cell trades
+`r sprintf("%.0f%%", 100 * g_c("sign_only", "turnover"))` a year against
+`r sprintf("%.0f%%", 100 * g_c("every_magnitude", "turnover"))` for the full
+vector and still matches it after costs. This is the second condition of the
+theory: a forecast whose cross-sectional content is a near-common shift, the
+term spread lifting every bond series together, leaves @eq-27-hard little to
+discard and little to retain, and the band of @eq-16-tilt, not the
+granularity, sets what the forecast is worth.
+
+### Tuning the elastic net on the certainty equivalent
+
+The third answer is tried on the forecaster of
+@sec-16-signals-and-forecasts-implementation that lost: the elastic net of
+@zou2005 on seven predictors, which chose its penalty by five-fold
+cross-validated squared error on contiguous blocks, re-tuned once a year. Here
+the same folds and grid of penalties serve two criteria: the pooled
+out-of-fold squared error across the sixteen series, the loss of @eq-27-mse,
+and the certainty equivalent of the tilt of @eq-16-tilt built from the
+out-of-fold forecasts over the training months, the loss of @eq-27-loop with
+the tilt as the map. The penalty is the only parameter the loop chooses; the
+coefficients are refit inside `glmnet` at whichever penalty each criterion
+selects.
+
+```{r}
+#| label: enet-tuning
+en_vars  <- c("mom", "rev", "term", "ig", "hy", "level", "turb")
+D  <- lapply(colnames(Re), pairs_of); names(D) <- colnames(Re)
+ok <- stats::complete.cases(D[[1]][, en_vars])
+stopifnot(all(vapply(D, function(d) identical(stats::complete.cases(d[, en_vars]), ok), logical(1))))
+lam_grid <- 10^seq(-1, -5, length.out = 33)     # decreasing, as glmnet expects
+Y <- zoo::coredata(Re)
+
+tune_both <- function(m) {
+  tr   <- which(ok & seq_len(Tn) < m)
+  fold <- ceiling(seq_along(tr) / (length(tr) / 5))
+  oof  <- array(NA_real_, c(length(tr), N, length(lam_grid)))
+  for (j in seq_len(N)) {
+    X <- as.matrix(D[[j]][tr, en_vars]); y <- D[[j]]$y[tr]
+    for (f in 1:5) {
+      i   <- fold != f
+      fit <- glmnet::glmnet(X[i, ], y[i], alpha = 0.5, lambda = lam_grid)
+      oof[!i, j, ] <- as.matrix(stats::predict(fit, newx = X[!i, , drop = FALSE], s = lam_grid))
+    }
+  }
+  mse <- vapply(seq_along(lam_grid), function(k) mean((oof[, , k] - Y[tr, ])^2), numeric(1))
+  ce  <- vapply(seq_along(lam_grid), function(k) {
+    F <- oof[, , k]; colnames(F) <- colnames(Re)
+    ce_annual(rowSums(tilt_from(F, tr) * Y[tr, ]))
+  }, numeric(1))
+  list(lam_mse = lam_grid[which.min(mse)], lam_ce = lam_grid[which.max(ce)],
+       null_mse = which.min(mse) == 1L)     # TRUE when the null model minimizes the CV error
+}
+
+retune <- oos[(oos - oos[1]) %% 12L == 0L]
+tunes  <- lapply(retune, tune_both); names(tunes) <- retune
+lam_path <- tibble::tibble(date = dates[retune],
+                           mse = vapply(tunes, `[[`, numeric(1), "lam_mse"),
+                           ce  = vapply(tunes, `[[`, numeric(1), "lam_ce"))
+null_mse <- vapply(tunes, `[[`, logical(1), "null_mse")
+```
+
+```{r}
+#| label: lambda-facts
+#| include: false
+ce_orders <- log10(max(lam_path$ce) / min(lam_path$ce))
+stopifnot(mean(null_mse) > 0.7, mean(lam_path$ce < lam_path$mse) > 0.7, ce_orders > 2)
+```
+
+The cross-validated squared error is minimized by the null model, every coefficient at zero and the forecast
+equal to the training mean, in `r sum(null_mse)` of the `r length(null_mse)`
+re-tunings, and by a penalty next to it in the rest: judged by @eq-27-mse,
+the best elastic net on seven predictors and sixteen series is no elastic
+net, the conclusion @sec-16-signals-and-forecasts-application reached by a
+longer route. The certainty-equivalent criterion selects a smaller penalty in
+`r sum(lam_path$ce < lam_path$mse)` of the `r nrow(lam_path)` re-tunings and
+wanders over `r sprintf("%.0f", ce_orders)` orders of magnitude from one year
+to the next, which is what a criterion estimated with the noise of a Sharpe
+ratio looks like when the surface it searches is flat.
+
+```{r}
+#| label: enet-forecast
+fc_en <- function(which_lam) {
+  lam <- NA_real_
+  out <- vapply(oos, function(m) {
+    if (m %in% retune) lam <<- tunes[[as.character(m)]][[which_lam]]
+    tr <- which(ok & seq_len(Tn) < m)
+    vapply(seq_len(N), function(j) {
+      fit <- glmnet::glmnet(as.matrix(D[[j]][tr, en_vars]), D[[j]]$y[tr], alpha = 0.5, lambda = lam_grid)
+      as.numeric(stats::predict(fit, newx = as.matrix(D[[j]][m, en_vars]), s = lam))
+    }, numeric(1))
+  }, numeric(N))
+  out <- t(out); dimnames(out) <- list(as.character(dates[oos]), colnames(Re)); out
+}
+F_mse  <- fc_en("lam_mse")
+F_ce   <- fc_en("lam_ce")
+F_mean <- vapply(colnames(Re), function(s)
+  vapply(oos, function(m) mean(Y[seq_len(m - 1L), s]), numeric(1)), numeric(length(oos)))
+dimnames(F_mean) <- dimnames(F_mse)
+
+r2_os <- function(F) 1 - sum((Y[oos, ] - F)^2) / sum((Y[oos, ] - F_mean)^2)
+res_train <- tibble::tibble(
+  forecast = c("elastic net, tuned on squared error", "elastic net, tuned on the certainty equivalent",
+               "historical mean"),
+  mse  = c(mean((Y[oos, ] - F_mse)^2), mean((Y[oos, ] - F_ce)^2), mean((Y[oos, ] - F_mean)^2)),
+  r2os = c(r2_os(F_mse), r2_os(F_ce), 0)) |>
+  dplyr::bind_cols(dplyr::bind_rows(score_W(tilt_from(F_mse, oos), oos),
+                                    score_W(tilt_from(F_ce, oos), oos),
+                                    score_W(tilt_from(F_mean, oos), oos)))
+```
+
+```{r}
+#| label: training-facts
+#| include: false
+g_t <- function(i, col) res_train[[col]][i]
+turn_x <- g_t(2, "turnover") / g_t(1, "turnover")
+stopifnot(g_t(2, "mse") > g_t(1, "mse"),            # the decision-trained forecast has the worse MSE
+          g_t(2, "sharpe") > g_t(1, "sharpe"),      # and the better portfolio
+          g_t(2, "ce_net") > g_t(1, "ce_net"),
+          turn_x > 2, g_t(2, "sharpe") - g_t(1, "sharpe") < se_sr)
+```
+
+```{r}
+#| label: tbl-27-training
+#| tbl-cap: "The same elastic net tuned on two losses, scored over the register's months: pooled mean squared error of the forecast and its out-of-sample R-squared against the expanding mean, then the Sharpe ratio, certainty equivalent and turnover of the tilt built on it."
+#| echo: false
+res_train |>
+  dplyr::transmute(forecast, num(1e4 * mse, 2), sprintf("%+.1f%%", 100 * r2os),
+                   num(sharpe), pct(ce), pct(ce_net), pct(turnover, 0)) |>
+  kable(align = "lrrrrrr",
+        col.names = c("", "MSE (x 10^4)", "R²OS", "Sharpe", "CE, gross", "CE, net", "turnover"))
+```
+
+@tbl-27-training is the result the chapter was built to show. The forecast
+tuned on the certainty equivalent has the worse mean squared error, an
+out-of-sample $R^2$ of `r sprintf("%+.1f%%", 100 * g_t(2, "r2os"))` against
+the expanding mean where the squared-error forecast has
+`r sprintf("%+.1f%%", 100 * g_t(1, "r2os"))`, and the better portfolio: a
+Sharpe ratio of `r sprintf("%.3f", g_t(2, "sharpe"))` against
+`r sprintf("%.3f", g_t(1, "sharpe"))` and a certainty equivalent net of costs
+of `r sprintf("%.2f%%", 100 * g_t(2, "ce_net"))` against
+`r sprintf("%.2f%%", 100 * g_t(1, "ce_net"))`,
+`r sprintf("%.0f", 1e4 * (g_t(2, "ce_net") - g_t(1, "ce_net")))` basis points a
+year. Trained on the loss the decision bears, the forecaster gives up accuracy
+in the directions the optimizer does not use and keeps it where the tilt
+acts, @eq-27-gls in a case where no closed form exists. Two qualifications
+belong beside the number: the decision-trained net turns the portfolio over
+`r sprintf("%.0f%%", 100 * g_t(2, "turnover"))` a year,
+`r sprintf("%.0f", turn_x)` times the
+`r sprintf("%.0f%%", 100 * g_t(1, "turnover"))` of the squared-error net,
+because the penalty it chooses lets the forecasts move; and the Sharpe-ratio
+advantage of `r sprintf("%.3f", g_t(2, "sharpe") - g_t(1, "sharpe"))` is inside
+the standard error of `r sprintf("%.2f", se_sr)`. The prediction is confirmed
+in sign and not established in significance, which on `r length(oos)` months
+is as much as any forecast comparison in this book can say.
+
+## What Each Answer Buys {#sec-27-decision-aware-forecasting-application}
+
+```{r}
+#| label: fig-27-scoreboard
+#| fig-cap: "Every rule of this chapter and every line of the register, scored on the same months with sixty-month estimation windows, in the register's Sharpe ratio, from one data frame. The dashed line is equal weighting."
+#| echo: false
+#| fig-asp: 0.62
+board <- dplyr::bind_rows(
+  sweep_all |> dplyr::filter(window == 60L) |>
+    dplyr::transmute(label = paste0(label, " (register)"), sharpe, kind = "register"),
+  tibble::tibble(label = c("tangency, Bayes-Stein", "tangency, corrected mean"),
+                 sharpe = c(g_m("bayes_stein", 60L), g_m("corrected", 60L)), kind = "corrected mean"),
+  tibble::tibble(label = paste("term tilt,", c("every magnitude", "three groups", "sign only", "rule")),
+                 sharpe = c(g_c("every_magnitude"), g_c("three_groups"), g_c("sign_only"), g_c("rule")),
+                 kind = "granularity"),
+  tibble::tibble(label = c("elastic net, squared error", "elastic net, certainty equivalent"),
+                 sharpe = c(g_t(1, "sharpe"), g_t(2, "sharpe")), kind = "training loop")
+) |>
+  dplyr::mutate(label = stats::reorder(label, sharpe))
+
+ggplot2::ggplot(board, ggplot2::aes(sharpe, label, colour = kind)) +
+  ggplot2::geom_vline(xintercept = sr_register("equal_weight", 60L), linetype = "22",
+                      linewidth = 0.35, colour = tidyaa_colors[["ink_soft"]]) +
+  ggplot2::geom_point(size = 2.6) +
+  scale_colour_tidyaa() +
+  ggplot2::labs(x = "out-of-sample Sharpe ratio, sixty-month windows", y = NULL, colour = NULL)
+```
+
+```{r}
+#| label: board-facts
+#| include: false
+best_fc  <- board |> dplyr::filter(kind != "register") |> dplyr::slice_max(sharpe, n = 1)
+best_reg <- board |> dplyr::filter(kind == "register") |> dplyr::slice_max(sharpe, n = 1)
+stopifnot(best_reg$sharpe > best_fc$sharpe, sr_register("min_variance", 60L) > best_fc$sharpe,
+          best_fc$label == "tangency, corrected mean",
+          g_t(2, "sharpe") > g_c("every_magnitude"), g_t(2, "sharpe") > g_m("bayes_stein", 60L))
+gain_a <- g_m("corrected", 60L) - g_m("sample", 60L)
+gain_b <- g_c("every_magnitude") - sr_register("equal_weight", 60L)
+gain_c <- g_t(2, "sharpe") - g_t(1, "sharpe")
+```
+
+@fig-27-scoreboard puts the three answers on one axis with the register of
+@sec-25-backtesting-application. In the Sharpe ratio added to the rule it
+corrects, the first answer buys most: the corrected mean lifts the
+sixty-month tangency portfolio by `r sprintf("%.2f", gain_a)`, from the
+register's `r sprintf("%.3f", g_m("sample", 60L))` to
+`r sprintf("%.3f", g_m("corrected", 60L))`, at 120 months by
+`r sprintf("%.2f", g_m("corrected", 120L) - g_m("sample", 120L))`, and the
+corrected tangency portfolio is the best forecast-based rule in the figure.
+The third answer buys `r sprintf("%.2f", gain_c)` over the same forecaster
+tuned on squared error, which makes the decision-trained net the best of the
+tilts at `r sprintf("%.3f", g_t(2, "sharpe"))`,
+`r sprintf("%.0f", 1e4 * (g_t(2, "ce_net") - g_c("equal_weight", "ce_net")))`
+basis points of net certainty equivalent above equal weighting. The second
+answer buys the `r sprintf("%.2f", gain_b)` that the term spread was already
+worth in @sec-16-signals-and-forecasts-application and nothing beyond it. In
+certainty equivalent the first two change places: the training loop adds
+`r sprintf("%.0f", 1e4 * (g_t(2, "ce_net") - g_t(1, "ce_net")))` basis points
+net to its forecaster where the corrected mean adds
+`r sprintf("%.0f", 1e4 * (g_m("corrected", 60L, "ce") - g_m("sample", 60L, "ce")))`
+to a fully invested tangency rule whose length is not its own to choose.
+
+Each fails somewhere. The corrected mean does not beat the rules that use no mean: the register's
+minimum variance stands at `r sprintf("%.3f", sr_register("min_variance", 60L))`
+and its best line, `r sub(" \\(register\\)$", "", as.character(best_reg$label))`,
+at `r sprintf("%.3f", best_reg$sharpe)`, above every forecast-based rule in
+the figure, and on `r sprintf("%.0f%%", 100 * share_gmv(60L))` of the
+sixty-month windows the correction concedes the point by collapsing onto
+minimum variance itself; the covariance channel of @eq-08-kz it leaves
+untouched is where that rule's advantage lives. Granularity fails to matter:
+four ways of acting on the term spread land within
+`r sprintf("%.3f", spread_sr)` of one another, the rule's choice of
+`r paste(range(G_rule), collapse = " to ")` groups rests on an information
+coefficient measured in sample that the realized forecasts do not reach, and
+with sixteen assets and a band of `r sprintf("%.1f", 100 * band)` percentage
+points there is too little cross-section for @eq-27-hard to decide anything.
+And the training loop, the answer that generalizes furthest, is the one
+whose own prediction is only partially borne out: it delivers a forecast
+with a worse squared error and a better portfolio, but it chooses its penalty
+from a criterion so noisy that the choice moves by orders of magnitude
+between years, trades `r sprintf("%.0f", turn_x)` times as much, and leaves a
+Sharpe-ratio gain the sample cannot distinguish from zero. The decision loss
+is the right teacher and a far noisier one than squared error.
+
+For the plug-in rules of @sec-09-mean-variance-application and
+@sec-08-estimation-error-application the reading is short. The sixty-month
+tangency portfolio's `r sprintf("%.3f", g_m("sample", 60L))` was never the
+price of using an estimated mean; it was the price of using the sample mean,
+and @eq-27-corrector recovers
+`r sprintf("%.0f%%", 100 * gain_a / (sr_register("min_variance", 60L) - g_m("sample", 60L)))`
+of the distance to minimum variance without touching the covariance matrix,
+with a constant that needed no tuning. What remains is the covariance
+matrix's share, which @sec-26-forecast-error-cost-theory separates from the
+mean's, and the part no estimator can recover: on this market the level
+direction that minimum variance trades carries most of what there is to
+earn, and the decision-aware forecaster changes which loss that arithmetic
+is done in, not the arithmetic. @sec-28-robustness-theory asks what to do when the model behind
+the loss is itself in doubt, and the resampled frontiers of
+@sec-28-robustness-application put the same estimation error back on the
+picture of @sec-09-mean-variance-application.
+
+## Key Takeaways {.unnumbered}
+
+- A mean-variance investor pays for forecast error in the metric
+  $\boldsymbol{\Sigma}^{-1}$, not the identity (@eq-27-decision): on the
+  sixteen classes the same squared error costs
+  $10^{`r sprintf("%.1f", log10(cost_bottom / cost_top))`}$ times more in
+  the least volatile direction than in the most [@salcher2026; @elmachtoub2022].
+- Shrinking the sample mean toward the grand mean in estimated risk units has
+  an exact risk; the best constant is $(N - 3)(T - 1)/(T - N + 2)$, a
+  function of $N$ and $T$ alone, and the corrected mean dominates the sample
+  mean whenever $T > N$ [@stoeckl2026means; @james1961; @stein1981]. On
+  sixty-month windows it lifts the tangency portfolio's Sharpe ratio from
+  `r sprintf("%.2f", g_m("sample", 60L))` to
+  `r sprintf("%.2f", g_m("corrected", 60L))` and collapses onto minimum
+  variance, which stays ahead, in
+  `r sprintf("%.0f%%", 100 * share_gmv(60L))` of the windows.
+- Every dimension of a forecast acted on costs $1/T$ whatever it carries, so
+  the familiar rules are cells of a granularity grid and the number of rank
+  groups worth forming is $(2NT\rho^2/(1 - \rho^2))^{1/3}$ from the
+  information coefficient [@salcher2026less; @cattaneo2020]. On the term
+  spread every granularity earns the same few basis points: the band of the
+  tilt, not its resolution, sets the value.
+- Tuning the elastic net's penalty on the certainty equivalent of the tilt it
+  implies instead of on squared error gives a forecast with a worse
+  $R^2_{\text{OS}}$ and a better portfolio,
+  `r sprintf("%.0f", 1e4 * (g_t(2, "ce_net") - g_t(1, "ce_net")))` basis
+  points net a year, inside the sampling error of the Sharpe ratio and at
+  `r sprintf("%.0f", turn_x)` times the turnover [@brandt2009; @bertsimas2020].
+- None of the three answers beats the register's rules that use no mean. The
+  correction prices the mean channel; the covariance channel of @eq-08-kz is
+  where the rest of the plug-in rule's loss lives.
+
+## Exercises {.unnumbered}
+
+1. Run the sixty-month backtest of @tbl-27-means with the zero target in
+   place of the grand mean. The long-only tangency rule's Sharpe ratio should
+   equal the sample mean's exactly, except on windows where the factor is
+   zero; verify both halves and count the exceptions. Then hold the
+   unconstrained position
+   $\hat{\boldsymbol{\Sigma}}^{-1}\tilde{\boldsymbol{\mu}}/\gamma$ on the
+   sample mean, the zero target and the grand mean, and compare their
+   realized certainty equivalents at $\gamma = 5$ with @eq-08-kz in mind.
+2. @eq-27-risk says the risk is below $N/T$ for every constant in
+   $(0, 2c_f)$. Simulate two thousand sixty-month samples from the
+   full-sample moments and measure the squared RAFE of the corrected mean at
+   $c \in \{c_f/2,\, c_f,\, 1.5\,c_f,\, 2.5\,c_f\}$. Which lies above $N/T$?
+   Then run the rolling backtest at the same constants: does the tangency
+   rule's Sharpe ratio move monotonically with $c$, and what does the answer
+   say about the positive part?
+3. Double the band of @eq-16-tilt to $\delta = 1/N$ and recompute
+   @tbl-27-granularity. Does granularity begin to matter once the forecast
+   may move the weights further, and does the sign cell still match the full
+   vector after costs?
+4. The information coefficient in @tbl-27-granularity is measured on fitted
+   values. Replace it, from the second out-of-sample year on, with the
+   trailing coefficient of the forecasts actually made, and recompute the
+   number of groups month by month. How often does the rule now hold $1/N$?

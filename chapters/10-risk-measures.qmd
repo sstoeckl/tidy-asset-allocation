@@ -1,0 +1,1152 @@
+---
+title: "Risk Measures Beyond Variance"
+metadata:
+  pagetitle: "Risk Measures Beyond Variance"
+  description-meta: "Coherent risk measures, expected shortfall as a linear program, and what replacing variance changes in a long-only allocation with PortfolioAnalytics."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+Every optimizer in @sec-09-mean-variance-theory measured risk by the variance
+of the portfolio, and nothing in the data required it: @markowitz1959 himself
+proposed the semi-variance, which counts only the returns below the mean, as
+the measure an investor who fears losses rather than dispersion should prefer.
+@artzner1999 turned the question around and asked which properties a number
+must have before it can be called a measure of risk at all, and found that the
+industry's standard, value at risk, lacks the one that matters most for
+building portfolios. This chapter asks what changes when variance is replaced
+by a measure that has that property.
+
+We first set out the coherence axioms, value at risk and why it fails them,
+expected shortfall and the linear program that makes it as easy to optimize as
+variance, its Cornish-Fisher extension, and the downside and drawdown measures
+that sit beside them; then show which of these `PortfolioAnalytics` can solve,
+with which solver, and where its defaults do something other than what the
+specification says; then solve one long-only problem on the sixteen class
+series under four objectives and read what each bought. The allocation is
+**strategic** in the sense of @sec-03-return-risk-and-the-investor-theory:
+full-sample moments, no timing, and the out-of-sample check read from the
+register of @sec-25-backtesting-application rather than recomputed.
+
+The data are the sixteen risky class series of
+@sec-02-notation-and-data-simulated-market, in excess of the Treasury bill for
+the reasons of @sec-03-return-risk-and-the-investor-theory, loaded as
+@sec-09-mean-variance-theory loads them.
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)   # sixteen risky classes
+rf <- sim_riskfree_monthly$return                                  # the bill
+Re <- R - rf                                                       # excess returns
+stopifnot(ncol(Re) == 16L, !anyNA(Re), length(rf) == nrow(R))
+```
+
+```{r}
+#| label: credit-facts
+#| include: false
+# The two facts about `US_credit` that the chapter argues from: its rank on
+# Sharpe ratio and its skewness. Computed, and asserted where the text names them.
+sharpe_rank <- rank(-apply(Re, 2, function(x) mean(x) / stats::sd(x)))
+skew_total  <- apply(R, 2, function(x) as.numeric(skewness(x)))
+stopifnot(identical(names(sharpe_rank), colnames(Re)), identical(names(skew_total), colnames(R)),
+          sharpe_rank[["US_credit"]] <= 3,
+          names(which.min(skew_total)) == "US_credit")
+credit_rank <- c("best", "second-best", "third-best")[sharpe_rank[["US_credit"]]]
+```
+
+## Coherence, Tails, and What Variance Assumes {#sec-10-risk-measures-theory}
+
+### Four properties of a risk measure
+
+Write $X$ for the random excess return of a position over one period and
+$\rho(X)$ for the number a risk measure assigns to it, in the units of a loss.
+@artzner1999 call $\rho$ **coherent** if it satisfies four axioms:
+monotonicity, so that a position which pays at least as much as another in
+every state is not riskier; translation invariance, so that adding a sure
+amount $c$ reduces the measured risk by exactly $c$; positive homogeneity, so
+that $\rho(\lambda X) = \lambda\rho(X)$ for $\lambda > 0$; and
+**subadditivity**,
+
+$$
+\rho(X + Y) \;\leq\; \rho(X) + \rho(Y).
+$$ {#eq-10-subadditive}
+
+The last axiom is the one that matters here. It says that combining two
+positions can never make the measured risk larger than the sum of the two
+measured separately, which is what diversification means; a measure that
+violates it can rank a diversified portfolio as riskier than its concentrated
+parts, and an optimizer built on it will act on that ranking. Variance is not
+coherent, since it scales with $\lambda^2$ rather than $\lambda$, and the
+standard deviation fails monotonicity. They are used anyway because, when
+returns are elliptical, every translation-invariant and positively homogeneous
+measure is an increasing function of the standard deviation at a given mean
+[@mcneil2015], so the choice of measure changes no ranking. Whether returns
+are elliptical is a question @sec-04-descriptive-analysis-implementation
+answered for this market: they are not.
+
+### Value at risk
+
+The **value at risk** at level $\alpha$ is the loss that is exceeded with
+probability $\alpha$: writing $q_\alpha(X)$ for the $\alpha$-quantile of the
+return,
+
+$$
+\mathrm{VaR}_\alpha(X) = -\,q_\alpha(X),
+$$ {#eq-10-var}
+
+with $\alpha = 0.05$ for the 95% level that this chapter uses throughout, and
+which `PortfolioAnalytics` writes as `p = 0.95`. It is the regulatory standard
+of @jorion2007; it is monotone, translation invariant and homogeneous; and it
+fails @eq-10-subadditive [@artzner1999; @acerbi2002], not only in contrived
+examples: a quantile ignores everything beyond itself, so two positions whose
+losses each sit inside the 5% tail can, combined, produce a loss outside it.
+
+::: {.callout-note collapse="true"}
+## Worked: where value at risk fails subadditivity on this data
+
+@eq-10-subadditive can be tested on every pair of the sixteen series. For an
+equally weighted pair, homogeneity turns the axiom into
+$\rho\!\left(\tfrac{1}{2}X + \tfrac{1}{2}Y\right) \leq \tfrac{1}{2}\rho(X) + \tfrac{1}{2}\rho(Y)$,
+which is one comparison per pair. `PerformanceAnalytics` reports both as
+negative numbers by default; `invert = FALSE` returns the loss as a positive
+one, the convention of @eq-10-var.
+
+```{r}
+#| label: subadditivity
+loss_var <- function(x) as.numeric(VaR(x, p = 0.95, method = "historical", invert = FALSE))
+loss_es  <- function(x) as.numeric(ES(x,  p = 0.95, method = "historical", invert = FALSE))
+
+pairs <- utils::combn(colnames(Re), 2)
+mix <- apply(pairs, 2, function(p) {
+  a <- as.numeric(Re[, p[1]]); b <- as.numeric(Re[, p[2]]); m <- (a + b) / 2
+  c(var_mix = loss_var(m), var_avg = (loss_var(a) + loss_var(b)) / 2,
+    es_mix  = loss_es(m),  es_avg  = (loss_es(a)  + loss_es(b))  / 2)
+}) |>
+  t() |>
+  tibble::as_tibble() |>
+  dplyr::mutate(a = pairs[1, ], b = pairs[2, ],
+                var_fails = var_mix > var_avg + 1e-12,
+                es_fails  = es_mix  > es_avg  + 1e-12)
+
+c(pairs = nrow(mix), var_violations = sum(mix$var_fails), es_violations = sum(mix$es_fails))
+mix |> dplyr::filter(var_fails) |> dplyr::select(a, b, var_mix, var_avg)
+```
+
+```{r}
+#| label: subadditivity-facts
+#| include: false
+# What the next paragraph says about the violations: expected shortfall has
+# none, and every pair that fails on value at risk is a credit series with the
+# government bond of its own currency.
+viol <- dplyr::filter(mix, var_fails)
+stopifnot(sum(mix$es_fails) == 0L, nrow(viol) >= 1L,
+          all(sub("_.*$", "", viol$a) == sub("_.*$", "", viol$b)),
+          all(sub("^.*_", "", viol$a) == "credit"), all(sub("^.*_", "", viol$b) == "government"))
+```
+
+Value at risk fails on `r nrow(viol)` of the `r nrow(mix)` pairs,
+`r knitr::combine_words(paste0("\x60", viol$a, "\x60 with \x60", viol$b, "\x60"))`,
+each a credit series combined with the government bond of its own currency.
+Expected shortfall, defined below, fails on none. The
+violations are small, at most
+`r sprintf("%.2f", 100 * max(viol$var_mix - viol$var_avg))` percentage points
+of monthly loss, because at a 5% tail on
+`r nrow(Re)` months most pairs are close to elliptical, and they are exactly
+where @sec-04-descriptive-analysis-application located the non-normality of
+this market: in credit.
+:::
+
+### Expected shortfall and the linear program
+
+The **expected shortfall** at level $\alpha$ is the expected loss given that
+the loss exceeds the value at risk, @eq-04-es of
+@sec-04-descriptive-analysis-theory, also called conditional value at risk and
+expected tail loss; `PortfolioAnalytics` accepts all three names. It is
+coherent [@acerbi2002] and the smallest coherent measure that dominates value
+at risk at the same level, which is why it is the tail measure this book uses.
+
+What made expected shortfall usable in an optimizer is a representation due to
+@rockafellar2000. For a portfolio $\boldsymbol{w}$ with return
+$\boldsymbol{w}'\boldsymbol{r}$,
+
+$$
+\mathrm{ES}_\alpha(\boldsymbol{w})
+= \min_{\zeta \in \mathbb{R}}
+  \left\{\, \zeta + \frac{1}{\alpha}\,
+  \mathbb{E}\!\left[\left(-\boldsymbol{w}'\boldsymbol{r} - \zeta\right)_+\right] \right\},
+$$ {#eq-10-ru}
+
+where $(x)_+ = \max(x, 0)$, and the minimizing $\zeta$ is the value at risk.
+The expression inside the braces is convex in $(\boldsymbol{w}, \zeta)$
+jointly, so minimizing it over both at once minimizes the expected shortfall
+over $\boldsymbol{w}$ without ever computing a quantile. With the expectation
+replaced by the average over $T$ observed return vectors
+$\boldsymbol{r}_1, \ldots, \boldsymbol{r}_T$ and one auxiliary variable $z_t$
+per observation, the minimum-ES problem under full investment and no short
+sales is the linear program
+
+$$
+\min_{\boldsymbol{w},\,\zeta,\,\boldsymbol{z}} \;
+  \zeta + \frac{1}{\alpha T}\sum_{t=1}^{T} z_t
+\quad\text{subject to}\quad
+  z_t \geq -\boldsymbol{w}'\boldsymbol{r}_t - \zeta,\;
+  z_t \geq 0,\;
+  \boldsymbol{w}'\boldsymbol{\iota} = 1,\;
+  \boldsymbol{w} \geq \boldsymbol{0},
+$$ {#eq-10-lp}
+
+with $N + T + 1$ variables, here `r ncol(Re) + nrow(Re) + 1`, and one
+inequality per month. @rockafellar2002 extend the representation to
+distributions with atoms, which the empirical distribution is. Every
+constraint in @eq-10-lp is linear, so the problem is convex and a local minimum
+is the global one [@boyd2004], as for the quadratic program of @eq-09-problem;
+@sec-13-solvers-theory is about that distinction. A mean-ES frontier adds the
+row $\boldsymbol{w}'\boldsymbol{\mu} \geq \bar{\mu}$ and traces $\bar{\mu}$,
+and the ratio of mean excess return to expected shortfall, which the package
+calls STARR, is the tail analog of the Sharpe ratio, maximized by the same
+normalization that turns the maximum-Sharpe problem into a quadratic program in
+@sec-13-solvers-theory.
+
+::: {.callout-note collapse="true"}
+## Worked: the expected shortfall of `US_credit` by hand
+
+The sample version of @eq-04-es is an average over the tail. With $T$ months
+and $\alpha = 0.05$ the tail holds the $\alpha T$ worst observations, which is
+not an integer, and `PerformanceAnalytics` averages every return strictly below
+the $\alpha$-quantile.
+
+```{r}
+#| label: es-by-hand
+x  <- as.numeric(Re[, "US_credit"])
+q  <- stats::quantile(x, 0.05)              # the quantile; its negative is the VaR
+tail_months <- x[x < q]
+es_hand <- -mean(tail_months)
+
+stopifnot(all.equal(es_hand, loss_es(x)))
+c(months = length(x), alpha_T = 0.05 * length(x), in_tail = length(tail_months),
+  VaR = as.numeric(-q), ES = es_hand,
+  ES_modified = as.numeric(ES(x, p = 0.95, method = "modified", invert = FALSE)))
+```
+
+The `r length(tail_months)` months below the quantile run from
+`r sprintf("%.1f%%", 100 * min(tail_months))` to
+`r sprintf("%.1f%%", 100 * max(tail_months))`, and
+
+$$
+\widehat{\mathrm{ES}}_{0.05}
+= -\frac{1}{`r length(tail_months)`}\sum_{t \in \text{tail}} r_t
+= -\frac{`r sprintf("%.4f", sum(tail_months))`}{`r length(tail_months)`}
+= `r sprintf("%.4f", es_hand)`,
+$$
+
+against a value at risk of `r sprintf("%.4f", -q)`: the average month in the
+tail loses `r sprintf("%.1f", es_hand / -q)` times the loss at its edge. The
+Cornish-Fisher figure of `r sprintf("%.4f", as.numeric(ES(x, p = 0.95, method = "modified", invert = FALSE)))`
+is the estimate @sec-04-descriptive-analysis-implementation reported as
+roughly twice the historical one, and the two disagree because the
+excess-return skewness of `r sprintf("%.2f", as.numeric(skewness(x)))` pushes
+the expansion further out than `r length(tail_months)` observed months reach.
+:::
+
+### The modified expected shortfall
+
+The historical estimator uses $\alpha T$ observations, `r 0.05 * nrow(Re)` of
+them here, and @yamai2005 show that expected shortfall is estimated with a
+larger standard error than value at risk from the same sample precisely because
+it depends on the few observations beyond the quantile. The alternative of
+@favre2002 and @boudt2008 replaces the sample tail by a normal quantile
+corrected for skewness and kurtosis through the Cornish-Fisher expansion,
+@eq-04-cornish-fisher, and the resulting **modified expected shortfall** is a
+function of the portfolio's first four moments. Each is a polynomial in
+$\boldsymbol{w}$ through the coskewness and cokurtosis tensors that
+@sec-11-higher-moments-theory sets out, so the modified measure responds to
+the asymmetry of every asset and every pair, and @boudt2008 also decompose it
+into the contribution of each position, which is the quantity
+@sec-14-risk-based-allocation-theory budgets. But it is not convex in
+$\boldsymbol{w}$, and no linear program computes its minimum.
+`PortfolioAnalytics` reaches it by search, which
+@sec-10-risk-measures-implementation shows and @sec-13-solvers-application
+measures. One default from @sec-04-descriptive-analysis-implementation carries
+over: `ES()` in `PerformanceAnalytics` returns this modified figure unless
+`method = "historical"` is asked for.
+
+### Downside measures, drawdowns, and two more coherent measures
+
+Three further families deserve a place. The oldest is the safety-first
+criterion of @roy1952, which minimizes the probability of falling below a
+disaster level, and the semi-variance of @markowitz1959, which @bawa1977
+generalized to the **lower partial moment** of order $n$ around a target
+$\tau$,
+
+$$
+\mathrm{LPM}_n(\tau) = \mathbb{E}\!\left[\left(\tau - \boldsymbol{w}'\boldsymbol{r}\right)_+^{\,n}\right],
+$$ {#eq-10-lpm}
+
+whose square root at $n = 2$ is the downside deviation and the denominator of
+the ratio of @sortino1991. Drawdown measures ask about the path rather than
+the distribution: @chekhlov2005 define the conditional drawdown at risk as the
+average of the worst $\alpha$ share of drawdowns and show that it, too, is
+minimized by a linear program of the form of @eq-10-lp, with drawdowns in
+place of losses. The third family is the one @krokhmal2007 built by replacing
+the average in @eq-10-ru with a higher norm. At the second order,
+
+$$
+\mathrm{CSM}_\alpha(\boldsymbol{w})
+= \min_{\zeta}
+  \left\{\, \zeta + \frac{1}{\alpha}\,
+  \sqrt{\mathbb{E}\!\left[\left(-\boldsymbol{w}'\boldsymbol{r} - \zeta\right)_+^{2}\right]} \right\},
+$$ {#eq-10-csm}
+
+which is coherent, penalizes the shape of the tail beyond its average, and is
+a second-order cone program rather than a linear one; `PortfolioAnalytics`
+names it `CSM`. The package also offers `EQS`, an "expected quadratic
+shortfall" documented only by its code, which minimizes over $\zeta$ the
+expression of @eq-10-ru with a squared positive part in place of the loss;
+which tail it squares is a question @sec-10-risk-measures-implementation
+measures rather than assumes.
+
+### What the choice of measure assumes
+
+Each measure encodes a belief about what the investor of
+@sec-03-return-risk-and-the-investor-theory dislikes. Variance treats a gain
+of ten percent and a loss of ten percent as the same event, and by
+@eq-03-quadratic-utility that is right only if utility is quadratic or every
+higher moment is a function of the first two, the two cases @markowitz1959
+identified; @levy1979 and @markowitz2014 find the approximation good across
+most utility functions and return histories, and poor where returns are far
+from normal. A tail measure asks about one side of the distribution only, and
+so responds to skewness and kurtosis, which
+@sec-04-descriptive-analysis-application showed to live in credit rather than
+in equity: `US_credit` has the `r credit_rank` Sharpe ratio of the sixteen and
+a total-return skewness of
+`r sprintf("%.2f", skew_total[["US_credit"]])`, the most negative of them. Markets appear
+to price downside risk separately from variance [@ang2006], so the choice is
+not only a matter of taste; and it has a cost in estimation, since the
+historical tail uses a twentieth of the sample and the modified one inherits
+the sample skewness, which @sec-04-descriptive-analysis-implementation found to
+change sign in a third of rolling windows. @sec-11-higher-moments-theory takes
+the comoments as inputs; here they enter only through the measure.
+
+One rule from @sec-03-return-risk-and-the-investor-theory governs what follows:
+the measure a portfolio is judged by must be the measure it was chosen by, and
+a comparison across objectives has to show every portfolio on every measure so
+that the mismatch is visible. @sec-10-risk-measures-application does that.
+
+## Implementation {#sec-10-risk-measures-implementation}
+
+### The objectives the package knows
+
+A risk objective in `PortfolioAnalytics` is named for the function that
+computes it. `"var"` or `"StdDev"` is the variance of @eq-09-moments;
+`"ES"`, with the aliases `"ETL"` and `"CVaR"`, is @eq-04-es, taking its level
+and estimator as `arguments = list(p = 0.95, method = "historical")`;
+`"VaR"` is @eq-10-var, which no convex solver accepts, since a quantile is not
+convex in the weights, so it is reachable only through the search methods of
+@sec-13-solvers-theory; `"CSM"` and `"EQS"` are solved by `CVXR` only. Four
+specifications on one constraint set carry the chapter: minimum variance,
+minimum historical expected shortfall, quadratic utility at
+`risk_aversion = 2`, which by the $\gamma/2$ convention of
+@sec-91-proofs-quadratic-utility is $\gamma = 4$, and minimum modified expected
+shortfall.
+
+```{r}
+#| label: specs
+base_spec <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only")
+
+spec_var <- base_spec |> add.objective(type = "risk", name = "var")
+spec_es  <- base_spec |> add.objective(type = "risk", name = "ES",
+                                       arguments = list(p = 0.95, method = "historical"))
+spec_mes <- base_spec |> add.objective(type = "risk", name = "ES",
+                                       arguments = list(p = 0.95, method = "modified"))
+spec_qu  <- base_spec |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "var", risk_aversion = 2)   # lambda = 2, i.e. gamma = 4
+```
+
+The first three are convex and go to `ROI`: a quadratic program for the two
+variance objectives, as in @sec-09-mean-variance-implementation, and the linear
+program of @eq-10-lp for the shortfall.
+
+```{r}
+#| label: solve-convex
+w_of <- function(opt) extractWeights(opt)[colnames(Re)]      # always index by name
+
+o_var <- optimize.portfolio(Re, spec_var, optimize_method = "ROI")
+o_es  <- optimize.portfolio(Re, spec_es,  optimize_method = "ROI")
+o_qu  <- optimize.portfolio(Re, spec_qu,  optimize_method = "ROI")
+w_var <- w_of(o_var); w_es <- w_of(o_es); w_qu <- w_of(o_qu)
+stopifnot(abs(sum(w_es) - 1) < 1e-6, all(w_es >= -1e-8))
+
+W3   <- rbind(`minimum variance` = w_var, `minimum ES` = w_es, `quadratic utility` = w_qu)
+keep <- colnames(Re)[apply(W3, 2, max) > 0.005]
+round(W3[, keep], 3)
+```
+
+The risk numbers come back two ways. `extractObjectiveMeasures()` reports what
+the solver minimized, and `extract_risk()` recomputes the mean, the standard
+deviation and all three tail measures for any weight vector, so a portfolio
+chosen by one measure can be read on the others.
+
+```{r}
+#| label: read-back
+extractObjectiveMeasures(o_es)
+unlist(extract_risk(Re, w_es)[c("StdDev", "ES", "CSM")])
+```
+
+The two `ES` figures agree, and both are the value of @eq-10-lp, which with
+$\alpha T = `r 0.05 * nrow(Re)`$ interpolates between the eighteenth and
+nineteenth worst months, rather than the sample-tail average of `ES()`; the
+two differ at the fourth decimal,
+`r sprintf("%.4f", extractObjectiveMeasures(o_es)$ES)` against
+`r sprintf("%.4f", loss_es(as.numeric(Re %*% w_es)))`.
+
+::: {.callout-note}
+## Under `ROI` the `method` argument is not read
+
+The linear program of @eq-10-lp is the sample formulation, and it is the only
+formulation `ROI` has. Asking for `method = "modified"` on an `ES` objective
+and then solving with `ROI` returns the historical solution without a message.
+
+```{r}
+#| label: roi-ignores-method
+o_mes_roi <- optimize.portfolio(Re, spec_mes, optimize_method = "ROI")
+c(same_weights_as_historical = isTRUE(all.equal(w_of(o_mes_roi), w_es)))
+```
+
+The modified measure needs a solver that evaluates the objective as a black
+box, which means differential evolution [@storn1997; @ardia2011], particle
+swarm, simulated annealing or random portfolios, none of which carries an
+optimality guarantee. We use differential evolution with a small budget, and
+@sec-10-risk-measures-application shows what the budget bought.
+:::
+
+```{r}
+#| label: solve-modified
+#| message: false
+set.seed(1602)
+invisible(utils::capture.output(
+  o_mes <- optimize.portfolio(Re, spec_mes, optimize_method = "DEoptim",
+                              search_size = 2000, itermax = 50, traceDE = 0)
+))
+w_mes <- w_of(o_mes)
+c(modified_ES = as.numeric(extractObjectiveMeasures(o_mes)$ES),
+  US_credit = w_mes[["US_credit"]], positions = sum(w_mes > 0.005),
+  seconds = round(as.numeric(o_mes$elapsed_time, units = "secs"), 1))
+```
+
+::: {.callout-warning}
+## A mean plus a risk objective is a ratio problem by default, but only for the tail measures
+
+`optimize.portfolio()` decides what one return objective plus one risk
+objective means, and decides differently for different measures. With `mean`
+and `StdDev` the default `maxSR = FALSE` makes it a quadratic-utility problem
+at the default `risk_aversion = 1`, and the tangency portfolio needs
+`maxSR = TRUE`. With `mean` and `ES` the default is `maxSTARR = TRUE`, as it
+is for `CSMratio` and `EQSratio`: the package maximizes the ratio unless told
+not to, and `maxSTARR = FALSE` turns the specification into a minimum-ES
+problem in which the return objective is merely reported.
+
+```{r}
+#| label: ratio-defaults
+spec_mean_es <- base_spec |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "ES", arguments = list(p = 0.95))
+spec_mean_sd <- base_spec |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "StdDev")
+
+starr  <- function(w) { x <- as.numeric(Re %*% w); mean(x) / loss_es(x) }
+sharpe <- function(w) { x <- as.numeric(Re %*% w); mean(x) / stats::sd(x) }
+
+asked <- list(
+  `mean + ES, defaults`         = optimize.portfolio(Re, spec_mean_es, optimize_method = "ROI"),
+  `mean + ES, maxSTARR = FALSE` = optimize.portfolio(Re, spec_mean_es, optimize_method = "ROI",
+                                                     maxSTARR = FALSE),
+  `mean + StdDev, defaults`     = optimize.portfolio(Re, spec_mean_sd, optimize_method = "ROI"),
+  `mean + StdDev, maxSR = TRUE` = optimize.portfolio(Re, spec_mean_sd, optimize_method = "ROI",
+                                                     maxSR = TRUE)
+)
+
+# What each default actually solved, checked rather than asserted.
+w_qu1 <- w_of(optimize.portfolio(Re, base_spec |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "var", risk_aversion = 1), optimize_method = "ROI"))
+stopifnot(isTRUE(all.equal(w_of(asked[[2]]), w_es,  tolerance = 1e-4)),
+          isTRUE(all.equal(w_of(asked[[3]]), w_qu1, tolerance = 1e-4)))
+
+ratios <- tibble::tibble(
+  specification = names(asked),
+  solves  = c("maximum STARR", "minimum ES", "quadratic utility, risk_aversion = 1",
+              "maximum Sharpe"),
+  STARR   = vapply(asked, function(o) starr(w_of(o)),  numeric(1)),
+  Sharpe  = vapply(asked, function(o) sharpe(w_of(o)), numeric(1)),
+  largest = vapply(asked, function(o) {
+    w <- w_of(o); sprintf("%s %.0f%%", names(which.max(w)), 100 * max(w)) }, character(1))
+)
+```
+
+```{r}
+#| label: tbl-10-ratio-defaults
+#| tbl-cap: "Four two-objective specifications and what each solved. STARR is the monthly mean excess return over the 95% expected shortfall; the Sharpe ratio is monthly."
+#| echo: false
+# What the paragraph below the table says about the two default rows.
+w_def_es <- w_of(asked[["mean + ES, defaults"]])
+w_def_sd <- w_of(asked[["mean + StdDev, defaults"]])
+common   <- sum(pmin(w_def_es, w_def_sd))             # the weight the two have in common
+stopifnot(names(which.max(w_def_es)) == "US_government", max(w_def_es) > 0.5,
+          all(grepl("_equity$", names(w_def_sd)[w_def_sd > 0.005])))
+
+ratios |>
+  dplyr::mutate(STARR = sprintf("%.3f", STARR), Sharpe = sprintf("%.3f", Sharpe)) |>
+  kable(align = "llrrl",
+        col.names = c("specification", "solves", "STARR", "Sharpe", "largest holding"))
+```
+
+The two default rows of @tbl-10-ratio-defaults have
+`r sprintf("%.0f%%", 100 * common)` of their weight in common: one maximizes a
+tail ratio and holds mostly `US_government`, the other a utility whose risk
+penalty is almost switched off and holds only equity,
+`r paste0("\x60", names(which.max(w_def_sd)), "\x60")` first. Nothing in the
+returned object says
+which was solved beyond the name of the objective measure. State the ratio
+arguments explicitly in every call, in both directions.
+:::
+
+### The mean-ES frontier
+
+`create.EfficientFrontier()` with `type = "mean-ETL"` calls
+`meanetl.efficient.frontier()`, which solves @eq-10-lp for the minimum-ES
+portfolio, for the maximum return, and then for `n.portfolios` return targets
+between them. `chart.EfficientFrontier()` draws it in one call, its default
+`match.col = "ES"` locating the horizontal axis; the mean-variance frontier of
+@sec-09-mean-variance-implementation is computed beside it on the same
+constraints.
+
+```{r}
+#| label: frontiers
+#| warning: false
+ef_es <- create.EfficientFrontier(Re, spec_mean_es, type = "mean-ETL",
+                                  n.portfolios = 50, optimize_method = "ROI")
+ef_sd <- create.EfficientFrontier(Re, spec_mean_sd, type = "mean-StdDev",
+                                  n.portfolios = 50, optimize_method = "ROI")
+
+# `unclass()` before `as.data.frame()`, for the reason given in chapter 9.
+fr_es <- as.data.frame(unclass(ef_es$frontier))
+fr_sd <- as.data.frame(unclass(ef_sd$frontier))
+
+# The direct call returns the same matrix, without the wrapper object.
+fr_direct <- meanetl.efficient.frontier(spec_mean_es, Re, optimize_method = "ROI",
+                                        n.portfolios = 10)
+c(es_points = nrow(fr_es), sd_points = nrow(fr_sd), direct_points = nrow(fr_direct),
+  min_ES_on_frontier = fr_es$ES[1], min_ES_solved = extractObjectiveMeasures(o_es)$ES)
+```
+
+```{r}
+#| label: fig-10-native-frontier
+#| fig-cap: "The package's own mean-ES frontier chart. The tangent is drawn to a zero rate, which is correct here because the returns are already in excess of the bill, and the point it touches is the maximum-STARR portfolio."
+chart.EfficientFrontier(ef_es, match.col = "ES", rf = 0, tangent.line = TRUE,
+                        RAR.text = "STARR", main = "")
+```
+
+Two frontiers under two measures are compared on a common axis, and there are
+two of them. Every coordinate goes into one data frame first, one row per
+frontier portfolio and per asset, with the realized volatility and expected
+shortfall of each, so that a point cannot be paired with another portfolio's
+return.
+
+```{r}
+#| label: frontier-frame
+weights_of <- function(fr) {
+  W <- as.matrix(fr[, grep("^w[.]", colnames(fr))])
+  colnames(W) <- sub("^w[.]", "", colnames(W))
+  stopifnot(setequal(colnames(W), colnames(Re)))
+  W[, colnames(Re)]
+}
+p_stats <- function(w) {
+  x <- as.numeric(Re %*% w)
+  c(ret = mean(x) * 12, vol = stats::sd(x) * sqrt(12), es = loss_es(x))
+}
+frontier_frame <- function(fr, label) {
+  W <- weights_of(fr)
+  s <- t(apply(W, 1, p_stats))
+  tibble::tibble(kind = label, label = NA_character_,
+                 ret = s[, "ret"], vol = s[, "vol"], es = s[, "es"],
+                 w_credit = W[, "US_credit"])
+}
+assets <- tibble::tibble(
+  kind = "asset", label = colnames(Re),
+  ret  = as.numeric(colMeans(Re)) * 12,
+  vol  = as.numeric(apply(Re, 2, stats::sd)) * sqrt(12),
+  es   = as.numeric(apply(Re, 2, loss_es)),
+  w_credit = NA_real_
+)
+pts <- dplyr::bind_rows(frontier_frame(fr_es, "mean-ES frontier"),
+                        frontier_frame(fr_sd, "mean-variance frontier"),
+                        assets)
+dplyr::count(pts, kind)
+```
+
+```{r}
+#| label: fig-10-frontiers
+#| fig-cap: "The two frontiers in two planes, from one data frame: realized 95% expected shortfall, monthly, on the left; annualized volatility on the right. Each is the envelope in its own plane, and the two are almost indistinguishable as curves. Grey points are the sixteen series."
+#| echo: false
+#| fig-asp: 0.5
+long <- pts |>
+  tidyr::pivot_longer(c(es, vol), names_to = "plane", values_to = "risk") |>
+  dplyr::mutate(plane = c(es = "expected shortfall, 95%, monthly",
+                          vol = "annualized volatility")[plane])
+
+ggplot2::ggplot() +
+  ggplot2::geom_point(data = dplyr::filter(long, kind == "asset"),
+                      ggplot2::aes(risk, ret), colour = tidyaa_colors[["rule"]], size = 1.6) +
+  ggplot2::geom_text(data = dplyr::filter(long, kind == "asset"),
+                     ggplot2::aes(risk, ret, label = label), size = 1.9, hjust = -0.1,
+                     colour = tidyaa_colors[["ink_soft"]]) +
+  ggplot2::geom_line(data = dplyr::filter(long, kind != "asset"),
+                     ggplot2::aes(risk, ret, colour = kind, linetype = kind), linewidth = 0.8) +
+  ggplot2::facet_wrap(~ plane, scales = "free_x") +
+  ggplot2::scale_colour_manual(values = unname(tidyaa_colors[c("blue", "ink")]), name = NULL) +
+  ggplot2::scale_linetype_manual(values = c("solid", "22"), name = NULL) +
+  ggplot2::scale_x_continuous(labels = scales::percent,
+                              expand = ggplot2::expansion(mult = c(0.04, 0.2))) +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  ggplot2::labs(x = NULL, y = "annualized excess return") +
+  ggplot2::theme(legend.position = "top")
+```
+
+```{r}
+#| label: frontier-gap
+gap_at <- function(ret_target, col) {
+  f <- function(k) stats::approx(pts$ret[pts$kind == k], pts[[col]][pts$kind == k],
+                                 xout = ret_target)$y
+  f("mean-variance frontier") - f("mean-ES frontier")
+}
+grid <- seq(0.04, 0.12, by = 0.005)
+credit_gap  <- gap_at(grid, "w_credit")             # variance frontier minus ES frontier
+peak_credit <- vapply(c("mean-variance frontier", "mean-ES frontier"),
+                      function(k) max(pts$w_credit[pts$kind == k]), numeric(1))
+
+# What the text below states: the two curves lie within a tenth of a percentage
+# point of each other in either risk, the gap in `US_credit` runs both ways, and
+# the higher peak is on the expected-shortfall frontier.
+stopifnot(!anyNA(credit_gap),
+          max(abs(gap_at(grid, "es"))) < 0.001, max(abs(gap_at(grid, "vol"))) < 0.001,
+          max(credit_gap) > 0, min(credit_gap) < 0,
+          peak_credit[["mean-ES frontier"]] > peak_credit[["mean-variance frontier"]])
+
+c(largest_ES_saved        = max(gap_at(grid, "es")),
+  largest_vol_paid        = -min(gap_at(grid, "vol")),
+  credit_more_on_variance = max(credit_gap),
+  credit_more_on_ES       = -min(credit_gap))
+```
+
+Read @fig-10-frontiers as two statements. As curves, the frontiers nearly
+coincide: at any target return the mean-ES portfolio saves at most
+`r sprintf("%.2f", 100 * max(gap_at(grid, "es")))` percentage points of
+monthly expected shortfall and pays at most
+`r sprintf("%.2f", 100 * -min(gap_at(grid, "vol")))` percentage points of
+annualized volatility for it, both within the width of the line. As
+portfolios, they differ, and @fig-10-credit-weight shows where.
+
+```{r}
+#| label: fig-10-credit-weight
+#| fig-cap: "The weight of `US_credit` along the two frontiers, against the target excess return. On the variance frontier the weight rises to a single peak and falls back to zero; on the expected-shortfall frontier it is zero at low targets and irregular above them, with the higher peak."
+#| echo: false
+#| fig-asp: 0.45
+pts |>
+  dplyr::filter(kind != "asset") |>
+  ggplot2::ggplot(ggplot2::aes(ret, w_credit, colour = kind, linetype = kind)) +
+  ggplot2::geom_line(linewidth = 0.8) +
+  ggplot2::scale_colour_manual(values = unname(tidyaa_colors[c("blue", "ink")]), name = NULL) +
+  ggplot2::scale_linetype_manual(values = c("solid", "22"), name = NULL) +
+  ggplot2::scale_x_continuous(labels = scales::percent) +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  ggplot2::labs(x = "annualized excess return of the frontier portfolio",
+                y = "weight of US_credit") +
+  ggplot2::theme(legend.position = "top")
+```
+
+The variance frontier holds `US_credit` at up to
+`r sprintf("%.1f%%", 100 * peak_credit[["mean-variance frontier"]])`
+of the portfolio and the expected-shortfall frontier at up to
+`r sprintf("%.1f%%", 100 * peak_credit[["mean-ES frontier"]])`;
+at a matched target return the variance frontier holds up to
+`r sprintf("%.0f", 100 * max(credit_gap))` percentage points more of it and
+the expected-shortfall frontier up to
+`r sprintf("%.0f", 100 * -min(credit_gap))` more. The tail measure did not sell the asset whose risk is in its
+third moment rather than its second, the holding
+@sec-09-mean-variance-application traced to a measure that cannot see a left
+tail: once a return target has to be met, both measures buy the series. The
+reason is what a 5% historical tail registers.
+
+```{r}
+#| label: credit-tail
+x_credit <- as.numeric(Re[, "US_credit"])
+i_worst  <- which.min(x_credit)
+d_worst  <- zoo::index(Re)[i_worst]                    # the worst month of the series
+per_sd   <- function(method) apply(Re, 2, function(x)
+  as.numeric(ES(as.numeric(x), p = 0.95, method = method, invert = FALSE)) / stats::sd(x))
+tail_sd  <- list(historical = per_sd("historical"), modified = per_sd("modified"))
+tail_rank <- vapply(tail_sd, function(v) rank(-v)[["US_credit"]], numeric(1))
+
+credit_tail <- c(skewness            = as.numeric(skewness(x_credit)),
+                 without_worst_month = as.numeric(skewness(x_credit[-i_worst])),
+                 worst_month_in_sd   = (x_credit[i_worst] - mean(x_credit)) / stats::sd(x_credit),
+                 ES_per_sd           = tail_sd$historical[["US_credit"]],
+                 modified_ES_per_sd  = tail_sd$modified[["US_credit"]])
+stopifnot(in_episode(d_worst, "credit_crisis"),
+          abs(credit_tail[["without_worst_month"]]) < 0.25 * abs(credit_tail[["skewness"]]),
+          tail_rank[["historical"]] > 4, tail_rank[["modified"]] <= 3)
+round(credit_tail, 2)
+tail_rank
+```
+
+The skewness of `US_credit` is the work of one month, `r fmt_model(d_worst)`
+in the credit crisis, a return
+`r sprintf("%.1f", -credit_tail[["worst_month_in_sd"]])` standard deviations
+below the mean: without it the excess-return skewness is
+`r sprintf("%.2f", credit_tail[["without_worst_month"]])` rather than
+`r sprintf("%.2f", credit_tail[["skewness"]])`. A 5% tail averages that month
+with `r length(tail_months) - 1` others, so the historical expected shortfall of the series is
+`r sprintf("%.2f", credit_tail[["ES_per_sd"]])` times its standard deviation,
+rank `r tail_rank[["historical"]]` of the sixteen, where the Cornish-Fisher
+figure, which is built from the skewness, is
+`r sprintf("%.2f", credit_tail[["modified_ES_per_sd"]])` times, rank
+`r tail_rank[["modified"]]`. The frontier holdings that differ by so much are
+separated by the few hundredths of a percentage point of risk reported above,
+which is the statement of @mcneil2015 made on sixteen assets: series that are
+close to elliptical are ranked the same way by both measures, and the weights
+on which the two frontiers disagree are weakly determined by either.
+
+### Two coherent measures that need a cone solver
+
+`CSM` and `EQS` are solved by `CVXR` alone, through the formulation of
+@eq-10-csm and its squared counterpart; `meancsm.efficient.frontier()` and
+`meaneqs.efficient.frontier()` trace their frontiers the way
+`meanetl.efficient.frontier()` does. Their minimum-risk portfolios sit beside
+the minimum-ES one.
+
+```{r}
+#| label: csm-eqs
+spec_csm <- base_spec |> add.objective(type = "risk", name = "CSM", arguments = list(p = 0.95))
+spec_eqs <- base_spec |> add.objective(type = "risk", name = "EQS", arguments = list(p = 0.95))
+
+w_csm <- w_of(optimize.portfolio(Re, spec_csm, optimize_method = "CVXR"))
+w_eqs <- w_of(optimize.portfolio(Re, spec_eqs, optimize_method = "CVXR"))
+
+W_tail <- rbind(`minimum ES` = w_es, `minimum CSM` = w_csm, `minimum EQS` = w_eqs)
+round(W_tail[, colnames(Re)[apply(W_tail, 2, max) > 0.005]], 3)
+```
+
+::: {.callout-important}
+## `CSM` is unavailable to the search methods
+
+Every objective a metaheuristic evaluates passes through
+`constrained_objective()`, and that function's branch for `CSM` is empty: it
+sets no function, so the objective contributes nothing to the score (upstream
+issue #51, recorded in @sec-93-package-notes). A random-portfolio or
+differential-evolution run on a `CSM` objective does not fail; it scores every
+candidate at zero and returns the first one it looked at.
+
+```{r}
+#| label: csm-metaheuristic
+#| message: false
+set.seed(1602)
+rp <- random_portfolios(base_spec, permutations = 2000, rp_method = "simplex")
+o_csm_rp <- optimize.portfolio(Re, spec_csm, optimize_method = "random", rp = rp, trace = TRUE)
+
+scores <- vapply(o_csm_rp$random_portfolio_objective_results, function(z) z$out, numeric(1))
+c(candidates = nrow(rp), distinct_scores = length(unique(scores)), score = unique(scores)[1],
+  returned_first_candidate = isTRUE(all.equal(unname(w_of(o_csm_rp)),
+                                              unname(rp[1, colnames(Re)]))))
+length(extractObjectiveMeasures(o_csm_rp))
+```
+
+The returned object has weights, an empty list of objective measures, and no
+warning. Use `CVXR` for `CSM`, and treat an empty `extractObjectiveMeasures()`
+as the signature of an objective that was never evaluated.
+:::
+
+::: {.callout-important}
+## Two things to check before trusting an `EQS` number
+
+The ratio problems are solved in a normalized form, mean fixed at one and box
+and group limits scaled by the weight sum, and the weights are rescaled to sum
+to one afterwards. Earlier builds skipped the rescaling, so that a box or group
+limit on a ratio problem did not bind in the returned weights; on the build
+recorded in @sec-93-package-notes it does, and we measure it rather than assume
+it. What does not survive the rescaling is the objective value: expected
+shortfall and `CSM` are homogeneous and divide through, while `EQS` is
+quadratic in the weights, so the figure reported for a ratio solution is not
+the `EQS` of the weights reported with it.
+
+```{r}
+#| label: eqs-ratio-box
+# split() orders groups alphabetically; the limit vectors are built by name and
+# the assertion fails the render if they ever drift apart.
+grp  <- split(seq_len(ncol(Re)), dplyr::case_when(
+  grepl("_equity$", colnames(Re))     ~ "equity",
+  grepl("_government$", colnames(Re)) ~ "government",
+  grepl("_credit$", colnames(Re))     ~ "credit",
+  TRUE                                ~ "commodity"))
+gmin <- c(commodity = 0.00, credit = 0.05, equity = 0.20, government = 0.10)
+gmax <- c(commodity = 0.15, credit = 0.40, equity = 0.60, government = 0.50)
+stopifnot(identical(names(grp), names(gmin)), identical(names(grp), names(gmax)))
+
+spec_eqs_ratio <- base_spec |>
+  add.constraint(type = "box", min = 0, max = 0.25) |>
+  add.constraint(type = "group", groups = grp,
+                 group_min = unname(gmin), group_max = unname(gmax)) |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "EQS", arguments = list(p = 0.95))
+
+o_eqs_ratio <- optimize.portfolio(Re, spec_eqs_ratio, optimize_method = "CVXR")  # EQSratio = TRUE
+w_r     <- w_of(o_eqs_ratio)
+group_w <- vapply(grp, function(g) sum(w_r[g]), numeric(1))
+
+c(sum = sum(w_r), largest = max(w_r),
+  box_binds    = all(w_r <= 0.25 + 1e-6),
+  groups_bind  = all(group_w >= gmin - 1e-6 & group_w <= gmax + 1e-6),
+  reported_EQS = as.numeric(extractObjectiveMeasures(o_eqs_ratio)$EQS),
+  EQS_of_weights = extract_risk(Re, w_r)$EQS)
+```
+
+The second check concerns the measure itself. In both `optimize.portfolio()`
+and `extract_risk()` the quantity squared is the positive part of the
+portfolio **return**, where the `ES` and `CSM` branches of the same functions
+take the positive part of its negative. The number the package calls `EQS`
+is therefore the tail average of squared gains, and only on negated returns
+does it become the tail average of squared losses.
+
+```{r}
+#| label: eqs-sign
+# The empirical version of the minimization in @eq-10-ru for a nonnegative
+# series v: the average of its largest alpha share, interpolated at the edge.
+tail_mean <- function(v, alpha = 0.05) {
+  v <- sort(v, decreasing = TRUE); m <- alpha * length(v); k <- floor(m)
+  (sum(v[seq_len(k)]) + (m - k) * v[k + 1]) / m
+}
+r_es <- as.numeric(Re %*% w_es)
+eqs_check <- c(package_EQS            = extract_risk(Re, w_es)$EQS,
+               tail_of_squared_gains  = tail_mean(pmax(r_es, 0)^2),
+               tail_of_squared_losses = tail_mean(pmax(-r_es, 0)^2),
+               package_EQS_on_negated = extract_risk(-Re, w_es)$EQS)
+stopifnot(all.equal(eqs_check[["package_EQS"]], eqs_check[["tail_of_squared_gains"]],
+                    tolerance = 1e-3))
+signif(eqs_check, 4)
+
+skew_of <- function(w) as.numeric(skewness(as.numeric(Re %*% w)))
+stopifnot(skew_of(w_eqs) < skew_of(w_es))        # the order the next sentence states
+```
+
+Minimizing the package's `EQS` therefore penalizes large gains, which is why
+its minimum-risk portfolio above has a more negative skewness than the
+minimum-ES one, `r sprintf("%.2f", skew_of(w_eqs))` against
+`r sprintf("%.2f", skew_of(w_es))`. Until the sign is corrected upstream, an `EQS` objective
+should be posed on `-Re`, and every `EQS` figure read from the returned
+weights rather than from the returned object.
+:::
+
+## Four Objectives on One Universe {#sec-10-risk-measures-application}
+
+### What each objective bought
+
+The four portfolios of @sec-10-risk-measures-implementation solve the same
+long-only, fully invested problem and differ only in what they call risk. Each
+is reported here on every measure, with the tail measures computed on the
+excess returns that were optimized and the drawdown on the total-return wealth
+path.
+
+```{r}
+#| label: four-portfolios
+portfolios <- list(`minimum variance` = w_var,
+                   `minimum ES` = w_es,
+                   `quadratic utility, lambda = 2` = w_qu,
+                   `minimum modified ES (search)` = w_mes)
+
+measures_of <- function(w) {
+  x  <- as.numeric(Re %*% w)                                       # excess, what was optimized
+  xt <- xts::xts(as.numeric(R %*% w), order.by = zoo::index(R))    # total, for the wealth path
+  c(US_credit = w[["US_credit"]], positions = sum(w > 0.005),
+    ret = mean(x) * 12, vol = stats::sd(x) * sqrt(12),
+    ES = loss_es(x),
+    modified_ES = as.numeric(ES(x, p = 0.95, method = "modified", invert = FALSE)),
+    utility = (mean(x) - 2 * stats::var(x)) * 12,                   # mu - lambda sigma^2, lambda = 2
+    skewness = as.numeric(skewness(x)),
+    max_drawdown = as.numeric(maxDrawdown(xt)))
+}
+four <- t(vapply(portfolios, measures_of, numeric(9))) |>
+  as.data.frame() |>
+  tibble::rownames_to_column("portfolio")
+```
+
+```{r}
+#| label: tbl-10-four
+#| tbl-cap: "The same problem under four risk measures. Volatility annualized; expected shortfall at 95%, monthly, historical and Cornish-Fisher; drawdown on the total-return wealth path."
+#| echo: false
+four |>
+  dplyr::transmute(portfolio,
+                   US_credit = sprintf("%.1f%%", 100 * pmax(US_credit, 0)),   # a solver zero can be -1e-17
+                   positions = sprintf("%.0f", positions),
+                   vol = sprintf("%.2f%%", 100 * vol),
+                   ES = sprintf("%.2f%%", 100 * ES),
+                   modified_ES = sprintf("%.2f%%", 100 * modified_ES),
+                   skewness = sprintf("%.2f", skewness),
+                   max_drawdown = sprintf("%.1f%%", 100 * max_drawdown)) |>
+  kable(align = "lrrrrrrr",
+        col.names = c("", "US_credit", "positions", "volatility", "ES", "modified ES",
+                      "skewness", "max drawdown"))
+```
+
+```{r}
+#| label: four-facts
+#| include: false
+f4 <- function(p, col) four[[col]][four$portfolio == p]
+stopifnot(four$portfolio[which.min(four$vol)]     == "minimum variance",
+          four$portfolio[which.min(four$ES)]      == "minimum ES",
+          four$portfolio[which.max(four$utility)] == "quadratic utility, lambda = 2")
+best_mes <- four$portfolio[which.min(four$modified_ES)]
+
+# The orders and names the three paragraphs below state.
+convex   <- four[four$portfolio != "minimum modified ES (search)", ]
+held     <- function(w) names(w)[w > 0.005]
+only_var <- setdiff(held(w_var), held(w_es))      # held by minimum variance alone
+only_es  <- setdiff(held(w_es), held(w_var))      # held by minimum ES alone
+n_agree  <- ncol(Re) - length(only_var) - length(only_es)
+stopifnot(best_mes != "minimum modified ES (search)",
+          four$portfolio[which.max(four$US_credit)] == "quadratic utility, lambda = 2",
+          all(grepl("_equity$", setdiff(held(w_qu), "US_credit"))),
+          convex$portfolio[which.max(convex$skewness)] == "minimum ES",
+          names(which.max(w_var)) == "US_government", names(which.max(w_es)) == "US_government",
+          length(only_var) == 1L, length(only_es) == 1L,
+          skew_total[[only_var]] < 0, skew_total[[only_es]] > 0)
+```
+
+Read @tbl-10-four down the `US_credit` column first. The quadratic-utility
+investor holds
+`r sprintf("%.1f%%", 100 * f4("quadratic utility, lambda = 2", "US_credit"))`
+of the portfolio in the most negatively skewed series in this market, for
+the reason @sec-09-mean-variance-application gave: a mean-based objective pays
+for the `r credit_rank` Sharpe ratio of the sixteen, and variance cannot see what
+it is buying. The three objectives that carry no mean hold at most
+`r sprintf("%.1f%%", 100 * max(four$US_credit[four$portfolio != "quadratic utility, lambda = 2"]))`
+of it. The skewness column shows what a return objective brings with it: the
+quadratic-utility portfolio, the rest of which is equity, has a skewness of
+`r sprintf("%.2f", f4("quadratic utility, lambda = 2", "skewness"))` and a
+drawdown of
+`r sprintf("%.0f%%", 100 * f4("quadratic utility, lambda = 2", "max_drawdown"))`,
+while the minimum-ES portfolio, at
+`r sprintf("%.2f", f4("minimum ES", "skewness"))` and
+`r sprintf("%.0f%%", 100 * f4("minimum ES", "max_drawdown"))`, is the closest
+to symmetric of the three convex solutions, and it is
+`r sprintf("%.2f", f4("minimum ES", "skewness") - f4("minimum variance", "skewness"))`
+units of skewness less negative than the minimum-variance portfolio, which
+holds no credit either. The two agree on their largest
+position, `US_government` at
+`r sprintf("%.0f%%", 100 * w_var[["US_government"]])` and
+`r sprintf("%.0f%%", 100 * w_es[["US_government"]])`, and on whether to hold
+`r n_agree` of the sixteen series at all: the minimum-ES portfolio gives up
+`r paste0("\x60", only_var, "\x60")`, with a total-return skewness of
+`r sprintf("%.2f", skew_total[[only_var]])`, for
+`r paste0("\x60", only_es, "\x60")`, at
+`r sprintf("%.2f", skew_total[[only_es]])`.
+
+The last row is the search's answer, and the modified-ES column reads it
+against the others. The differential-evolution portfolio reports a modified
+expected shortfall of
+`r sprintf("%.2f%%", 100 * f4("minimum modified ES (search)", "modified_ES"))`,
+above the `r sprintf("%.2f%%", 100 * min(four$modified_ES))` that the
+`r best_mes` portfolio reaches on the same measure without having been asked
+to. The search did not find its own minimum, which is the behavior
+@sec-13-solvers-application measures on a problem with a known answer, and
+the reason this chapter reports the convex solutions as the result and the
+searched one as an illustration.
+
+### Each portfolio on every measure
+
+The rule of @sec-03-return-risk-and-the-investor-theory says that each
+portfolio must be reported by the measure it optimized. @tbl-10-cross does
+that on the diagonal and shows everything else beside it.
+
+```{r}
+#| label: tbl-10-cross
+#| tbl-cap: "Each portfolio on each objective. Bold marks the measure a row was chosen by; an asterisk marks the best value in a column. Volatility annualized, shortfalls monthly at 95%, utility the annualized certainty equivalent at lambda = 2."
+#| echo: false
+cross <- four |>
+  dplyr::select(portfolio, vol, ES, utility, modified_ES)
+own <- c(`minimum variance` = "vol", `minimum ES` = "ES",
+         `quadratic utility, lambda = 2` = "utility", `minimum modified ES (search)` = "modified_ES")
+best <- c(vol = which.min(cross$vol), ES = which.min(cross$ES),
+          utility = which.max(cross$utility), modified_ES = which.min(cross$modified_ES))
+cell <- function(col, fmt) {
+  v <- sprintf(fmt, 100 * cross[[col]])
+  v <- ifelse(seq_len(nrow(cross)) == best[[col]], paste0(v, "*"), v)
+  ifelse(own[cross$portfolio] == col, paste0("**", v, "**"), v)
+}
+tibble::tibble(portfolio = cross$portfolio,
+               vol = cell("vol", "%.2f%%"), ES = cell("ES", "%.2f%%"),
+               utility = cell("utility", "%.2f%%"), modified_ES = cell("modified_ES", "%.2f%%")) |>
+  kable(align = "lrrrr",
+        col.names = c("", "volatility", "ES", "utility", "modified ES"))
+```
+
+Three of the four bold cells carry the asterisk: the convex solvers returned,
+for each measure, the portfolio that is best on it, which is what a solved
+problem means. The fourth does not, and its column is won by `r best_mes`.
+The table also prices each choice in the other measures, and on this universe
+the price is small: the minimum-ES portfolio gives up
+`r sprintf("%.2f", 100 * (f4("minimum ES", "vol") - f4("minimum variance", "vol")))`
+percentage points of annualized volatility against the minimum-variance
+portfolio and gains
+`r sprintf("%.2f", 100 * (f4("minimum variance", "ES") - f4("minimum ES", "ES")))`
+percentage points of monthly expected shortfall. The tail measure exchanged
+one holding for another and moved one moment, and that is the honest size of
+the effect on sixteen class series and `r nrow(Re)` months.
+
+### Out of sample, read from the register
+
+Everything above uses full-sample moments. The register of
+@sec-25-backtesting-application runs the same two risk-only rules on rolling
+windows, re-estimated monthly, and this chapter reads its lines rather than
+recomputing them, so that the two chapters cannot disagree.
+
+```{r}
+#| label: oos
+oos <- utils::read.csv("output/tables/oos-sweep.csv") |>
+  dplyr::filter(universe == "classes", frequency == "months", basis == "gross",
+                strategy %in% c("min_variance", "min_cvar")) |>
+  dplyr::arrange(window, strategy)
+stopifnot(nrow(oos) == 6L)
+pick <- function(w, s, col) oos[[col]][oos$window == w & oos$strategy == s]
+```
+
+```{r}
+#| label: tbl-10-oos
+#| tbl-cap: "Minimum variance and minimum expected shortfall out of sample, monthly rebalancing, gross of costs, three estimation windows. Read from the register that chapter 25 computes."
+#| echo: false
+oos |>
+  dplyr::transmute(window, strategy = c(min_variance = "minimum variance",
+                                        min_cvar = "minimum ES")[strategy],
+                   sharpe = sprintf("%.3f", sharpe),
+                   es_95 = sprintf("%.2f%%", 100 * es_95),
+                   max_drawdown = sprintf("%.1f%%", 100 * max_drawdown),
+                   skewness = sprintf("%.2f", skewness)) |>
+  kable(align = "rlrrrr",
+        col.names = c("window", "", "Sharpe", "ES 95%", "max drawdown", "skewness"))
+```
+
+```{r}
+#| label: oos-facts
+#| include: false
+# The orders the next two paragraphs state, asserted so that a rerun of the
+# register which no longer supports them stops the render.
+windows   <- sort(unique(oos$window))
+es_excess <- vapply(windows, function(w)
+  pick(w, "min_cvar", "es_95") - pick(w, "min_variance", "es_95"), numeric(1))
+se_sharpe <- function(sr, n) sqrt((1 + (sr / sqrt(12))^2 / 2) / n) * sqrt(12)   # @eq-25-se, annualized
+se_36     <- se_sharpe(pick(36, "min_cvar", "sharpe"), pick(36, "min_cvar", "n_periods"))
+stopifnot(identical(windows, c(36L, 60L, 120L)),
+          all(es_excess > 0),            # minimum ES realizes the higher shortfall at every window
+          pick(60,  "min_cvar", "sharpe")   > pick(60,  "min_variance", "sharpe"),
+          pick(60,  "min_cvar", "skewness") > pick(60,  "min_variance", "skewness"),
+          pick(120, "min_cvar", "sharpe")   < pick(120, "min_variance", "sharpe"),
+          pick(120, "min_cvar", "skewness") < pick(120, "min_variance", "skewness"),
+          oos$sharpe[oos$window == 36 & oos$strategy == "min_cvar"] == max(oos$sharpe),
+          diff(range(oos$sharpe)) < 1.96 * se_36)
+```
+
+On the sixty-month window the minimum-ES rule realizes an expected shortfall
+of `r sprintf("%.2f%%", 100 * pick(60, "min_cvar", "es_95"))` against
+`r sprintf("%.2f%%", 100 * pick(60, "min_variance", "es_95"))` for minimum
+variance, a difference of
+`r sprintf("%.2f", 100 * es_excess[windows == 60])`
+percentage points in favor of the rule that did not optimize it, and the sign
+is the same at all three windows.
+Matching the metric to the objective is not the same as winning on it: a 5%
+tail estimated from sixty months is `r 0.05 * 60` observations, the portfolio
+built on them inherits their sampling error, and
+@sec-26-forecast-error-cost-theory puts that cost in units. Where the
+minimum-ES rule does differ is in the moments it was not asked about, a
+skewness of `r sprintf("%.2f", pick(60, "min_cvar", "skewness"))` against
+`r sprintf("%.2f", pick(60, "min_variance", "skewness"))` and a Sharpe ratio
+of `r sprintf("%.3f", pick(60, "min_cvar", "sharpe"))` against
+`r sprintf("%.3f", pick(60, "min_variance", "sharpe"))`, and neither
+difference survives a longer window: at 120 months minimum variance has the
+higher Sharpe ratio, `r sprintf("%.3f", pick(120, "min_variance", "sharpe"))`
+against `r sprintf("%.3f", pick(120, "min_cvar", "sharpe"))`, and the less
+negative skewness.
+
+The thirty-six-month row is a warning rather than a finding. There the
+minimum-ES rule posts a Sharpe ratio of
+`r sprintf("%.3f", pick(36, "min_cvar", "sharpe"))`, the highest in
+@tbl-10-oos, from portfolios each built on a 5% tail of `r 0.05 * 36`
+observations. A tail of two months is not an estimate of a distribution; it
+is two months. @sec-25-backtesting-application puts the error bar of @lo2002
+on every Sharpe ratio in the register: by @eq-25-se the standard error of
+this one is `r sprintf("%.2f", se_36)`, and the six Sharpe ratios of
+@tbl-10-oos lie within `r sprintf("%.2f", diff(range(oos$sharpe)))` of one
+another. Choose the measure for what it sees, report by the
+measure chosen, and do not read a rank from a tail that holds two
+observations.
+
+## Key Takeaways {.unnumbered}
+
+- A risk measure is coherent if it is monotone, translation invariant,
+  positively homogeneous and subadditive [@artzner1999]. Value at risk fails
+  subadditivity on `r sum(mix$var_fails)` of the `r nrow(mix)` pairs in this
+  market; expected shortfall never does [@acerbi2002]; variance is not
+  coherent either, but ranks portfolios correctly when returns are elliptical.
+- The representation of @rockafellar2000, @eq-10-ru, turns minimum expected
+  shortfall into the linear program @eq-10-lp, convex and solved exactly by
+  `ROI`; the modified expected shortfall of @favre2002 and @boudt2008 depends
+  on the third and fourth moments, is not convex, and is reached only by search.
+- In `PortfolioAnalytics` a `mean` plus `ES`, `CSM` or `EQS` specification is
+  a ratio problem unless `maxSTARR`, `CSMratio` or `EQSratio` is `FALSE`,
+  while `mean` plus `StdDev` is a quadratic-utility problem unless
+  `maxSR = TRUE`; `ROI` ignores `method = "modified"`; `CSM` is silently
+  unevaluated by the search methods; and `EQS` squares the gains.
+- On the sixteen class series the two frontiers are almost the same curve and
+  not the same portfolios: at a matched return their `US_credit` weights
+  differ by up to `r sprintf("%.0f", 100 * max(abs(credit_gap)))` percentage
+  points, and in both directions. A 5% historical tail does not register the
+  skewness of that series, which is the work of one month; the Cornish-Fisher
+  estimate does. Of the four objectives only quadratic utility holds it in
+  size, and the minimum-ES portfolio is the closest to symmetric of the convex
+  solutions.
+- Report each portfolio by the measure it optimized, and show all on all
+  measures. Out of sample the minimum-ES rule realizes a higher expected
+  shortfall than minimum variance at every window: a 5% tail on sixty months
+  is three observations, and a thirty-six-month window's Sharpe ratio rests on
+  two.
+
+## Exercises {.unnumbered}
+
+1. Re-solve the minimum-ES problem at `p = 0.90` and `p = 0.99`. Report the
+   number of months in each tail, the weight of `US_credit` and the largest
+   holding. How does the distance to the minimum-variance portfolio change as
+   `p` rises, and why does @eq-10-lp become harder to trust as it does?
+2. Rebuild the two frontiers of @fig-10-frontiers on `sim_class_returns_weekly`
+   in excess of `sim_riskfree_weekly`, matched by date, where the tail holds
+   about four times as many observations. Does the largest gap in the
+   `US_credit` weight between the frontiers widen or narrow, and what changed:
+   the estimator or the quantity estimated?
+3. Locate the maximum-STARR portfolio on the mean-ES frontier by scanning
+   `mean / ES`, as @sec-09-mean-variance-implementation located the tangency
+   portfolio, and compare it with the `maxSTARR = TRUE` solution of
+   @tbl-10-ratio-defaults and with the tangency portfolio. How much `US_credit`
+   does each hold, which would the investor of
+   @sec-03-return-risk-and-the-investor-theory with $\gamma = 4$ prefer under
+   full investment, and why?
+4. Run the modified-ES search with random portfolios from `rp` and with
+   differential evolution at `itermax = 25` and `itermax = 100`, seeded, and
+   record the modified expected shortfall each reaches against that of the
+   minimum-ES portfolio from @eq-10-lp. Relate the gaps to the fraction of the
+   attainable optimum that @sec-13-solvers-application reports.

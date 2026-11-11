@@ -1,0 +1,1162 @@
+---
+title: "Expected Returns"
+metadata:
+  pagetitle: "Expected Returns"
+  description-meta: "Where the expected-return vector comes from and how imprecisely it is known: the standard error of a mean, Bayes-Stein shrinkage, and equilibrium returns by reverse optimization, implemented in R with PortfolioAnalytics."
+---
+
+```{r}
+#| label: setup
+#| include: false
+source("R/_common.R")
+library(tidypm)
+library(knitr)
+```
+
+Every optimizer in this book consumes a vector of expected returns, and nothing
+in the data pins that vector down as well as the covariance matrix beside it.
+@merton1980 established why: the standard error of a mean estimated over a span
+of $\tau$ years is $\sigma/\sqrt{\tau}$ whatever the sampling frequency, so
+only a longer history helps, and thirty years of it leaves an annual risk
+premium known to within several percentage points. That is a property of the
+object rather than of any estimator, and it is the reason expected returns are
+the hard input of @sec-09-mean-variance-theory while the covariance matrix of
+@sec-07-covariance-matrix-theory is merely a large one.
+
+This chapter is about **strategic** expected returns in the sense of
+@sec-03-return-risk-and-the-investor-theory: the unconditional vector
+$\boldsymbol{\mu}$ a long-run policy is set on, with no information about where
+in the cycle we stand. Conditional forecasts are the tactical work of
+@sec-16-signals-and-forecasts-theory, and turning an opinion into a return is
+the subject of @sec-17-expressing-views-theory. We first measure how imprecisely
+each of the sixteen means is known and what that does to a return target, then
+set out the two alternatives to the sample mean, shrinkage toward a common
+value and reverse optimization from market weights, then implement both and
+show how `PortfolioAnalytics` takes a mean vector it did not compute, and
+finally feed the three vectors to the same tangency problem to see what each
+buys and how much each moves when the sample changes.
+
+The data are the sixteen risky class series of
+@sec-02-notation-and-data-simulated-market, in excess of the Treasury bill for
+the reasons given in @sec-03-return-risk-and-the-investor-theory.
+
+```{r}
+#| label: data
+R  <- as_xts_pm(sim_class_returns_monthly, date, class, return)
+rf <- sim_riskfree_monthly$return
+Re <- R - rf
+stopifnot(ncol(Re) == 16L, !anyNA(Re))
+N <- ncol(Re); T <- nrow(Re); years <- T / 12
+```
+
+## How Precisely a Mean Can Be Known {#sec-06-expected-returns-theory}
+
+Write $\hat{\boldsymbol{\mu}}$ for the vector of sample means of the excess
+returns and $\hat{\boldsymbol{\Sigma}}$ for their sample covariance, as in
+@sec-09-mean-variance-theory. Each element of $\hat{\boldsymbol{\mu}}$ is an
+average of $T$ monthly observations, and if those observations are independent
+with volatility $\sigma$ per year, the standard error of the annualized mean is
+
+$$
+\operatorname{se}(\hat{\mu}) = \frac{\sigma}{\sqrt{\tau}},
+$$ {#eq-06-se}
+
+where $\tau$ is the calendar span in years. @eq-04-precision derived this
+alongside the standard error of the variance, and the contrast between the two
+is the point of @merton1980: the sampling interval does not appear in
+@eq-06-se, so nothing short of more calendar time improves it. A 95 percent
+interval for the mean is
+
+$$
+\hat{\mu} \pm 1.96\,\frac{\sigma}{\sqrt{\tau}},
+$$ {#eq-06-interval}
+
+and setting its half-width equal to the mean itself gives the span of history
+needed before the interval excludes zero:
+
+$$
+\tau^{*} = \left(\frac{1.96\,\sigma}{\mu}\right)^{2}.
+$$ {#eq-06-years}
+
+Both quantities are computable for every series, and the table they produce is
+the right way to begin a chapter on expected returns.
+
+```{r}
+#| label: precision
+mu_s <- colMeans(Re)                 # monthly sample means, the mu of chapter 9
+S    <- stats::cov(Re)               # the sample covariance of chapter 7
+
+precision <- tibble::tibble(
+  asset = colnames(Re),
+  mean  = mu_s * 12,
+  vol   = apply(Re, 2, stats::sd) * sqrt(12)
+) |>
+  dplyr::mutate(se    = vol / sqrt(years),                 # @eq-06-se
+                t     = mean / se,
+                lower = mean - 1.96 * se,                  # @eq-06-interval
+                upper = mean + 1.96 * se,
+                years_needed = (1.96 * vol / mean)^2) |>   # @eq-06-years
+  dplyr::arrange(dplyr::desc(t))
+
+n_straddle <- sum(precision$lower < 0)
+c(series = nrow(precision), interval_includes_zero = n_straddle,
+  median_se = median(precision$se), median_years_needed = median(precision$years_needed))
+```
+
+```{r}
+#| label: precision-picks
+#| include: false
+us <- precision[precision$asset == "US_equity", ]
+lo <- precision[nrow(precision), ]
+# The text takes US_equity as the best case and the last row as the worst.
+stopifnot(identical(precision$asset[1], "US_equity"), us$lower > 0,
+          lo$t == min(precision$t), lo$lower < 0)
+```
+
+```{r}
+#| label: tbl-06-precision
+#| tbl-cap: "The sixteen annualized mean excess returns with their standard errors from @eq-06-se, the 95 percent interval of @eq-06-interval, and the years of history @eq-06-years says would be needed for that interval to exclude zero. Sorted by t-statistic."
+#| echo: false
+precision |>
+  dplyr::mutate(dplyr::across(c(mean, vol, se, lower, upper), ~ sprintf("%.1f%%", 100 * .x)),
+                t = sprintf("%.2f", t),
+                years_needed = sprintf("%.0f", years_needed)) |>
+  kable(align = "lrrrrrrr",
+        col.names = c("", "mean", "volatility", "std. error", "t",
+                      "lower", "upper", "years to exclude zero"))
+```
+
+Take the series whose mean is furthest from zero relative to its standard
+error, `r us$asset`. Its annualized volatility is `r sprintf("%.3f", us$vol)` and the sample spans
+`r years` model years, so by @eq-06-se
+
+$$
+\operatorname{se}(\hat{\mu}) = \frac{`r sprintf("%.3f", us$vol)`}{\sqrt{`r years`}}
+= `r sprintf("%.4f", us$se)`,
+$$
+
+a standard error of `r sprintf("%.1f", 100 * us$se)` percentage points on a
+mean of `r sprintf("%.1f%%", 100 * us$mean)`, and an interval from
+`r sprintf("%.1f%%", 100 * us$lower)` to `r sprintf("%.1f%%", 100 * us$upper)`.
+That is the best case. For `r n_straddle` of the `r nrow(precision)` series
+the interval of @eq-06-interval includes zero: the data do not reject the
+hypothesis that the asset carries no risk premium at all. The median series
+would need `r sprintf("%.0f", median(precision$years_needed))` years of history
+before it did, and `r lo$asset`, with a mean of
+`r sprintf("%.1f%%", 100 * lo$mean)` against a standard error of
+`r sprintf("%.1f", 100 * lo$se)` points, would need
+`r sprintf("%.0f", lo$years_needed)`. @fama2002 make the same point on a
+century and a quarter of United States data: the realized equity premium is
+estimated with a standard error that leaves its level open to debate by several
+percentage points, which is why they estimate it from dividend and earnings
+growth instead. @sec-04-descriptive-analysis-implementation measured the
+practical counterpart on this market, a rolling sixty-month mean that wanders
+by more than its own level, and @fig-04-instability shows it. Nothing in this
+chapter improves on @eq-06-se; the estimators below manage the imprecision
+rather than remove it.
+
+::: {.callout-note}
+## Sampling more finely helps the variance and not the mean
+
+The obvious response to an imprecise mean is more observations, and the weekly
+panel `sim_class_returns_weekly` holds the same `r years` model years at more
+than four times the resolution. @eq-04-precision says what to expect: the
+standard error of the variance falls with $\sqrt{T}$, and the standard error
+of the mean does not move.
+
+```{r}
+#| label: frequency
+Rw   <- as_xts_pm(sim_class_returns_weekly, date, class, return)
+# The weekly bill series starts one week before the return panel: align by date.
+rf_w <- sim_riskfree_weekly$return[match(zoo::index(Rw), sim_riskfree_weekly$date)]
+stopifnot(!anyNA(rf_w), identical(colnames(Rw), colnames(Re)))
+Rew  <- Rw - rf_w
+
+freq <- tibble::tibble(
+  asset     = colnames(Re),
+  se_mean_m = apply(Re,  2, stats::sd) * sqrt(12) / sqrt(nrow(Re) / 12),
+  se_mean_w = apply(Rew, 2, stats::sd) * sqrt(52) / sqrt(nrow(Rew) / 52),
+  se_var_m  = apply(Re,  2, stats::var) * 12 * sqrt(2 / nrow(Re)),
+  se_var_w  = apply(Rew, 2, stats::var) * 52 * sqrt(2 / nrow(Rew))
+)
+c(months = nrow(Re), weeks = nrow(Rew),
+  mean_se_ratio     = median(freq$se_mean_w / freq$se_mean_m),
+  variance_se_ratio = median(freq$se_var_w / freq$se_var_m),
+  sqrt_T_ratio      = sqrt(nrow(Re) / nrow(Rew)))
+```
+
+Going from `r nrow(Re)` months to `r nrow(Rew)` weeks leaves the standard
+error of the mean where it was, at a median ratio of
+`r sprintf("%.2f", median(freq$se_mean_w / freq$se_mean_m))`, and cuts the
+standard error of the variance to
+`r sprintf("%.2f", median(freq$se_var_w / freq$se_var_m))` of its monthly
+value, against the `r sprintf("%.2f", sqrt(nrow(Re) / nrow(Rew)))` that
+$\sqrt{T}$ predicts. This is why @sec-07-covariance-matrix-implementation can
+estimate its input from the same history that leaves this chapter's input
+undetermined.
+:::
+
+### A target set on a sample mean
+
+@eq-09-problem fixes a return target $\bar{\mu}$ and asks for the least
+variance that attains it, and @sec-09-mean-variance-implementation solves that
+program with $\bar{\mu}$ set at the upper quartile of the sample means. The
+constraint $\boldsymbol{w}'\hat{\boldsymbol{\mu}} = \bar{\mu}$ is then satisfied
+to the solver's tolerance, on an input known to the precision of
+@tbl-06-precision.
+
+```{r}
+#| label: target
+target_m <- as.numeric(quantile(mu_s, 0.75))      # the target chapter 9 imposes
+se_med   <- median(precision$se)
+c(target_annual = target_m * 12, median_se = se_med,
+  target_lower = target_m * 12 - 1.96 * se_med,
+  target_upper = target_m * 12 + 1.96 * se_med)
+```
+
+The target is `r sprintf("%.2f%%", 100 * target_m * 12)` a year, held to eight
+decimal places. The inputs that define it carry a median standard error of
+`r sprintf("%.1f", 100 * se_med)` percentage points, so a mean of that size is
+itself known only to somewhere between
+`r sprintf("%.1f%%", 100 * (target_m * 12 - 1.96 * se_med))` and
+`r sprintf("%.1f%%", 100 * (target_m * 12 + 1.96 * se_med))`. A constraint set
+on a sample mean is a constraint set on noise, and the optimizer honors it
+exactly.
+
+The literature on what follows is old and consistent, and one sentence each
+suffices here because @sec-09-mean-variance-theory has already used it.
+@jobson1980 showed that the sampling distribution of the estimated tangency
+weights is so wide that the portfolio's expected Sharpe ratio falls far short
+of the one the estimate promises. @best1991 traced the mechanism to
+@eq-09-tangency: the weights are $\hat{\boldsymbol{\Sigma}}^{-1}$ applied to
+$\hat{\boldsymbol{\mu}}$, so an error in a mean is magnified by the condition
+number of the covariance matrix on its way into the portfolio. @chopra1993
+priced the two inputs against each other and found errors in means roughly an
+order of magnitude more costly than errors in variances. @michaud1989 named the
+consequence, an optimizer that systematically overweights whatever the sample
+flattered. @kan2007 derived the expected out-of-sample loss of the plug-in
+rule, showed that the term due to $\hat{\boldsymbol{\mu}}$ dominates, and
+proposed holding the sample tangency portfolio alongside the minimum-variance
+portfolio of @eq-09-gmv, which is exactly what the shrinkage estimator below
+turns out to do. @demiguel2009 supplied the empirical verdict with fourteen
+rules on seven datasets: none that estimates the mean was consistently better
+than equal weighting out of sample. @sec-08-estimation-error-theory measures
+the cost on this market and @sec-26-forecast-error-cost-theory derives it.
+
+### Shrinkage of the mean
+
+The response from statistics predates all of that. @stein1956 showed that for
+three or more means estimated jointly, the vector of sample means is
+inadmissible under quadratic loss: an estimator that pulls every element
+toward a common value has lower expected error whatever the true means are.
+@james1961 gave the estimator its form, a shrinkage factor that depends on how
+far the sample means sit from their target, and @efron1975 the intuition, that
+a set of estimates spread by sampling error is always spread too far.
+@jorion1985 brought the argument to portfolios and @jorion1986 gave it the
+form that is still used. The target is the expected return of the
+minimum-variance portfolio, the one number about $\boldsymbol{\mu}$ that
+$\hat{\boldsymbol{\Sigma}}$ alone pins down, and the estimator is
+
+$$
+\hat{\boldsymbol{\mu}}_{\text{BS}}
+= (1-v)\,\hat{\boldsymbol{\mu}} + v\,\mu_0\,\boldsymbol{\iota},
+\qquad
+\mu_0 = \frac{\boldsymbol{\iota}'\hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}}
+             {\boldsymbol{\iota}'\hat{\boldsymbol{\Sigma}}^{-1}\boldsymbol{\iota}},
+\qquad
+v = \frac{N+2}
+         {(N+2) + T\,(\hat{\boldsymbol{\mu}}-\mu_0\boldsymbol{\iota})'
+                     \hat{\boldsymbol{\Sigma}}^{-1}
+                     (\hat{\boldsymbol{\mu}}-\mu_0\boldsymbol{\iota})}.
+$$ {#eq-06-bayes-stein}
+
+The intensity $v$ is set by the data rather than chosen. The quadratic form in
+its denominator is $T$ times the squared distance of the sample means from
+their target, measured in the metric of the covariance matrix; when the means
+are far apart relative to their sampling error, $v$ is small and the sample is
+trusted, and when they are indistinguishable, $v$ approaches one and every
+asset is assigned the same expected return. As $T$ grows, $v$ falls to zero,
+so the estimator is consistent. This is the same construction as
+@eq-07-shrinkage for the covariance matrix, where @ledoit2004 derive the
+analogous intensity, and it has the same character: a biased estimator with
+lower total error than the unbiased one.
+
+What shrinkage does to the portfolio is visible from @eq-09-tangency. Because
+the map from means to unconstrained tangency weights is linear,
+
+$$
+\hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}_{\text{BS}}
+= (1-v)\,\hat{\boldsymbol{\Sigma}}^{-1}\hat{\boldsymbol{\mu}}
++ v\,\mu_0\,\hat{\boldsymbol{\Sigma}}^{-1}\boldsymbol{\iota},
+$$ {#eq-06-bs-direction}
+
+a combination of the sample tangency direction and the minimum-variance
+direction of @eq-09-gmv. Shrinking the means toward $\mu_0$ therefore moves
+the tangency portfolio toward the minimum-variance portfolio, which is the
+three-fund rule of @kan2007 arrived at from the estimator's side. Other targets
+are possible and each carries an argument: @pastor2000 and @mackinlay2000
+shrink toward the means a factor model such as that of
+@sec-05-factor-models-implementation implies, @tu2011 combine the sample rule
+with equal weighting, and @garlappi2007 reach a shrinkage form from ambiguity
+aversion rather than from loss. The target used here is the one that needs no
+model beyond $\hat{\boldsymbol{\Sigma}}$.
+
+### Equilibrium returns by reverse optimization
+
+The third route asks a different question. Rather than estimating
+$\boldsymbol{\mu}$ from the history of returns, it asks what
+$\boldsymbol{\mu}$ would have to be for a portfolio someone actually holds to
+be optimal. @sharpe1974 posed the problem in that form, and @black1992 chose
+the portfolio: the market, weighted by capitalization, which is the portfolio
+the equilibrium of @sharpe1964 and @lintner1965 says every investor holds.
+An investor who maximizes
+$\boldsymbol{w}'\boldsymbol{\mu} - \tfrac{\delta}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$
+has the first-order condition
+$\boldsymbol{\mu} = \delta\boldsymbol{\Sigma}\boldsymbol{w}$, derived in
+@sec-91-proofs-quadratic-utility, and if the aggregate investor holds the
+market, the expected returns consistent with that are
+
+$$
+\boldsymbol{\mu}_{\text{eq}} = \delta\,\boldsymbol{\Sigma}\,\boldsymbol{w}_{\text{mkt}}.
+$$ {#eq-06-equilibrium}
+
+The scalar $\delta$ is the market's risk aversion, and premultiplying
+@eq-06-equilibrium by $\boldsymbol{w}_{\text{mkt}}'$ shows how to read it from
+the market's own history:
+
+$$
+\delta = \frac{\mu_{\text{mkt}}}{\sigma^{2}_{\text{mkt}}}
+       = \frac{\text{SR}_{\text{mkt}}}{\sigma_{\text{mkt}}},
+$$ {#eq-06-delta}
+
+the market's expected excess return divided by its variance, which is the same
+number whether computed from monthly or from annual moments. @he1999 give the
+intuition for what the resulting vector does inside an optimizer,
+@satchell2000 the Bayesian derivation, and @idzorek2007 a step-by-step
+account of the full model with views attached; the views are
+@sec-17-expressing-views-theory's subject, and only the prior is used here.
+
+Three properties of @eq-06-equilibrium matter here. It is not a forecast: it
+is the vector for which the market portfolio is the tangency portfolio of
+@eq-09-tangency, by construction, so an optimizer handed
+$\boldsymbol{\mu}_{\text{eq}}$ and $\boldsymbol{\Sigma}$ returns
+$\boldsymbol{w}_{\text{mkt}}$, a portfolio that is held, diversified and
+consistent with the covariance matrix. $\delta$ scales every element alike,
+and the tangency portfolio is invariant to scale, so $\delta$ sets how much of
+the portfolio is risky rather than what the risky part holds; it matters for
+position size and, in @sec-17-expressing-views-theory, for how heavily a view
+is weighed against the prior. And the package's `risk_aversion` argument is
+$\gamma/2$ in the notation of @sec-91-proofs-quadratic-utility, so reproducing
+the market portfolio requires `risk_aversion` set to $\delta/2$, verified
+numerically below.
+
+The weakness of the method is the weight vector. @roll1977 is the reminder that
+the market portfolio is not observable, and on this market the problem is
+concrete: `sim_marketcap_weekly` carries capitalizations for the
+`r sum(sim_assets$asset_class == "equity")` equity instruments and for nothing
+else. No capitalization exists for the government or credit series or for the
+commodity index, so a full class-level equilibrium cannot be read from the data
+as shipped. We do the two things that can be done: a clean demonstration on the
+five equity classes, whose weights are their capitalizations, and a class-level
+version on a stated proxy for the rest, kept in a box and labelled as the
+assumption it is.
+
+## Three Estimators in Code {#sec-06-expected-returns-implementation}
+
+### Bayes-Stein in a few lines
+
+@eq-06-bayes-stein is a function of $\hat{\boldsymbol{\mu}}$,
+$\hat{\boldsymbol{\Sigma}}$, $N$ and $T$, and nothing else. @jorion1986 scales
+the sample covariance by $(T-1)/(T-N-2)$ before inverting it, which makes the
+inverse unbiased; on `r T` observations and `r N` assets the factor is
+`r sprintf("%.3f", (T - 1) / (T - N - 2))` and changes $v$ at the second
+decimal.
+
+```{r}
+#| label: bayes-stein
+bayes_stein <- function(R) {
+  X <- zoo::coredata(R); T <- nrow(X); N <- ncol(X)
+  mu   <- colMeans(X)
+  S    <- stats::cov(X) * (T - 1) / (T - N - 2)   # Jorion's unbiased scaling
+  Sinv <- solve(S); iota <- rep(1, N)
+  mu0  <- as.numeric(t(iota) %*% Sinv %*% mu) / as.numeric(t(iota) %*% Sinv %*% iota)
+  d    <- mu - mu0
+  v    <- (N + 2) / ((N + 2) + T * as.numeric(t(d) %*% Sinv %*% d))
+  list(mu = setNames((1 - v) * mu + v * mu0, colnames(X)), mu0 = mu0, v = v)
+}
+
+bs <- bayes_stein(Re)
+stopifnot(bs$v > 0.5, bs$v < 0.6)    # "more than half" and "roughly halved" below
+c(v = bs$v, mu0_annual = bs$mu0 * 12)
+```
+
+The intensity is $v = `r sprintf("%.3f", bs$v)`$ and the target is
+$\mu_0 = `r sprintf("%.2f%%", 100 * bs$mu0 * 12)`$ a year, the expected return
+of the minimum-variance portfolio. For `r us$asset` the estimator of
+@eq-06-bayes-stein reads
+
+$$
+\hat{\mu}_{\text{BS}}
+= (1 - `r sprintf("%.3f", bs$v)`) \times `r sprintf("%.4f", us$mean)`
++ `r sprintf("%.3f", bs$v)` \times `r sprintf("%.4f", bs$mu0 * 12)`
+= `r sprintf("%.4f", bs$mu[[us$asset]] * 12)`,
+$$
+
+so more than half of the distance between the sample mean and the common value
+is removed. The same happens to every series, in both directions.
+
+```{r}
+#| label: shrinkage-frame
+mu_long <- tibble::tibble(
+  asset = rep(colnames(Re), 2),
+  kind  = rep(c("sample mean", "Bayes-Stein"), each = N),
+  value = c(mu_s, bs$mu) * 12
+) |>
+  dplyr::mutate(asset = factor(asset, levels = names(sort(mu_s))))
+stopifnot(nrow(mu_long) == 2 * N, !anyNA(mu_long$value))
+
+# The ordering is untouched: the same ranks, asset by asset.
+stopifnot(identical(names(mu_s), names(bs$mu)), identical(rank(mu_s), rank(bs$mu)))
+c(spread_sample = diff(range(mu_s)) * 12, spread_shrunk = diff(range(bs$mu)) * 12,
+  rank_correlation = stats::cor(mu_s, bs$mu, method = "spearman"))
+```
+
+```{r}
+#| label: fig-06-shrinkage
+#| fig-cap: "Sample means and Bayes-Stein estimates for the sixteen series, annualized. Each segment joins an asset's two estimates; the dashed line is the common target, the expected return of the minimum-variance portfolio. The ordering is untouched and the spread is roughly halved."
+#| echo: false
+#| fig-asp: 0.7
+mu_long |>
+  ggplot2::ggplot(ggplot2::aes(value, asset)) +
+  ggplot2::geom_vline(xintercept = bs$mu0 * 12, linetype = "22",
+                      colour = tidyaa_colors[["ink_soft"]], linewidth = 0.4) +
+  ggplot2::geom_line(ggplot2::aes(group = asset), colour = tidyaa_colors[["rule"]],
+                     linewidth = 1.3) +
+  ggplot2::geom_point(ggplot2::aes(colour = kind), size = 2.4) +
+  scale_colour_tidyaa() +
+  ggplot2::scale_x_continuous(labels = scales::percent) +
+  ggplot2::labs(x = "annualized expected excess return", y = NULL, colour = NULL)
+```
+
+The spread between the highest and the lowest expected return falls from
+`r sprintf("%.1f", 100 * diff(range(mu_s)) * 12)` to
+`r sprintf("%.1f", 100 * diff(range(bs$mu)) * 12)` percentage points, and the
+rank correlation between the two vectors is
+`r sprintf("%.2f", stats::cor(mu_s, bs$mu, method = "spearman"))`, because
+@eq-06-bayes-stein is a linear map with a positive slope. Shrinkage changes
+how different the assets look, not which looks better.
+
+### Equilibrium returns for the five equity classes
+
+The clean case first. Each regional equity class is the capitalization-weighted
+sum of its instruments, so its weight in the world equity market is the sum of
+their capitalizations. As in @sec-05-factor-models-implementation the weight
+used in month $t$ is the last one observed on or before the end of month
+$t-1$, a weight that could have been held.
+
+```{r}
+#| label: market-weights-equity
+eq_ids     <- sim_assets$asset_id[sim_assets$asset_class == "equity"]
+region_of  <- setNames(sim_assets$region, sim_assets$asset_id)
+eq_classes <- grep("_equity$", colnames(Re), value = TRUE)
+
+# Capitalization of each region's listed equities, week by week.
+cap_region <- sim_marketcap_weekly |>
+  dplyr::filter(asset %in% eq_ids) |>
+  dplyr::mutate(class = paste0(region_of[asset], "_equity")) |>
+  dplyr::group_by(date, class) |>
+  dplyr::summarise(cap = sum(market_cap), .groups = "drop") |>
+  tidyr::pivot_wider(names_from = class, values_from = cap) |>
+  dplyr::arrange(date)
+stopifnot(setequal(setdiff(names(cap_region), "date"), eq_classes), !anyNA(cap_region))
+cap_mat <- as.matrix(cap_region[, eq_classes])      # columns in class order, by name
+
+d <- zoo::index(Re)
+W_eq <- t(vapply(seq_along(d), function(i) {
+  cutoff <- if (i == 1) d[1] - 31 else d[i - 1]     # last week of the previous month
+  j <- max(which(cap_region$date <= cutoff))
+  cap_mat[j, ] / sum(cap_mat[j, ])
+}, numeric(length(eq_classes))))
+colnames(W_eq) <- eq_classes
+stopifnot(all(abs(rowSums(W_eq) - 1) < 1e-10), identical(colnames(W_eq), eq_classes))
+
+round(rbind(first = W_eq[1, ], average = colMeans(W_eq), last = W_eq[nrow(W_eq), ]), 3)
+```
+
+The composition drifts, from `r sprintf("%.0f%%", 100 * W_eq[1, "US_equity"])`
+United States at the start to
+`r sprintf("%.0f%%", 100 * W_eq[nrow(W_eq), "US_equity"])` at the end, which
+@sec-05-factor-models-implementation found for the same proxy. An
+unconditional $\boldsymbol{\mu}$ is matched to an unconditional weight vector,
+so we use the average composition over the sample; the last month's weights are
+an exercise. The market's own excess return calibrates $\delta$ through
+@eq-06-delta.
+
+```{r}
+#| label: equilibrium-equity
+mkt_e  <- rowSums(W_eq * zoo::coredata(Re[, eq_classes]))   # the market's excess return
+delta  <- mean(mkt_e) / stats::var(mkt_e)                    # @eq-06-delta
+w_mkt5 <- colMeans(W_eq)
+S5     <- S[eq_classes, eq_classes]
+mu_eq5 <- setNames(delta * as.numeric(S5 %*% w_mkt5), eq_classes)   # @eq-06-equilibrium
+stopifnot(abs(sum(w_mkt5 * mu_eq5) - delta * as.numeric(t(w_mkt5) %*% S5 %*% w_mkt5)) < 1e-12)
+
+c(market_return = mean(mkt_e) * 12, market_vol = stats::sd(mkt_e) * sqrt(12),
+  market_sharpe = mean(mkt_e) / stats::sd(mkt_e) * sqrt(12), delta = delta)
+```
+
+With an annualized excess return of `r sprintf("%.4f", mean(mkt_e) * 12)` and a
+variance of `r sprintf("%.4f", stats::var(mkt_e) * 12)`, @eq-06-delta gives
+
+$$
+\delta = \frac{`r sprintf("%.4f", mean(mkt_e) * 12)`}{`r sprintf("%.4f", stats::var(mkt_e) * 12)`}
+= `r sprintf("%.2f", delta)`,
+$$
+
+and @eq-06-equilibrium then produces one expected return per class.
+
+```{r}
+#| label: equity-comparison
+prem_eq <- sum(w_mkt5 * mu_eq5)               # the market's own equilibrium premium
+beta5   <- mu_eq5 / prem_eq                     # (Sigma w) / (w' Sigma w), asset by asset
+
+cmp5 <- tibble::tibble(
+  asset       = eq_classes,
+  weight      = w_mkt5,
+  beta        = beta5,
+  sample      = mu_s[eq_classes] * 12,
+  se          = precision$se[match(eq_classes, precision$asset)],
+  equilibrium = mu_eq5 * 12
+) |>
+  dplyr::mutate(gap_in_se = (equilibrium - sample) / se)
+stopifnot(identical(cmp5$asset, eq_classes), !anyNA(cmp5),
+          abs(sum(w_mkt5 * beta5) - 1) < 1e-12)
+# The two revisions the text reads off the table: JP_equity up, US_equity down.
+stopifnot(cmp5$gap_in_se[cmp5$asset == "JP_equity"] > 0,
+          cmp5$gap_in_se[cmp5$asset == "US_equity"] < 0)
+```
+
+```{r}
+#| label: tbl-06-equilibrium-equity
+#| tbl-cap: "Sample means and equilibrium returns for the five equity classes, annualized. Beta is the class's beta on the market portfolio; the last column is the gap between the two estimates in units of the sample mean's standard error."
+#| echo: false
+cmp5 |>
+  dplyr::mutate(dplyr::across(c(weight, sample, se, equilibrium), ~ sprintf("%.1f%%", 100 * .x)),
+                beta = sprintf("%.2f", beta),
+                gap_in_se = sprintf("%+.2f", gap_in_se)) |>
+  kable(align = "lrrrrrr",
+        col.names = c("", "market weight", "beta", "sample mean", "std. error",
+                      "equilibrium", "gap, in std. errors"))
+```
+
+Dividing @eq-06-equilibrium by the market's own equilibrium premium
+$\boldsymbol{w}_{\text{mkt}}'\boldsymbol{\mu}_{\text{eq}}$ shows what the
+vector is: each element is the asset's beta on the market times that premium,
+
+$$
+\mu_{\text{eq},i}
+= \frac{(\boldsymbol{\Sigma}\boldsymbol{w}_{\text{mkt}})_i}
+       {\boldsymbol{w}_{\text{mkt}}'\boldsymbol{\Sigma}\boldsymbol{w}_{\text{mkt}}}
+  \times \boldsymbol{w}_{\text{mkt}}'\boldsymbol{\mu}_{\text{eq}}
+= \beta_i \times `r sprintf("%.2f%%", 100 * prem_eq * 12)`,
+$$
+
+which is the CAPM of @eq-05-capm read as a prior rather than tested as a
+model. Every equilibrium return sits within
+`r sprintf("%.1f", max(abs(cmp5$gap_in_se)))` standard errors of the
+corresponding sample mean, so the two vectors are not in conflict; they answer
+different questions. The sample mean says what each market paid. The
+equilibrium says what each would have to pay for investors to hold it in the
+proportion they do, and it pays a beta of
+`r sprintf("%.2f", cmp5$beta[cmp5$asset == "JP_equity"])` for `JP_equity` at
+the market premium where the sample paid less, and revises `US_equity`, with a
+beta of `r sprintf("%.2f", cmp5$beta[cmp5$asset == "US_equity"])`, down from a
+sample mean the market premium does not support.
+
+::: {.callout-note collapse="true"}
+## Worked: a class-level equilibrium on a stated proxy
+
+The application below needs $\boldsymbol{\mu}_{\text{eq}}$ for all sixteen
+classes, and eleven of them have no capitalization. What follows is a
+placeholder, and it should be read as one. **Assumption:** world investable
+wealth is split 40 percent equity, 40 percent government bonds, 15 percent
+credit and 5 percent commodities, and within the equity, government and credit
+blocks each region's share is its share of equity capitalization. Nothing in
+the data supports the block split; it is a round-number stand-in for a
+figure that a real allocation would take from a global market-capitalization
+survey.
+
+<!-- SS: market weights for bonds and commodities are a proxy; decide in PLAN.md open decision 3 -->
+
+```{r}
+#| label: market-weights-proxy
+# ASSUMPTION, not data: the split of world wealth across the four blocks.
+block <- c(equity = 0.40, government = 0.40, credit = 0.15, commodity = 0.05)
+stopifnot(abs(sum(block) - 1) < 1e-12)
+
+W16 <- matrix(0, nrow(Re), N, dimnames = list(NULL, colnames(Re)))
+for (r in sub("_equity$", "", eq_classes)) {
+  s <- W_eq[, paste0(r, "_equity")]                 # the region's share of equity capitalization
+  W16[, paste0(r, "_equity")]     <- block[["equity"]]     * s
+  W16[, paste0(r, "_government")] <- block[["government"]] * s
+  W16[, paste0(r, "_credit")]     <- block[["credit"]]     * s
+}
+W16[, "GLOBAL_commodity"] <- block[["commodity"]]
+stopifnot(all(abs(rowSums(W16) - 1) < 1e-10), identical(colnames(W16), colnames(Re)))
+
+mkt16_e <- rowSums(W16 * zoo::coredata(Re))
+delta16 <- mean(mkt16_e) / stats::var(mkt16_e)                       # @eq-06-delta
+w_mkt   <- colMeans(W16)
+mu_eq   <- setNames(delta16 * as.numeric(S %*% w_mkt), colnames(Re))  # @eq-06-equilibrium
+
+c(proxy_return = mean(mkt16_e) * 12, proxy_vol = stats::sd(mkt16_e) * sqrt(12),
+  proxy_sharpe = mean(mkt16_e) / stats::sd(mkt16_e) * sqrt(12), delta = delta16)
+
+round(cbind(weight = w_mkt, sample = mu_s * 12, equilibrium = mu_eq * 12)[order(-w_mkt), ], 3)
+```
+
+A bond-heavy proxy with a Sharpe ratio of
+`r sprintf("%.2f", mean(mkt16_e) / stats::sd(mkt16_e) * sqrt(12))` at a
+volatility of `r sprintf("%.1f%%", 100 * stats::sd(mkt16_e) * sqrt(12))`
+implies, by @eq-06-delta, $\delta = `r sprintf("%.1f", delta16)`$, more than
+twice the equity-only figure. The vector it produces disagrees with the sample
+in one place that matters: `US_government` is assigned
+`r sprintf("%.1f%%", 100 * mu_eq[["US_government"]] * 12)` a year against a
+sample mean of `r sprintf("%.1f%%", 100 * mu_s[["US_government"]] * 12)`,
+because it covaries negatively with the equity block and so carries almost no
+risk in the market portfolio. Whether that is right depends entirely on
+whether the block split is, which is what reverse optimization can and cannot
+do without a market weight.
+:::
+
+### The moments as PortfolioAnalytics sees them
+
+`PortfolioAnalytics` [@peterson2026] computes every moment an objective needs
+through one function, `set.portfolio.moments()`, whose `method` argument
+selects the estimator.
+
+```{r}
+#| label: moments-sample
+spec <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only") |>
+  add.objective(type = "return", name = "mean") |>
+  add.objective(type = "risk",   name = "StdDev")
+
+eval(formals(set.portfolio.moments)$method)
+
+m_sample <- set.portfolio.moments(Re, spec, method = "sample")
+str(m_sample, give.attr = FALSE)
+stopifnot(all.equal(as.numeric(m_sample$mu), unname(mu_s)))
+```
+
+`sample` returns the moments of @tbl-06-precision. `boudt` cleans the higher
+moments through a factor structure and belongs to
+@sec-11-higher-moments-theory; `black_litterman` and `meucci` blend a prior
+with views and belong to @sec-17-expressing-views-theory. None of the four is
+Bayes-Stein, and none accepts a market weight. The route in is the one
+@sec-07-covariance-matrix-implementation used for a shrunk covariance matrix:
+`optimize.portfolio()` takes a `momentFUN` argument, and a function of
+`(R, portfolio, ...)` returning the named list the package expects can supply
+any mean vector at all.
+
+```{r}
+#| label: momentfun
+bayes_stein_moments <- function(R, portfolio, ...) {
+  m <- bayes_stein(R)$mu
+  S <- stats::cov(zoo::coredata(R))
+  list(mu = m, sigma = S, m3 = NULL, m4 = NULL, mean = m, var = S)
+}
+
+opt_bs <- optimize.portfolio(Re, spec, optimize_method = "ROI", maxSR = TRUE,
+                             momentFUN = bayes_stein_moments)
+stopifnot(all.equal(as.numeric(opt_bs$moment_values$mu), unname(bs$mu)))
+names(opt_bs$moment_values)
+round(extractWeights(opt_bs)[extractWeights(opt_bs) > 0.005], 4)
+```
+
+The `stopifnot()` confirms that the moments the solver used are the shrunk
+ones, and `maxSR = TRUE` asks for the tangency portfolio directly.
+
+::: {.callout-important}
+## On the CRAN release, `maxSR` ignores the mean you supplied
+
+`optimize.portfolio(maxSR = TRUE)` on `PortfolioAnalytics` 2.1.2 as released
+recomputes the mean from `R` inside the Sharpe-ratio search and discards the
+one `momentFUN` returned, so the three estimators of this chapter would all
+produce the sample-mean tangency portfolio, without a message. This book runs
+on the patched build recorded in @sec-93-package-notes, and `R/_common.R`
+warns if it is not installed. On the release, the portable route is the one
+@sec-09-mean-variance-implementation used, reading the highest Sharpe ratio
+off `create.EfficientFrontier()`, which does honor `momentFUN`. Either way,
+assert that the answers differ, as the application below does; a `stopifnot()`
+is the only thing that distinguishes a solved problem from the wrong one
+solved quietly.
+:::
+
+The package also ships the Black-Litterman formula as `black.litterman()`.
+Called with the prior alone, it should return the prior, and it does, together
+with a second object that needs care.
+
+```{r}
+#| label: black-litterman
+bl <- black.litterman(Re, P = diag(N), Mu = mu_eq, Views = mu_eq)
+str(bl, give.attr = FALSE)
+c(posterior_equals_prior = isTRUE(all.equal(as.numeric(bl$BLMu), unname(mu_eq))),
+  variance_ratio = unique(round(diag(bl$BLSigma) / diag(S), 6)))
+```
+
+::: {.callout-warning}
+## `black.litterman()` is the blending formula, not the model
+
+Four things about this function are measured rather than documented, and a
+reader who expects @black1992 will walk into each of them.
+
+```{r}
+#| label: bl-defaults
+bl_default <- black.litterman(Re, P = diag(N))                   # Mu and Views left at their defaults
+bl_moments <- set.portfolio.moments(Re, spec, method = "black_litterman")
+c(default_view_shift_pp   = mean(as.numeric(bl_default$BLMu) - mu_s) * 1200,
+  moments_shift_min_pp    = min(as.numeric(bl_moments$mu) - mu_s) * 1200,
+  moments_shift_max_pp    = max(as.numeric(bl_moments$mu) - mu_s) * 1200,
+  moments_variance_ratio  = min(diag(bl_moments$sigma) / diag(S)))
+```
+
+First, there is no market-weight argument and no $\delta$: `Mu` defaults to
+`colMeans(R)`, so the prior is the sample mean unless @eq-06-equilibrium is
+computed and passed in, as above. Second, there is no $\tau$: the prior's
+uncertainty is $\boldsymbol{\Sigma}$ itself and the view uncertainty is fixed
+at $\boldsymbol{P}\boldsymbol{\Sigma}\boldsymbol{P}'$. Third, `Views = NULL`
+is not the absence of a view. The default view is the standard deviation of
+each view portfolio, a bullish opinion on everything, and with `P = diag(N)` it
+lifts every mean by
+`r sprintf("%.0f", mean(as.numeric(bl_default$BLMu) - mu_s) * 1200)` percentage
+points a year on average; `set.portfolio.moments(method = "black_litterman")`
+inherits this with one default view on the plain sum of the assets' returns
+and shifts the means by between
+`r sprintf("%.0f", min(as.numeric(bl_moments$mu) - mu_s) * 1200)` and
+`r sprintf("%.0f", max(as.numeric(bl_moments$mu) - mu_s) * 1200)` points.
+Fourth, `BLSigma` is the posterior covariance of the mean, not of returns: with
+the prior alone it is exactly
+$\boldsymbol{\Sigma}/`r sprintf("%.0f", 1 / unique(round(diag(bl$BLSigma) / diag(S), 6)))`$,
+and `set.portfolio.moments()` hands it to the optimizer as `sigma`, which then
+optimizes on half the risk. Supply `Mu` yourself, set `Views` to `P %*% Mu`
+when you want the prior alone, and never let `BLSigma` reach a risk objective.
+:::
+
+One more trap, this time in how arguments travel. `set.portfolio.moments()`
+recovers `Mu`, `P` and `Views` through `match.call()`, which returns the
+expression a caller typed rather than its value.
+
+```{r}
+#| label: bl-matchcall
+try(set.portfolio.moments(Re, spec, method = "black_litterman",
+                          Mu = mu_eq, P = diag(N), Views = mu_eq))
+
+opt_bl <- optimize.portfolio(Re, spec, optimize_method = "ROI",
+                             momentFUN = "set.portfolio.moments",
+                             method = "black_litterman",
+                             Mu = mu_eq, P = diag(N), Views = mu_eq)
+c(mu_honored  = isTRUE(all.equal(as.numeric(opt_bl$moment_values$mu), unname(mu_eq))),
+  sigma_ratio = unique(round(diag(opt_bl$moment_values$sigma) / diag(S), 6)))
+```
+
+Called directly with a variable, the function sees the symbol `mu_eq`, a
+vector of length one, and stops. Called through `optimize.portfolio()`, which
+assembles the call with `do.call()`, the values arrive intact and the mean is
+honored; the covariance arrives halved, which is the fourth point of the
+callout. The custom `momentFUN` of the previous chunk has neither problem, and
+it is what the rest of this chapter uses.
+
+Finally, the $\gamma/2$ convention. The equilibrium vector was built so that
+the market portfolio maximizes
+$\boldsymbol{w}'\boldsymbol{\mu} - \tfrac{\delta}{2}\boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}$,
+and the package's quadratic utility objective puts `risk_aversion` where
+$\delta/2$ stands. Feeding $\boldsymbol{\mu}_{\text{eq}}$ back in is therefore
+a test of both the vector and the convention.
+
+```{r}
+#| label: gamma-half
+make_moments <- function(mu, S) {
+  force(mu); force(S)
+  function(R, portfolio, ...) list(mu = mu, sigma = S, m3 = NULL, m4 = NULL, mean = mu, var = S)
+}
+
+base_spec <- portfolio.spec(assets = colnames(Re)) |>
+  add.constraint(type = "full_investment") |>
+  add.constraint(type = "long_only")
+
+qu_weights <- function(lambda) {
+  s <- base_spec |>
+    add.objective(type = "return", name = "mean") |>
+    add.objective(type = "risk",   name = "var", risk_aversion = lambda)
+  w <- extractWeights(optimize.portfolio(Re, s, optimize_method = "ROI",
+                                         momentFUN = make_moments(mu_eq, S)))
+  w[colnames(Re)]
+}
+
+gamma_check <- c(at_delta_over_2 = max(abs(qu_weights(delta16 / 2) - w_mkt)),
+                 at_delta        = max(abs(qu_weights(delta16)     - w_mkt)))
+stopifnot(gamma_check[["at_delta_over_2"]] < 1e-8)
+gamma_check
+```
+
+At `risk_aversion = delta16 / 2` the optimizer returns the proxy market
+portfolio to within `r sprintf("%.0e", gamma_check[["at_delta_over_2"]])`; at
+`risk_aversion = delta16` it returns a portfolio that differs by up to
+`r sprintf("%.0f", 100 * gamma_check[["at_delta"]])` percentage points in a
+single weight. The first number is @eq-06-equilibrium working. The second is
+what a reader who takes the argument's name at face value gets.
+
+## What the Three Vectors Buy {#sec-06-expected-returns-application}
+
+### Three tangency portfolios
+
+The same long-only tangency problem that @sec-09-mean-variance-implementation
+solved on the sample mean is now solved three times, on the sample mean, on
+the Bayes-Stein vector and on the class-level equilibrium, with the sample
+covariance matrix held fixed throughout so that only $\boldsymbol{\mu}$ changes.
+
+```{r}
+#| label: tangency
+mus <- list(sample = mu_s, `Bayes-Stein` = bs$mu, equilibrium = mu_eq)
+
+W3 <- sapply(mus, function(m) {
+  o <- optimize.portfolio(Re, spec, optimize_method = "ROI", maxSR = TRUE,
+                          momentFUN = make_moments(m, S))
+  w <- extractWeights(o)
+  w[colnames(Re)]
+})
+stopifnot(identical(rownames(W3), colnames(Re)),
+          !isTRUE(all.equal(W3[, "sample"], W3[, "Bayes-Stein"])),
+          isTRUE(all.equal(W3[, "equilibrium"], w_mkt, tolerance = 1e-6)))
+
+round(W3[rowSums(W3 > 0.005) > 0, ], 4)
+```
+
+The second assertion is the guard the callout asked for: the sample and
+Bayes-Stein answers differ, so the supplied means were used. The third is
+@eq-06-equilibrium's defining property observed: the tangency portfolio of the
+equilibrium vector is the market portfolio it was read from, to solver
+precision.
+
+::: {.callout-note collapse="true"}
+## Worked: the long-only tangency portfolio in one quadratic program
+
+A Sharpe ratio is invariant to the scale of the weight vector, and so is a
+sign constraint. The long-only tangency portfolio can therefore be found by
+minimizing variance at a unit expected return with no budget constraint, and
+rescaling the answer to sum to one; this is one quadratic program rather than
+a search over a frontier, and it makes the rolling exercise below cheap.
+
+```{r}
+#| label: tangency-check
+tangency_lo <- function(mu, S) {
+  if (max(mu) <= 0) return(setNames(rep(NA_real_, length(mu)), names(mu)))  # no long-only tangency
+  N <- length(mu)
+  sol <- quadprog::solve.QP(Dmat = 2 * S, dvec = rep(0, N),
+                            Amat = cbind(mu, diag(N)), bvec = c(1, rep(0, N)), meq = 1)
+  w <- pmax(sol$solution, 0)
+  setNames(w / sum(w), names(mu))
+}
+
+W3_qp <- sapply(mus, tangency_lo, S = S)
+stopifnot(identical(rownames(W3_qp), rownames(W3)), max(abs(W3 - W3_qp)) < 1e-6)
+c(max_abs_difference_from_package = max(abs(W3 - W3_qp)))
+```
+
+The two routes agree to `r sprintf("%.0e", max(abs(W3 - W3_qp)))` in every
+weight, which is the check that `maxSR = TRUE` on the patched build solves the
+problem it is asked.
+:::
+
+```{r}
+#| label: summary
+p_vol <- function(w) sqrt(as.numeric(t(w) %*% S %*% w)) * sqrt(12)
+p_ret <- function(w, m = mu_s) sum(m[names(w)] * w) * 12
+p_sr  <- function(w, m = mu_s) p_ret(w, m) / p_vol(w)
+eff_bets <- function(w) 1 / sum(w^2)
+turnover <- function(w1, w2) sum(abs(w1[names(w2)] - w2)) / 2
+
+summ <- tibble::tibble(
+  estimator    = names(mus),
+  held         = colSums(W3 > 0.005),
+  eff_bets     = apply(W3, 2, eff_bets),
+  largest      = apply(W3, 2, max),
+  promised_sr  = mapply(function(j, m) p_sr(W3[, j], m), seq_along(mus), mus),
+  in_sample_sr = apply(W3, 2, p_sr),
+  vol          = apply(W3, 2, p_vol),
+  from_sample  = apply(W3, 2, function(w) turnover(W3[, "sample"], w))
+)
+stopifnot(identical(summ$estimator, colnames(W3)))
+
+# The minimum-variance portfolio of chapter 9, for the comparison below.
+w_gmv <- extractWeights(optimize.portfolio(
+  Re, base_spec |> add.objective(type = "risk", name = "var"), optimize_method = "ROI"))
+w_gmv <- w_gmv[colnames(Re)]
+```
+
+```{r}
+#| label: summary-checks
+#| include: false
+# What the text reads off the table: the sample row promises most, and
+# Bayes-Stein is the more concentrated of the two estimated answers, in the
+# series the minimum-variance portfolio holds most of.
+top <- function(w) names(which.max(w))
+stopifnot(summ$estimator[which.max(summ$promised_sr)] == "sample",
+          summ$estimator[which.max(summ$in_sample_sr)] == "sample",
+          identical(top(W3[, "sample"]), top(W3[, "Bayes-Stein"])),
+          identical(top(W3[, "sample"]), top(w_gmv)),
+          max(W3[, "Bayes-Stein"]) > max(W3[, "sample"]),
+          eff_bets(W3[, "Bayes-Stein"]) < eff_bets(W3[, "sample"]))
+
+# The register of chapter 25, read as chapter 9 reads it for its out-of-sample
+# table: sixteen classes, sixty-month window, monthly rebalancing, gross.
+oos <- utils::read.csv("output/tables/oos-sweep.csv") |>
+  dplyr::filter(universe == "classes", window == 60,
+                frequency == "months", basis == "gross")
+stopifnot(!anyDuplicated(oos$strategy))
+oos_sr <- setNames(oos$sharpe, oos$strategy)[c("max_sharpe", "min_variance", "equal_weight")]
+sr_fit <- summ$in_sample_sr[summ$estimator == "sample"]
+stopifnot(!anyNA(oos_sr),
+          oos_sr[["max_sharpe"]] < sr_fit,                 # the fitted figure is not earned
+          names(which.min(oos_sr)) == "max_sharpe")        # and is the lowest of the three
+```
+
+```{r}
+#| label: tbl-06-weights
+#| tbl-cap: "The three tangency portfolios. The promised Sharpe ratio is computed with the estimator's own mean vector; the in-sample Sharpe ratio with the sample mean, which is the only one the sample can score. Turnover is the share of the portfolio that must be traded to reach each answer from the sample-mean one."
+#| echo: false
+summ |>
+  dplyr::mutate(eff_bets = sprintf("%.1f", eff_bets),
+                largest = sprintf("%.0f%%", 100 * largest),
+                dplyr::across(c(promised_sr, in_sample_sr), ~ sprintf("%.3f", .x)),
+                vol = sprintf("%.1f%%", 100 * vol),
+                from_sample = sprintf("%.0f%%", 100 * from_sample)) |>
+  kable(align = "lrrrrrrr",
+        col.names = c("", "positions held", "effective bets", "largest position",
+                      "promised Sharpe", "in-sample Sharpe", "volatility",
+                      "turnover from sample"))
+```
+
+```{r}
+#| label: weights-frame
+w_long <- as.data.frame(W3) |>
+  tibble::rownames_to_column("asset") |>
+  tidyr::pivot_longer(-asset, names_to = "estimator", values_to = "weight") |>
+  dplyr::mutate(asset = factor(asset, levels = rownames(W3)[order(W3[, "equilibrium"])]),
+                estimator = factor(estimator, levels = names(mus)))
+stopifnot(nrow(w_long) == 3 * N, !anyNA(w_long$weight))
+```
+
+```{r}
+#| label: fig-06-weights
+#| fig-cap: "Weights of the long-only tangency portfolio under the three mean vectors, from one data frame. The sample and Bayes-Stein answers hold a handful of series; the equilibrium answer is the market portfolio and holds all sixteen."
+#| echo: false
+#| fig-asp: 0.72
+w_long |>
+  ggplot2::ggplot(ggplot2::aes(weight, asset, fill = estimator)) +
+  ggplot2::geom_col(position = ggplot2::position_dodge(width = 0.72), width = 0.66) +
+  scale_fill_tidyaa() +
+  ggplot2::scale_x_continuous(labels = scales::percent) +
+  ggplot2::labs(x = "weight in the long-only tangency portfolio", y = NULL, fill = NULL)
+```
+
+Read @tbl-06-weights across. The sample-mean portfolio holds
+`r summ$held[summ$estimator == "sample"]` series with
+`r sprintf("%.1f", summ$eff_bets[summ$estimator == "sample"])` effective bets
+and `r sprintf("%.0f%%", 100 * summ$largest[summ$estimator == "sample"])` in
+`r names(which.max(W3[, "sample"]))`, and promises a Sharpe ratio of
+`r sprintf("%.2f", summ$promised_sr[summ$estimator == "sample"])`, the highest
+of the three by construction, since it is scored on the vector it maximized.
+The Bayes-Stein portfolio is more concentrated still, with
+`r sprintf("%.0f%%", 100 * summ$largest[summ$estimator == "Bayes-Stein"])` in
+the same series. That is @eq-06-bs-direction at work: shrinking the means
+toward $\mu_0$ mixes the tangency direction with the minimum-variance
+direction, and the minimum-variance portfolio of @sec-09-mean-variance-implementation
+is `r sprintf("%.0f%%", 100 * w_gmv[["US_government"]])` `US_government`. Shrinkage did not make the portfolio more diversified. It
+made it lean on the one input that is estimated well.
+
+The equilibrium portfolio is different in kind. It holds all
+`r summ$held[summ$estimator == "equilibrium"]` series with
+`r sprintf("%.1f", summ$eff_bets[summ$estimator == "equilibrium"])` effective
+bets, because it is the market, and its in-sample Sharpe ratio of
+`r sprintf("%.2f", summ$in_sample_sr[summ$estimator == "equilibrium"])` gives
+up
+`r sprintf("%.0f%%", 100 * (1 - summ$in_sample_sr[summ$estimator == "equilibrium"] / summ$in_sample_sr[summ$estimator == "sample"]))`
+of the sample tangency's
+`r sprintf("%.2f", sr_fit)`. That is the wrong yardstick, because the number
+the sample tangency is scored on here is the one it was fitted to. @tbl-09-oos
+reads the same rule out of sample from the register of
+@sec-25-backtesting-application: on a sixty-month rolling window rebalanced
+monthly it earns a Sharpe ratio of
+`r sprintf("%.2f", oos_sr[["max_sharpe"]])`,
+`r sprintf("%.0f%%", 100 * oos_sr[["max_sharpe"]] / sr_fit)` of the fitted
+figure and the lowest of the three portfolios compared there. What matters
+for a strategic allocation is how much each answer moves when the sample does.
+
+### Which vector moves least
+
+We re-estimate each of the three vectors on every rolling sixty-month window,
+the window @sec-25-backtesting-application uses, and solve the same tangency
+problem on each. Two things are measured: how far the mean vector itself moves
+from one window to the next, and the turnover of the portfolio it implies. The
+equilibrium's inputs re-estimated each window are $\boldsymbol{\Sigma}$ and
+the average market weights over the window; $\delta$ is held at its
+full-sample value, because it is a preference parameter rather than a forecast
+and, by the scale invariance noted above, it does not affect the tangency
+weights.
+
+```{r}
+#| label: rolling
+win    <- 60L
+starts <- seq_len(T - win + 1L)
+
+roll <- lapply(starts, function(s) {
+  idx <- s:(s + win - 1L)
+  X   <- Re[idx, ]
+  Sw  <- stats::cov(zoo::coredata(X))
+  wm  <- colMeans(W16[idx, , drop = FALSE])
+  m   <- cbind(sample        = colMeans(X),
+               `Bayes-Stein` = bayes_stein(X)$mu,
+               equilibrium   = delta16 * as.numeric(Sw %*% wm))
+  rownames(m) <- colnames(Re)
+  list(mu = m, w = apply(m, 2, tangency_lo, S = Sw))
+})
+stopifnot(length(roll) == T - win + 1L,
+          identical(rownames(roll[[1]]$w), colnames(Re)))
+
+roll_stats <- sapply(colnames(roll[[1]]$mu), function(e) {
+  MU <- sapply(roll, function(r) r$mu[, e]) * 12       # N x windows, annualized
+  W  <- sapply(roll, function(r) r$w[, e])
+  stopifnot(!anyNA(W))                                  # every window had a tangency
+  to <- vapply(2:ncol(W), function(j) turnover(W[, j - 1], W[, j]), numeric(1))
+  c(mean_abs_change_pp  = mean(abs(MU[, -1] - MU[, -ncol(MU)])) * 100,
+    mean_turnover       = mean(to),
+    p95_turnover        = as.numeric(quantile(to, 0.95)),
+    mean_effective_bets = mean(1 / colSums(W^2)))
+})
+
+# The order the text reports, in the vectors and in the portfolios they imply.
+est <- c("sample", "Bayes-Stein", "equilibrium")
+stopifnot(identical(colnames(roll_stats), est),
+          all(diff(roll_stats["mean_abs_change_pp", est]) < 0),
+          all(diff(roll_stats["mean_turnover", est]) < 0))
+to_ratio <- roll_stats["mean_turnover", c("sample", "Bayes-Stein")] /
+  roll_stats["mean_turnover", "equilibrium"]
+```
+
+```{r}
+#| label: tbl-06-rolling
+#| tbl-cap: "The three estimators on rolling sixty-month windows. The first column is the mean absolute change in an annualized expected return from one window to the next, in percentage points; the turnover columns describe the tangency portfolio each vector implies."
+#| echo: false
+as.data.frame(t(roll_stats)) |>
+  tibble::rownames_to_column("estimator") |>
+  dplyr::mutate(mean_abs_change_pp = sprintf("%.2f", mean_abs_change_pp),
+                dplyr::across(c(mean_turnover, p95_turnover), ~ sprintf("%.1f%%", 100 * .x)),
+                mean_effective_bets = sprintf("%.1f", mean_effective_bets)) |>
+  kable(align = "lrrrr",
+        col.names = c("", "mean change in an expected return (pp)", "mean turnover",
+                      "95th percentile turnover", "effective bets"))
+```
+
+On `r length(roll)` windows, a sample mean moves by
+`r sprintf("%.2f", roll_stats["mean_abs_change_pp", "sample"])` percentage
+points a year between one window and the next, the Bayes-Stein estimate by
+`r sprintf("%.2f", roll_stats["mean_abs_change_pp", "Bayes-Stein"])` and the
+equilibrium return by
+`r sprintf("%.2f", roll_stats["mean_abs_change_pp", "equilibrium"])`. The
+tangency portfolios move accordingly: the sample-mean answer turns over
+`r sprintf("%.1f%%", 100 * roll_stats["mean_turnover", "sample"])` of the
+portfolio in an average month and
+`r sprintf("%.0f%%", 100 * roll_stats["p95_turnover", "sample"])` in the worst
+twentieth, Bayes-Stein about
+`r sprintf("%.0f", 100 * (1 - roll_stats["mean_turnover", "Bayes-Stein"] / roll_stats["mean_turnover", "sample"]))`
+percent less, and the equilibrium answer
+`r sprintf("%.1f%%", 100 * roll_stats["mean_turnover", "equilibrium"])`, which
+is the rate at which capitalizations drift. The last row is no trick: the
+tangency portfolio of @eq-06-equilibrium is the market portfolio in every
+window, whatever that window's covariance matrix says, so its turnover is the
+market's. The two estimated vectors move the portfolio
+`r sprintf("%.0f", to_ratio[["sample"]])` and
+`r sprintf("%.0f", to_ratio[["Bayes-Stein"]])` times as much as the one that
+was not estimated, and @sec-23-rebalancing-application puts a price on the
+difference.
+
+### What the book carries forward
+
+The sample mean is the input every closed form in @sec-09-mean-variance-theory
+assumes and the one @tbl-06-precision shows is not known: `r n_straddle` of
+`r N` intervals include zero, and the portfolio it implies is rebuilt every
+month. Bayes-Stein keeps the ordering, halves the spread and cuts the
+turnover, and by @eq-06-bs-direction does so by leaning on the
+minimum-variance portfolio, the part of the problem
+$\hat{\boldsymbol{\Sigma}}$ pins down. The equilibrium vector returns a
+portfolio that is held, diversified and consistent with the covariance matrix,
+and is only as good as the weights it is read from, which on this market exist
+for five classes and are assumed for eleven.
+
+The book therefore carries two of the three. Where market weights exist, the
+equilibrium return of @eq-06-equilibrium is the anchor: it is the prior that
+@sec-17-expressing-views-theory blends views into and the strategic policy
+its tactical portfolios deviate from. Where they do not, the Bayes-Stein
+estimator of @eq-06-bayes-stein is the default, because it asks nothing of the
+data beyond $\hat{\boldsymbol{\mu}}$ and $\hat{\boldsymbol{\Sigma}}$ and moves
+the portfolio in the direction @jagannathan2003 and @frost1988 showed a
+constraint moves it anyway. The sample mean is carried as the benchmark: it is
+the input whose cost @sec-08-estimation-error-theory measures and the
+forecast without a signal that the predictors of
+@sec-16-signals-and-forecasts-theory have to improve on.
+
+## Key Takeaways {.unnumbered}
+
+- By @eq-06-se the precision of a mean depends on the calendar span alone, and
+  on `r years` model years of data `r n_straddle` of the `r N` intervals of
+  @eq-06-interval include zero. Sampling weekly instead of monthly leaves that
+  unchanged and halves the standard error of the variance [@merton1980].
+- A return target set on a sample mean is honored to machine precision on an
+  input known to a few percentage points, and the optimizer amplifies the
+  difference [@best1991; @michaud1989]. The cost is measured in
+  @sec-08-estimation-error-theory.
+- Bayes-Stein shrinks every mean toward the expected return of the
+  minimum-variance portfolio with an intensity the data set at
+  $v = `r sprintf("%.2f", bs$v)`$ here, preserves the ordering, and by
+  @eq-06-bs-direction moves the tangency portfolio toward the minimum-variance
+  portfolio [@jorion1986; @kan2007].
+- Reverse optimization returns the vector for which the market portfolio is
+  the tangency portfolio. $\delta$ scales it without changing the weights,
+  and the package's `risk_aversion` is $\delta/2$, verified by feeding the
+  vector back in [@sharpe1974; @black1992].
+- `black.litterman()` is the blending formula only: no market weights, no
+  $\tau$, a default view that is bullish on everything, and a posterior
+  covariance that halves the variances. Supply `Mu` and `Views` yourself and
+  keep `BLSigma` away from a risk objective.
+- On rolling windows the sample tangency turns over about
+  `r sprintf("%.0f%%", 100 * roll_stats["mean_turnover", "sample"])` of the
+  portfolio a month, Bayes-Stein
+  `r sprintf("%.0f%%", 100 * roll_stats["mean_turnover", "Bayes-Stein"])`,
+  and the equilibrium
+  `r sprintf("%.1f%%", 100 * roll_stats["mean_turnover", "equilibrium"])`.
+  The book carries the equilibrium as
+  its anchor where market weights exist and Bayes-Stein where they do not.
+
+## Exercises {.unnumbered}
+
+1. Replace the target $\mu_0$ in @eq-06-bayes-stein with the plain average of
+   the sixteen sample means, recompute $v$ and the long-only tangency
+   portfolio, and compare it with @tbl-06-weights. Does the new target still
+   move the portfolio toward the minimum-variance portfolio, and what does
+   @eq-06-bs-direction say about why?
+2. Reverse-optimize the five equity classes with the last month's weights,
+   `W_eq[nrow(W_eq), ]`, in place of the average composition. Report how far
+   each equilibrium return moves in units of the standard error in
+   @tbl-06-equilibrium-equity, and say which region's revision is largest and
+   why.
+3. Change the block split in the worked box to 60 percent equity, 25 percent
+   government, 10 percent credit and 5 percent commodities and recompute the
+   class-level equilibrium. Which entries of $\boldsymbol{\mu}_{\text{eq}}$
+   move most, does the tangency portfolio still equal the proxy weights, and
+   what does that say about what reverse optimization can be trusted for?
+4. Recompute @tbl-06-rolling on one-hundred-and-twenty-month windows. Does the
+   ranking of the three estimators change, and does the sample-mean turnover
+   fall by the factor that @eq-06-se predicts for a doubled span?

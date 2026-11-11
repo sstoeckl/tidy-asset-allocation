@@ -1,0 +1,468 @@
+---
+title: "Mean-Variance Optimization"
+subtitle: "Tidy Asset Allocation in R, Chapter 9"
+author: "Sebastian Stöckl"
+format:
+  revealjs:
+    theme: [default, tidyaa-slides.scss]
+    embed-resources: true
+    comments: false
+    slide-number: true
+    width: 1280
+    height: 720
+    margin: 0.06
+    footer: "Tidy Asset Allocation in R · Chapter 9"
+    code-overflow: wrap
+    fig-width: 6.2
+    fig-asp: 0.5
+    fig-align: center
+    fig-dpi: 150
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r deck-root}
+#| include: false
+# Everything on these slides comes from the chapter's own code. read_chunk()
+# attaches the labelled blocks of code/09-mean-variance.R to the chunks below,
+# so no line of analysis is maintained twice. root.dir takes effect after this
+# chunk, hence the second one.
+knitr::opts_knit$set(root.dir = normalizePath("../code"))  # absolute path: knitr changes directory per chunk; a standalone deck renders from slides/
+```
+
+```{r deck-setup}
+#| include: false
+source("_common.R")
+library(tidypm)
+library(knitr)
+knitr::read_chunk("09-mean-variance.R")
+# Slides are read from a distance: a little more weight than the book figures.
+ggplot2::theme_set(theme_tidyaa(base_size = 9))
+```
+
+```{r data}
+#| include: false
+```
+
+## Learning Outcomes
+
+After this session we can
+
+::: {.lo}
+1. **State** the mean-variance problem and its two anchor solutions, and compute the two-asset minimum-variance weights by hand.
+2. **Implement** the problem in `PortfolioAnalytics`, and **read** the picture it produces: assets, frontier, tangency line.
+3. **Explain** why the minimum-variance end of the frontier is stable and the tangency end is not, and what a constraint costs.
+4. **Evaluate** how much of the in-sample result survives out of sample.
+:::
+
+::: {.notes}
+Each later slide is tagged to one of these four outcomes in the Key Takeaways. The exercises at the end practice outcomes 2 to 4.
+:::
+
+## The Question {.smaller}
+
+How should an investor divide wealth across assets that differ in expected return, in volatility, and in how they move together?
+
+::: {.statement}
+Markowitz (1952) answered that a portfolio cannot be judged asset by asset: the risk of the whole depends on the **covariances** between its parts as much as on the variances of each.
+:::
+
+- Portfolio choice becomes an optimization problem with a closed-form solution.
+- Every later method in the book departs from this point.
+- This chapter is about **strategic allocation**: long-run, unconditional beliefs, no timing.
+
+<p class="source">Markowitz, H. (1952). Portfolio Selection. *Journal of Finance* 7(1), 77–91.</p>
+
+## Data and Notation
+
+The sixteen risky class series of the modeled market, `r nrow(Re)` monthly returns each, in excess of the Treasury bill.
+
+- $\boldsymbol{w}$: weights over $N$ assets; $\boldsymbol{\iota}$: a vector of ones
+- $\boldsymbol{\mu}$: expected excess returns; $\boldsymbol{\Sigma}$: their covariance matrix
+
+$$
+\mu_{\boldsymbol{w}} = \boldsymbol{w}'\boldsymbol{\mu},
+\qquad
+\sigma^2_{\boldsymbol{w}} = \boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}.
+$$
+
+The second expression is the whole of Markowitz (1952) in one line: the off-diagonal terms of $\boldsymbol{\Sigma}$ enter, and they can be negative.
+
+::: {.notes}
+Every moment in the chapter is estimated on the full sample, so what follows is descriptive rather than implementable. The honest version is the backtesting chapter.
+:::
+
+## Dominance and Efficiency
+
+In the plane with volatility on the horizontal axis and expected return on the vertical, portfolio $A$ **dominates** portfolio $B$ if
+
+$$
+\mu_A \geq \mu_B \quad\text{and}\quad \sigma_A \leq \sigma_B,
+$$
+
+with at least one inequality strict.
+
+- A better portfolio always lies to the **northwest** of a worse one.
+- A portfolio that no feasible portfolio dominates is **efficient**.
+- The same vocabulary applies to single assets, before any optimizer runs.
+
+```{r two-asset-inputs}
+#| include: false
+```
+
+```{r two-asset-rho}
+#| include: false
+```
+
+## The Two-Asset Case
+
+With $N = 2$ the minimum-variance weights need no matrix algebra. Write $\sigma_{12} = \rho\,\sigma_1\sigma_2$:
+
+$$
+w_1 = \frac{\sigma_2^2 - \sigma_{12}}{\sigma_1^2 + \sigma_2^2 - 2\sigma_{12}},
+\qquad w_2 = 1 - w_1 .
+$$
+
+- The numerator rewards the asset whose covariance with the other is small relative to the other's variance.
+- The denominator is the variance of the difference of the two returns, $\mathrm{Var}(r_1 - r_2)$.
+- At $\rho = \pm 1$ with $\sigma_1 \ne \sigma_2$ the attainable volatility is zero.
+
+## Two Assets, Numbers Substituted
+
+`US_equity` and `US_government`, annualized sample moments:
+$\sigma_1 = `r sprintf("%.4f", s1)`$, $\sigma_2 = `r sprintf("%.4f", s2)`$, $\rho = `r sprintf("%.2f", rho)`$, so
+$\sigma_{12} = `r sprintf("%.4f", rho)` \times `r sprintf("%.4f", s1)` \times `r sprintf("%.4f", s2)` = `r sprintf("%.5f", s12)`$.
+
+$$
+w_1 = \frac{`r sprintf("%.5f", s2^2)` - `r sprintf("%.5f", s12)`}
+           {`r sprintf("%.5f", s1^2)` + `r sprintf("%.5f", s2^2)` - 2 \times `r sprintf("%.5f", s12)`}
+    = `r sprintf("%.4f", w1)`,
+\qquad
+w_2 = `r sprintf("%.4f", 1 - w1)`.
+$$
+
+$$
+\sigma_{\boldsymbol{w}}
+= \sqrt{`r sprintf("%.5f", w1^2 * s1^2)` + `r sprintf("%.5f", (1 - w1)^2 * s2^2)` `r sprintf("%+.5f", 2 * w1 * (1 - w1) * s12)`}
+= `r sprintf("%.4f", port_vol)` .
+$$
+
+::: {.notes}
+All numbers on this slide are computed, not typed. The code is in the chapter's collapsible box and in code/09-mean-variance.R.
+:::
+
+## Diversification in One Number
+
+The portfolio's volatility is `r sprintf("%.2f%%", 100 * port_vol)`, against `r sprintf("%.2f%%", 100 * min(s1, s2))` for the less volatile constituent: `r sprintf("%.1f%%", -100 * (port_vol / min(s1, s2) - 1))` lower.
+
+```{r deck-rho}
+# vary_rho() comes from the chapter's two-asset-rho chunk: both volatilities
+# stay fixed, only the correlation moves.
+rho_tab <- t(vapply(c(-1, -0.5, 0, rho, 0.5, 0.9, 1), vary_rho, numeric(3))) |>
+  tibble::as_tibble() |>
+  dplyr::mutate(rho = sprintf("%.2f", rho),
+                w_equity = sprintf("%.3f", w_equity),
+                # at rho = -1 the variance is zero to machine precision and its
+                # square root can come out NaN; the attainable volatility is zero
+                portfolio_vol = sprintf("%.2f%%",
+                                        100 * ifelse(is.nan(portfolio_vol), 0, portfolio_vol)))
+kable(rho_tab, align = "rrr",
+      col.names = c("correlation", "equity weight", "portfolio volatility"))
+```
+
+The benefit shrinks as $\rho$ rises: the cross term subtracts where the two variances add.
+
+## The Mean-Variance Problem
+
+For each attainable level of expected return $\bar{\mu}$, the investor wants the portfolio that achieves it at least variance:
+
+$$
+\min_{\boldsymbol{w}} \; \boldsymbol{w}'\boldsymbol{\Sigma}\boldsymbol{w}
+\quad \text{subject to} \quad
+\boldsymbol{w}'\boldsymbol{\iota} = 1,
+\quad
+\boldsymbol{w}'\boldsymbol{\mu} = \bar{\mu}.
+$$
+
+- The solutions, traced over $\bar{\mu}$, form the minimum-variance frontier.
+- Its upper branch is the **efficient frontier**: no feasible portfolio dominates it.
+- The lower branch is attainable but never chosen.
+
+## Two Anchors with Closed Forms
+
+::: {.columns}
+::: {.column width="50%"}
+**Minimum variance**: drop the return constraint.
+
+$$
+\boldsymbol{w}_{\text{mv}}
+= \frac{\boldsymbol{\Sigma}^{-1}\boldsymbol{\iota}}
+       {\boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\iota}}
+$$
+
+$\boldsymbol{\mu}$ does not appear: no view on returns is needed.
+:::
+::: {.column width="50%"}
+**Tangency**: with a risk-free asset, returns in excess of it.
+
+$$
+\boldsymbol{w}_{\text{tan}}
+= \frac{\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}}
+       {\boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}}
+$$
+
+The highest Sharpe ratio; the same risky portfolio for every investor (Tobin, 1958).
+:::
+:::
+
+With $A = \boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\iota}$, $B = \boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$, $C = \boldsymbol{\mu}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\mu}$, the frontier is (Merton, 1972)
+
+$$
+\sigma^2(\bar{\mu}) = \frac{A\bar{\mu}^2 - 2B\bar{\mu} + C}{AC - B^2}.
+$$
+
+```{r moments}
+#| include: false
+```
+
+```{r dominance}
+#| include: false
+```
+
+## The Sixteen Classes in the Volatility-Return Plane
+
+```{r fig-09-mu-sigma}
+#| fig-alt: "Scatter of annualized volatility against compounded return for the sixteen classes, dominated classes in red."
+```
+
+- `r sum(dominated)` of `r nrow(moments)` series are dominated by at least one other; the efficient ones are `r paste0("\x60", moments$asset[!dominated], "\x60", collapse = ", ")`.
+
+::: {.notes}
+Read the picture with the northwest rule: any point with another point above and to its left is dominated. This is a statement about the sample, not a prediction.
+:::
+
+## Specifying the Problem
+
+A `portfolio.spec()` collects assets, constraints and objectives; `optimize.portfolio()` hands it to a solver.
+
+```{r spec}
+#| echo: true
+#| output: false
+```
+
+```{r portfolio-stats}
+#| include: false
+```
+
+The solution holds `r sum(w_gmv > 0.005)` of the sixteen series and `r sprintf("%.0f%%", 100 * max(w_gmv))` of the money sits in `r paste0("\x60", names(which.max(w_gmv)), "\x60")`: volatility `r sprintf("%.2f%%", 100 * p_vol(w_gmv))`, Sharpe ratio `r sprintf("%.2f", p_sr(w_gmv))`.
+
+::: {.notes}
+The concentration is a property of the problem, not a symptom of bad estimates: the least volatile series is far below the next one (Green and Hollifield, 1992; Clarke et al., 2011).
+:::
+
+```{r closed-form-gmv}
+#| include: false
+```
+
+## From Closed Form to Quadratic Program
+
+The closed forms assume weights of any sign and any size. Add $\boldsymbol{w} \geq \boldsymbol{0}$ and the analytic solution disappears; the problem is a convex **quadratic program**, solved to numerical precision in milliseconds.
+
+- On the sixteen classes, the unconstrained minimum-variance solution holds `r sum(w_gmv_cf < 0)` shorts, the largest in `r paste0("\x60", names(sort(w_gmv_cf))[1], "\x60")` at `r sprintf("%.1f%%", 100 * min(w_gmv_cf))`.
+- Everything computed from here on is a quadratic program of this kind.
+- Means and covariances are estimates, so the weights inherit their errors (Best and Grauer, 1991; Michaud, 1989).
+
+## Reading the Frontier off the Optimizer {.codesmall}
+
+```{r tangency}
+#| echo: true
+#| output: false
+```
+
+```{r frontier-facts}
+#| include: false
+```
+
+The tangency portfolio is read off the frontier by its Sharpe ratio, rather than requested with `maxSR = TRUE`.
+
+## The Anchors Against Two Alternatives
+
+```{r tbl-09-anchors}
+```
+
+- In sample, the tangency portfolio has a Sharpe ratio `r sprintf("%.2f", p_sr(w_tan) - p_sr(w_6040))` above a 60/40 allocation: a wide margin, and an in-sample one.
+- It holds `r sprintf("%.1f%%", 100 * w_tan[["US_credit"]])` in `r paste0("\x60", "US_credit", "\x60")`, the series with the most negative skewness (`r sprintf("%.2f", min(skew))`); variance cannot see it.
+
+```{r utility-portfolios}
+#| include: false
+```
+
+```{r allocation-line}
+#| include: false
+```
+
+```{r frontier-points}
+#| include: false
+```
+
+## The Frontier
+
+```{r deck-frontier-only}
+#| fig-alt: "The long-only efficient frontier with the sixteen classes and the two anchor portfolios."
+# One data frame, `pts`, built by name in the chapter's frontier-points chunk.
+ggplot2::ggplot() +
+  ggplot2::geom_line(data = fr, ggplot2::aes(StdDev * sqrt(12), mean * 12),
+                     colour = tidyaa_colors[["ink"]], linewidth = 1) +
+  ggplot2::geom_point(data = dplyr::filter(pts, kind == "asset"),
+                      ggplot2::aes(vol, ret), size = 2.2,
+                      colour = tidyaa_colors[["ink_soft"]]) +
+  ggplot2::geom_text(data = dplyr::filter(pts, kind == "asset"),
+                     ggplot2::aes(vol, ret, label = label), size = 2.8,
+                     hjust = -0.12, colour = tidyaa_colors[["ink_soft"]]) +
+  ggplot2::geom_point(data = dplyr::filter(pts, kind == "anchor"),
+                      ggplot2::aes(vol, ret), shape = 21, size = 4.5,
+                      fill = tidyaa_colors[["blue_lit"]],
+                      colour = tidyaa_colors[["ink"]]) +
+  ggplot2::geom_text(data = dplyr::filter(pts, label == "minimum variance"),
+                     ggplot2::aes(vol, ret, label = label), size = 3.8,
+                     fontface = "bold", hjust = -0.15, vjust = 1.7) +
+  ggplot2::geom_text(data = dplyr::filter(pts, label == "tangency"),
+                     ggplot2::aes(vol, ret, label = label), size = 3.8,
+                     fontface = "bold", hjust = 1.15, vjust = -0.7) +
+  ggplot2::scale_x_continuous(labels = scales::percent,
+                              expand = ggplot2::expansion(mult = c(0.12, 0.26))) +
+  ggplot2::scale_y_continuous(labels = scales::percent) +
+  ggplot2::labs(x = "annualized volatility", y = "annualized excess return")
+```
+
+The left end is the minimum-variance portfolio; the right end holds a single asset, the one with the highest return.
+
+## The Tangency Line
+
+```{r fig-09-frontier}
+#| fig-alt: "Frontier, capital allocation line from the origin through the tangency portfolio, quadratic-utility portfolios on the frontier, equal weight and 60/40 below it."
+#| fig-asp: 0.52
+```
+
+In excess-return space the capital allocation line starts at the origin and touches the frontier at the tangency portfolio.
+
+::: {.notes}
+Diamonds are quadratic-utility solutions at five risk aversions; they sit on the frontier, which is the check that the objective was specified correctly.
+:::
+
+## Weights Along the Frontier
+
+```{r fig-09-ef-weights}
+#| fig-alt: "Stacked area chart of the weights of the sixteen classes along the efficient frontier."
+#| fig-asp: 0.5
+```
+
+Government bonds dominate the left end, equity and credit the middle, and one equity market the right end.
+
+## A Trap: The Exact Budget Constraint
+
+::: {.callout-important}
+## An exact budget constraint can be reported as infeasible
+
+On the CRAN release of `PortfolioAnalytics`, an exact `full_investment` constraint is encoded as two opposing inequality rows. `quadprog` then reports the problem infeasible and ROI returns `NA` weights without raising a condition.
+
+Measured on this data: **30 of 312** rolling sixty-month minimum-variance windows fail, with nothing but $\boldsymbol{w}'\boldsymbol{\iota} = 1$ and $\boldsymbol{w} \geq \boldsymbol{0}$. The fix is pinned in the book's package notes.
+:::
+
+- The same release makes `maxSR = TRUE` unreliable, which is why the tangency portfolio is read off the frontier.
+- Inside a rebalancing loop, guard every solve: the chapter's `solve_checked()` stops on `NULL` or `NA` weights.
+
+```{r cvxr-whitelist}
+#| include: false
+```
+
+```{r solve-checked}
+#| include: false
+```
+
+```{r bootstrap}
+#| include: false
+```
+
+## Left End Stable, Right End Not
+
+Block bootstrap, `r ncol(boot)` draws of twelve-month blocks, re-optimized each time. Turnover is the share of the portfolio traded to reach the resampled answer.
+
+```{r tbl-09-bootstrap}
+```
+
+The tangency portfolio moves `r sprintf("%.1f", mean(boot["tangency", ]) / mean(boot["gmv", ]))` times as far as minimum variance on the same data. Nothing changed except the sample.
+
+::: {.notes}
+Minimum variance depends only on the covariance matrix; every point to the right of the vertex also depends on the means, which are estimated far less precisely.
+:::
+
+```{r diversification}
+#| include: false
+```
+
+```{r subuniverses}
+#| include: false
+```
+
+```{r what-explains-it}
+#| include: false
+```
+
+## The Universe Sets the Floor
+
+```{r deck-diversification}
+# Built from the objects of the chapter's diversification chunk.
+tibble::tibble(
+  universe          = c("16 mixed classes", "5 equity classes"),
+  `mean correlation` = sprintf("%.2f", c(mean_cor, mean(Ceq[upper.tri(Ceq)]))),
+  `effective bets`   = sprintf("%.2f", c(eff_bets(w_gmv), eff_bets(w_gmv_eq))),
+  `minimum-variance volatility` = sprintf("%.1f%%", 100 * c(p_vol(w_gmv), vol_eq)),
+  `below the least volatile asset` =
+    sprintf("%.1f%%", -100 * c(p_vol(w_gmv) / min(moments$vol) - 1,
+                               vol_eq / min(apply(Req, 2, ann_vol)) - 1))
+) |>
+  kable(align = "lrrrr")
+```
+
+- The portfolio with `r sprintf("%.1f", eff_bets(w_gmv_eq) / eff_bets(w_gmv))` times the effective positions buys the smaller discount.
+- Across `r nrow(subu)` sub-universes, the least volatile available asset explains `r sprintf("%.0f%%", 100 * r2(log(gmv_vol) ~ log(min_vol)))` of the variation in the minimum-variance level; average correlation explains `r sprintf("%.0f%%", 100 * r2(log(gmv_vol) ~ mean_cor))`.
+
+## Out of Sample
+
+Sixty-month rolling estimates, monthly rebalancing. The out-of-sample column is read from the backtesting chapter's register.
+
+```{r tbl-09-oos}
+```
+
+```{r oos-ranking}
+#| include: false
+```
+
+- The tangency portfolio keeps `r sprintf("%.0f%%", 100 * kept[["max_sharpe"]])` of the Sharpe ratio it promised; minimum variance keeps `r sprintf("%.0f%%", 100 * kept[["min_variance"]])`, which needed no estimate of $\boldsymbol{\mu}$.
+- With 120 months behind each estimate the tangency portfolio reaches `r sprintf("%.2f", at120$tangency)`, ahead of equal weighting at `r sprintf("%.2f", at120$equal_weight)` and behind minimum variance at `r sprintf("%.2f", at120$min_variance)`.
+
+::: {.notes}
+A share above 100% is possible because the out-of-sample record covers model years `r model_year(oos_start)` to `r model_year(max(zoo::index(R)))` rather than the whole sample. Across all nine cells of the register, minimum variance has the highest Sharpe ratio of the three and the tangency portfolio keeps the smallest share of what it promised, between `r sprintf("%.0f%%", 100 * min(cells$tan_kept))` and `r sprintf("%.0f%%", 100 * max(cells$tan_kept))`. This is the pattern DeMiguel, Garlappi and Uppal (2009) report for fourteen rules on seven datasets.
+:::
+
+## Key Takeaways {.smaller}
+
+- **Outcome 1.** A closed form exists only without a short-sale constraint; with one, the problem is a quadratic program, which is what every result here solves.
+- **Outcome 1.** The minimum-variance portfolio needs no return forecast, which is why it is far more stable than the tangency portfolio.
+- **Outcome 2.** Concentration is not automatically a symptom of bad estimates: a dominant common factor produces it even with perfect inputs.
+- **Outcome 3.** The left end of the frontier rests on $\boldsymbol{\Sigma}$, the right end on $\boldsymbol{\mu}$; a block bootstrap moves the tangency portfolio several times as far.
+- **Outcome 3.** The level of minimum variance is set mainly by the least volatile asset available. Universe selection matters more than the weighting machinery.
+- **Outcome 4.** The tangency portfolio is first in sample by construction; out of sample it keeps the smallest share of what it promised at every estimation window.
+
+## Exercises {.smaller}
+
+Work these in `code/09-mean-variance-exercises.R`; solutions are in appendix G of the book.
+
+1. Add the five series of `sim_money_market_monthly` to the universe and recompute the anchors table. What happens to the minimum-variance portfolio?
+2. Compute $\boldsymbol{\Sigma}^{-1}\boldsymbol{\iota}\,/\,\boldsymbol{\iota}'\boldsymbol{\Sigma}^{-1}\boldsymbol{\iota}$ directly and compare it with the `ROI` solution. Which constraint accounts for the difference?
+3. Repeat the bootstrap with blocks of 1, 3 and 24 months. Which block length makes the tangency portfolio look most stable?
+4. Replace `full_investment` with `weight_sum` bounded by 0.99 and 1.01, rerun minimum variance on every rolling sixty-month window, and count the failures. Then set the bounds to exactly one.
+5. `US_credit` enters the frontier at the tangency portfolio. Compute its skewness and worst monthly return, and argue whether a loss-averse investor would hold it.

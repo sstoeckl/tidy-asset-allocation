@@ -1,0 +1,105 @@
+/*-- scss:defaults --*/
+
+// Shared by every Tidy Asset Allocation deck. Brand colors and typefaces are
+// those of _brand.yml and assets/css/custom.scss; nothing here is chapter
+// specific. The @import sits in the defaults layer so that it is emitted first,
+// which is the only place a CSS @import is honored.
+@import url("https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+$tidyaa-ink:      #212529;
+$tidyaa-soft:     #6C757D;
+$tidyaa-rule:     #DEE2E6;
+$tidyaa-blue:     #2E77A6;
+$tidyaa-lit:      #5FA8D3;
+$tidyaa-wash:     #EAF2F8;
+$tidyaa-deep:     #1B4F6F;
+
+$font-family-sans-serif: "Source Sans 3", "Source Sans Pro", -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+$font-family-monospace:  "IBM Plex Mono", SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+
+$body-bg:    #FFFFFF;
+$body-color: $tidyaa-ink;
+$link-color: $tidyaa-blue;
+$link-color-hover: $tidyaa-deep;
+
+$presentation-font-size-root: 30px;
+$presentation-heading-font: $font-family-sans-serif;
+$presentation-heading-color: $tidyaa-deep;
+$presentation-heading-font-weight: 700;
+$presentation-heading-text-transform: none;
+$presentation-h1-font-size: 2.1em;
+$presentation-h2-font-size: 1.45em;
+$presentation-h3-font-size: 1.1em;
+$presentation-title-slide-text-align: left;
+$presentation-line-height: 1.3;
+
+$code-color: $tidyaa-ink;
+$code-bg: $tidyaa-wash;
+$code-block-bg: #F8F9FA;
+$code-block-border-color: $tidyaa-rule;
+$code-block-font-size: 0.5em;
+$selection-bg: $tidyaa-lit;
+
+/*-- scss:rules --*/
+
+.reveal, .reveal h1, .reveal h2, .reveal h3, .reveal h4 {
+  font-family: "Source Sans 3", "Source Sans Pro", -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+.reveal code, .reveal pre, .reveal kbd {
+  font-family: "IBM Plex Mono", SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+}
+.reveal pre { font-size: 0.62em; }
+.reveal pre code { font-size: 1em; line-height: 1.3; max-height: 540px; }
+.reveal :not(pre) > code { font-size: 0.82em; padding: 0.05em 0.25em; }
+
+/* The accent bar of the book's title block, set under the slide title. */
+.reveal .slides section h2::after,
+.reveal #title-slide h1.title::after {
+  content: "";
+  display: block;
+  width: 3.25rem;
+  height: 4px;
+  margin-top: 0.3em;
+  background: $tidyaa-lit;
+}
+.reveal .slides section h2 { margin-bottom: 0.55em; }
+.reveal #title-slide h1.title { font-size: 2.1em; letter-spacing: -0.02em; }
+.reveal #title-slide .subtitle { color: $tidyaa-soft; font-size: 0.9em; }
+.reveal #title-slide .author { color: $tidyaa-ink; font-size: 0.7em; }
+
+.reveal .slides section { font-size: 1em; }
+.reveal .slides section.smaller, .reveal .slides section .smaller { font-size: 0.85em; }
+.reveal ul li, .reveal ol li { margin-bottom: 0.3em; }
+.reveal ul li::marker { color: $tidyaa-lit; }
+.reveal .footer { color: $tidyaa-soft; font-size: 0.45em; }
+.reveal .slide-number { color: $tidyaa-soft; font-size: 0.5em; }
+
+/* tables from kable() */
+.reveal table { font-size: 0.8em; margin: 0.4em auto; border-collapse: collapse; }
+.reveal table th { color: $tidyaa-deep; border-bottom: 2px solid $tidyaa-lit; font-weight: 600; }
+.reveal table td { border-bottom: 1px solid $tidyaa-rule; padding: 0.2em 0.7em; }
+.reveal table thead tr, .reveal table tbody tr { background: transparent; }
+
+/* callouts */
+.reveal .callout { font-size: 1em; }
+.reveal div.callout-important.callout { border-left-color: #C0392B; }
+
+/* source line at the foot of a slide, and the statement box */
+.reveal .source { font-size: 0.6em; color: $tidyaa-soft; margin-top: 1.2em; }
+.reveal .statement {
+  background: $tidyaa-wash; border-left: 4px solid $tidyaa-lit;
+  padding: 0.5em 0.9em; margin: 0.6em 0;
+}
+.reveal figure { margin: 0 auto; }
+.reveal .quarto-figure img, .reveal section img { box-shadow: none; border: 0; }
+.reveal .lo { font-size: 1em; }
+.reveal .lo strong { color: $tidyaa-blue; }
+
+/* Quarto numbers every labeled figure and table ("Figure 1"); a slide needs no
+   caption, and the chapters' labels are reused as they are. */
+.reveal figcaption, .reveal .quarto-float-caption, .reveal .figure-caption,
+.reveal .table-caption, .reveal caption, .reveal p.caption { display: none; }
+
+/* a slide that shows a long chunk of the chapter's code */
+.reveal section.codesmall pre { font-size: 0.5em; }

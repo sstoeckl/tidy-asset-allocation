@@ -483,7 +483,7 @@ def main():
         readers = ('<h4 class="readers">What readers proposed</h4>%s' % render_remarks(remarks.get("book"))) if remarks.get("book") else ""
         body.append('<article class="book" id="book"><h3>The book as a whole</h3>%s%s</article>' % (render_fields(
             top["book"], ("Claim", "What the chapters jointly argue", "Order", "Why this order",
-                          "Dependencies against the order", "Patterns across chapters", "Open at the top level")), readers))
+                          "Dependencies against the order", "Patterns across chapters", "Revised", "Open at the top level")), readers))
     for part, items in parts:
         is_front = part == "Front matter"
         if not is_front:

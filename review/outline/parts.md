@@ -13,26 +13,30 @@ Dependencies against the order:
 - Chapter 1 borrows its notation and its market from chapter 2.
 - Chapter 2 runs chapter 9's long-only tangency portfolio to justify the euro-area overlay, before the reader has met an optimizer.
 - Chapters 6, 7 and 8 use chapter 9's problem, its tangency and minimum-variance equations and its frontier as if already read.
-- Chapter 8 takes its rolling scheme and the register from chapter 25; every construction chapter from 8 onward reads that register, which chapter 25 introduces.
-- Chapter 12 borrows chapter 13's `maxSR` verification and its `audit()` function.
+- Chapter 6 already reads the out-of-sample register, chapter 8 takes its rolling scheme and its Sharpe gap from chapter 25, and some fourteen chapters close on a line of that register before chapter 25 explains it. The register itself is computed by a script outside the chapters (`R/oos-sweep.R`); no chapter builds it.
+- Chapters 9, 10 and 11 teach solver behavior before chapter 13, and chapters 14, 15, 16 and 22 use chapter 23's costs and chapter 25's backtest before either arrives.
+- Chapter 12 borrows chapter 13's `maxSR` verification and its `audit()` function, and the fundamental law from chapter 24.
 - Chapter 18 uses chapter 23's net return and turnover and chapter 25's Sharpe standard error and paired test, in the past tense.
 - Chapter 19 needs chapter 23's cost accounting and chapter 25's register.
 - Chapter 20 is built on chapter 21's equity sleeve and on chapter 24's tracking-error and standard-error equations.
 - Chapter 21 imports its whole scoring apparatus from chapter 24: active weights, information ratio, the fundamental law, the standard error of the ratio.
-- Chapter 23 computes none of its numbers; it reads them from the runs of chapter 25.
+- Chapter 23 computes none of its numbers; it reads them from the runs of chapter 25, and its opening premise (every portfolio so far was rebalanced for free) is contradicted by chapters 16 and 18 to 22, which already charge costs.
+- Chapter 24 leans on chapter 25 five times and defines its manager by a register rank.
+- Three cycles: 24 and 25 (Brinson attribution defined in both, each handing it to the other), 12 and 13 (each takes the other's tools), 18 and 23 (costs in the objective one way, the no-trade region the other).
 Patterns across chapters:
-- The section called Implementation carries the results, and the section meant as the application re-reads them or adds one more case: chapters 4, 5, 10, 11, 16, 17, 18, 19, 26 and 27. In 15 the theory does the application's work in advance; in 14 each section does the next one's job.
+- The section called Implementation carries the results, and the section meant as the application re-reads them or adds one more case: at least fifteen chapters (4, 5, 9, 10, 11, 13, 16, 17, 18, 19, 22, 24, 26, 27, 28). Measured over the 27 narrative chapters the implementation holds 38 percent of the words and the application 28, and the implementation is the longer of the two in 20. In 15 the theory does the application's work in advance; in 14 each section does the next one's job.
 - The chapter's central claim sits in a late paragraph and not under a heading or in the theory: 8 (last paragraph of a subsection), 17 (application, fourth paragraph), 22 (one theory paragraph without an equation), 27 (end of the implementation).
 - Objects the later code depends on are defined inside collapsed worked boxes or callouts: 6, 10, 11.
 - Theory that is defined and then never used in the body: lower partial moments and drawdown measures (10), conditional comoments (11), C-RAFE and the nested measures (26, exercises only), robust optimization and smooth ambiguity (28).
 - Theory sections that already compute or run the package: 3, 13, 14, 15.
 - Results stated three or four times: the two numbers of chapter 13, the reporting rule in chapter 10, the answer of chapter 8, the chapter anatomy in the preface.
-- Figures drawn and never read in the prose (4, 15, 16, 19) and tables printed and never read (7, 12, 17).
-- Main section headings with no paragraph of their own: 10, 15, 18.
-- Two chapters inside one frame: 1 (toolchain and the boundary argument, interleaved), 3 (the conventions, then the investor); chapter 2 is a reference chapter with no theory, implementation and application at all.
+- Figures that the prose never reads, or reads only through the caption (2, 4, 10, 12, 15, 16, 19, 22, 23, 24, 25, 26), or reads before they appear (3, 5, 9, 13, 15, 21); tables printed and never read (7, 12, 17). Only four applications open with a picture (3, 9, 11, 27), and chapter 14 has no figure.
+- Main section headings with no paragraph of their own in at least sixteen chapters (6, 10, 11, 12, 13, 15, 17, 18, 19, 20, 21, 24, 25, 26, 27, 28), so one roadmap sentence in the opening carries every transition.
+- Two chapters inside one frame: 1 (toolchain and the boundary argument, interleaved), 3 (the conventions, then the investor), 9 (the frontier, a catalogue of solver failures, five studies on the frontier), 15 (the economics of two layers, a source reading of the package), 24 (measuring a manager out of sample, then constructing a tilt in sample, with no sentence marking the turn). Fragments: 13, 14, 23 and 25; chapters 23 and 25 are one chapter cut in two. Chapter 2 is a reference chapter with no theory, implementation and application at all.
 - Counts that do not close: chapter 9 points three times to a callout on `maxSR` that does not exist; "three ways" that are four in 9 and 17; a signal count in 16 that names four families and claims three.
 - Takeaways and exercises run over the contract almost everywhere (six to eight takeaways, four or five exercises), and in 11 and 21 the takeaways omit the application's finding.
 - Lengths differ by a factor of three: chapters 13, 14, 23 and 25 have about 3,300 words, chapter 9 has 10,239, most others 6,500 to 8,000.
+Revised: 2026-11-13, after three independent assessments (`review/assessment/`) checked this block against the outline. They confirmed the dependencies and the patterns and corrected four things, now entered above: the register is read from chapter 6 on and built outside the book; three cycles; the counts for results in the implementation, heading-only sections and unread figures were too low; the order inside Part VIII is stated.
 Open at the top level:
 - Evaluation is used before it is taught. Should the accounting of Part VII (net return, turnover, the register, the Sharpe standard error, the information ratio) come before the strategies that are scored with it?
 - The inputs are estimated for an optimizer the reader has not met. Should chapter 9 precede Part III, or should Part III stop using its equations?
@@ -90,5 +94,5 @@ Note: Chapter 23 runs no backtest and reads every number from chapter 25's runs.
 # Part: Advanced Topics
 
 Says: The cost of a wrong forecast is a distance in the investor's metric (26), a forecaster should be trained on that loss (27), and guarding against a set of models is a shrinkage toward minimum variance (28).
-Why here: The preface says only that Part VIII is theory. Chapters 26 and 27 place themselves on neither side of the horizon axis, chapter 28 calls itself strategic; why 28 follows 27 is not stated.
+Why here: The preface says only that Part VIII is theory. Chapters 26 and 27 place themselves on neither side of the horizon axis, chapter 28 calls itself strategic. The order inside the part is stated in chapter 28: 26 prices the forecast error, 27 corrects the forecast, 28 changes the decision.
 Note: In 26 and 27 the implementation is about half the chapter and already states every headline finding. In 28 the four robustifications run in the reverse of the theory's order, the longest of them has no theory and no out-of-sample row, and two theory subsections are never implemented.

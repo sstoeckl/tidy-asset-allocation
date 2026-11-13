@@ -181,6 +181,33 @@ def parse_parts(text):
     return out
 
 
+def parse_remarks(text):
+    """review/outline/remarks.md: `# Book` and `# NN` blocks of bullets, the
+    readers' suggestions. Returns {"book": [...], "04": [...], ...}."""
+    out, cur = {}, None
+    for line in text.split("\n"):
+        s = line.rstrip()
+        m = re.match(r"^# (Book|\d\d)\s*$", s)
+        if m:
+            cur = out.setdefault(m.group(1).lower(), [])
+            continue
+        if s.startswith("# "):
+            cur = None
+            continue
+        b = re.match(r"^\s*-\s+(.*)$", s)
+        if b and cur is not None:
+            cur.append(b.group(1).strip())
+        elif s.strip() and cur:
+            cur[-1] = (cur[-1] + " " + s.strip()).strip()
+    return out
+
+
+def render_remarks(items):
+    if not items:
+        return ""
+    return "".join('<p class="remark"><span class="remark-label">Reader</span> %s</p>' % inline(i) for i in items)
+
+
 def render_fields(block, order):
     rows = []
     for key in order:
@@ -217,7 +244,7 @@ def type_counts(sections):
     return counts
 
 
-def render_chapter(num, slug, title, data, missing):
+def render_chapter(num, slug, title, data, missing, remarks=None):
     cid = "ch-" + slug[:2]
     if missing:
         return ('<article class="chapter missing" id="%s"><header><h3><span class="num">%s</span> %s</h3>'
@@ -241,6 +268,7 @@ def render_chapter(num, slug, title, data, missing):
             label = "Code first" if key.startswith("Code") else key
             out.append('<dt>%s</dt><dd>%s</dd>' % (label, inline(ch[key])))
     out.append('</dl>')
+    out.append(render_remarks(remarks))
     if chips:
         out.append('<p class="chips">%s</p>' % chips)
     out.append('</header>')
@@ -352,6 +380,9 @@ article.book { background: var(--surface); border: 1px solid var(--rule); border
 article.book h3 { font-size: 1.2rem; margin: 0 0 0.6rem; letter-spacing: -0.01em; }
 .partblock { margin: 0 0 1.4rem; padding: 0.2rem 0 0.2rem 0.9rem; border-left: 3px solid var(--accent); }
 ul.plain { margin: 0; padding-left: 1.1rem; display: grid; gap: 0.3rem; }
+.remark { background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 4px 4px 0; padding: 0.4rem 0.7rem; font-size: 0.93rem; margin: 0.4rem 0 0.5rem; }
+.remark .remark-label { font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-deep); font-weight: 600; margin-right: 0.4rem; }
+h4.readers { font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); margin: 1rem 0 0.3rem; font-weight: 600; }
 html[data-level="chapters"] section.section { display: none; }
 html[data-level="chapters"] .chips { display: none; }
 html[data-level="sections"] ol.paras { display: none; }
@@ -385,6 +416,59 @@ JS = r"""
 ROMAN = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX"]
 
 
+def write_digest(parts):
+    """review/outline/digest.md: the chapter and section level of every
+    outline in one file, with each section's paragraphs reduced to their
+    sequence of types. A reader who wants the whole book's structure in one
+    sitting reads this; the paragraph lines are in the chapter files."""
+    out = ["# Reverse outline, digest: chapters and sections",
+           "",
+           "One block per chapter: its claim, question, placement and order, then every",
+           "section with what it says, why it comes there, the outline's note, and the",
+           "sequence of its paragraph types (`code` marks a chunk, `+c` a callout). The",
+           "paragraph lines themselves are in `NN-slug.md` beside this file.",
+           ""]
+    pn = 0
+    for part, items in parts:
+        if part != "Front matter":
+            pn += 1
+        out.append("# %s%s" % (("Part %s: " % ROMAN[pn]) if part != "Front matter" else "", part))
+        out.append("")
+        for slug, f in items:
+            p = os.path.join(OUT, slug + ".md")
+            if not os.path.exists(p):
+                continue
+            d = parse_outline(read(p))
+            m, ch = d["meta"], d["chapter"]
+            out.append("## %s %s (%s words, %s paragraphs)" % (
+                "Chapter %d:" % int(slug[:2]) if slug != "00-preface" else "", m.get("title", slug),
+                m.get("words", "?"), m.get("paragraphs", "?")))
+            for key in ("Claim", "Question", "Why here", "Does", "Order"):
+                if ch.get(key):
+                    out.append("%s: %s" % (key, ch[key]))
+            out.append("")
+            for sec in d["sections"]:
+                seq = []
+                for q in sec["paras"]:
+                    if q["kind"] == "code":
+                        seq.append("code")
+                    elif q["kind"] == "para":
+                        seq.append((q["type"] or "?") + ("+c" if q["callout"] else ""))
+                out.append("%s %s (%s words)" % ("###" if sec["level"] == 2 else "####", sec["title"], sec["words"] or "?"))
+                if sec["says"]:
+                    out.append("Says: " + sec["says"])
+                if sec["why"]:
+                    out.append("Why here: " + sec["why"])
+                if seq:
+                    out.append("Paragraphs: " + " · ".join(seq))
+                if sec["note"]:
+                    out.append("Note: " + sec["note"])
+                out.append("")
+    path = os.path.join(OUT, "digest.md")
+    io.open(path, "w", encoding="utf-8", newline="\n").write("\n".join(out))
+    return path
+
+
 def main():
     parts = book_order()
     nav, body = [], []
@@ -392,11 +476,14 @@ def main():
     pn = 0
     top_path = os.path.join(OUT, "parts.md")
     top = parse_parts(read(top_path)) if os.path.exists(top_path) else {"book": {}, "parts": {}}
+    rem_path = os.path.join(OUT, "remarks.md")
+    remarks = parse_remarks(read(rem_path)) if os.path.exists(rem_path) else {}
     if top["book"]:
         nav.append('<ul><li><a href="#book"><span class="n"></span>The book as a whole</a></li></ul>')
-        body.append('<article class="book" id="book"><h3>The book as a whole</h3>%s</article>' % render_fields(
+        readers = ('<h4 class="readers">What readers proposed</h4>%s' % render_remarks(remarks.get("book"))) if remarks.get("book") else ""
+        body.append('<article class="book" id="book"><h3>The book as a whole</h3>%s%s</article>' % (render_fields(
             top["book"], ("Claim", "What the chapters jointly argue", "Order", "Why this order",
-                          "Dependencies against the order", "Patterns across chapters", "Open at the top level")))
+                          "Dependencies against the order", "Patterns across chapters", "Open at the top level")), readers))
     for part, items in parts:
         is_front = part == "Front matter"
         if not is_front:
@@ -420,7 +507,7 @@ def main():
                 done += 1
             nav.append('<li%s><a href="#ch-%s"><span class="n">%s</span>%s</a></li>' % (
                 ' class="missing"' if missing else "", slug[:2], esc(num), esc(title)))
-            body.append(render_chapter(num, slug, title, data, missing))
+            body.append(render_chapter(num, slug, title, data, missing, remarks.get(slug[:2])))
         nav.append('</ul>')
 
     page = (
@@ -438,6 +525,8 @@ def main():
         '%s\n</main>\n</div>\n<script>%s</script>\n'
     ) % (CSS, done, total, "\n".join(nav), "\n".join(body), JS)
     io.open(PAGE, "w", encoding="utf-8", newline="\n").write(page)
+    dg = write_digest(parts)
+    print("digest: %d KB -> %s" % (os.path.getsize(dg) // 1024, os.path.relpath(dg, ROOT)))
     print("outline page: %d of %d chapters outlined, %d KB -> %s" % (done, total, len(page.encode("utf-8")) // 1024, os.path.relpath(PAGE, ROOT)))
 
 

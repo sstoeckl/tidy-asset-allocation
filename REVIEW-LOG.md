@@ -29,7 +29,47 @@ Rules that came from review comments rather than from planning:
 
 ## Open
 
-*(nothing)*
+### First alpha reading — relayed by Sebastian, 2026-11-13
+
+A colleague who teaches and researches the subject read the live draft and
+answered in chat. Structural remarks, so they wait for Sebastian's pass
+through the reverse outline (`review/outline/`); nothing is changed yet.
+Sebastian's own position, stated in the same exchange: the brief was the
+level and the order of *Tidy Finance with R* and *Machine Learning for
+Factor Investing*, papers included.
+
+- [ ] **Level against audience.** The reader is a master's student or a
+      practitioner, and two chapters read above that: chapter 8 is "cutting
+      edge research" (meant as praise: very good, and good that it works on
+      the modeled market) and chapter 11 is "already advanced, with the
+      comoment tensors". Not a request to cut; a question of where such
+      material sits and how it is flagged. The preface's "What you can skip"
+      names only Part VIII.
+- [ ] **Chapter 10: the measures belong earlier, the portfolios stay.**
+      Move the risk measures themselves (the axioms, value at risk, expected
+      shortfall, the downside and drawdown families) into the first content
+      part, and leave the optimization on them where it is. The outline
+      agrees from two sides: chapter 10 takes the definition of expected
+      shortfall and the Cornish-Fisher expansion from chapter 4, and chapter
+      4 tabulates the Sharpe ratio and the maximum drawdown before either is
+      defined.
+- [ ] **Chapter 11**: see the first item; no structural remark beyond the
+      level.
+- [x] **Chapters 12 and 13**: sensible as they are. No action.
+- [ ] **Chapter 14: close the arc to minimum variance and to the family of
+      risk-based rules.** Tie risk parity back to the global minimum-variance
+      portfolio, and bring in the other rules that the *Lost in Translation*
+      paper [@salcher2026] runs side by side: minimum correlation, inverse
+      volatility and the rest of that roster. Hierarchical risk parity being
+      in the book is welcomed. State of the text: inverse volatility and
+      equal risk contribution are in chapter 14, maximum diversification is
+      named once, minimum correlation appears nowhere in the book,
+      hierarchical risk parity is a box in chapter 15 and a pointer in 14,
+      and the register scores five rules (equal weight, inverse volatility,
+      minimum variance, minimum CVaR, maximum Sharpe). Chapter 14 does not
+      cite the paper. The outline's own note on 14: it scores inverse
+      volatility out of sample and never the equal-risk portfolio it
+      computes.
 
 ## Done
 
